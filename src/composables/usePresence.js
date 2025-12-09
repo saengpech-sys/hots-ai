@@ -45,12 +45,14 @@ export function usePresence() {
     const activityMap = {
       'Chat': 'chat',
       'LearningRoom': 'worksheet',
+      'WorksheetForm': 'worksheet',
       'LearningRoomList': 'browsing',
       'MyProgress': 'browsing',
       'ProgressAnalytics': 'browsing',
       'Leaderboard': 'browsing',
       'Profile': 'browsing',
-      'Home': 'idle'
+      'Home': 'idle',
+      'StudentDashboard': 'browsing'
     }
     return activityMap[routeName] || 'browsing'
   }
@@ -62,6 +64,7 @@ export function usePresence() {
     const pageNames = {
       'Chat': '💬 Assessment Chat',
       'LearningRoom': '📋 ทำใบงาน',
+      'WorksheetForm': '📋 ทำใบงาน',
       'LearningRoomList': '🏫 ห้องกิจกรรม',
       'MyProgress': '📈 ความคืบหน้า',
       'ProgressAnalytics': '📊 Analytics',
@@ -70,36 +73,58 @@ export function usePresence() {
       'Home': '🏠 Home',
       'AdaptiveLearning': '🎯 Adaptive Learning',
       'GoalSetting': '🎯 ตั้งเป้าหมาย',
-      'ProgressMap': '🗺️ Progress Map'
+      'ProgressMap': '🗺️ Progress Map',
+      'StudentDashboard': '📊 Dashboard'
     }
-    return pageNames[routeName] || routeName
+    return pageNames[routeName] || routeName || 'Unknown'
+  }
+
+  /**
+   * Check if user is a student
+   */
+  function isStudent() {
+    const role = authStore.userProfile?.role || authStore.userData?.role
+    console.log('[Presence] Checking role:', role, 'isStudent computed:', authStore.isStudent)
+    return role === 'student' || authStore.isStudent
   }
 
   /**
    * Update presence document
    */
   async function updatePresence(additionalData = {}) {
-    if (!authStore.user || !authStore.isStudent) return
+    // Must be logged in and be a student
+    if (!authStore.user) {
+      console.log('[Presence] No user logged in')
+      return
+    }
+    
+    if (!isStudent()) {
+      console.log('[Presence] Not a student, skipping presence update')
+      return
+    }
 
     try {
       presenceDocRef = doc(db, 'userPresence', authStore.user.uid)
       
+      const userData = authStore.userProfile || authStore.userData || {}
       const presenceData = {
         odId: authStore.user.uid,
-        studentId: authStore.userData?.studentId || '',
-        displayName: authStore.userData?.displayName || authStore.user.displayName || 'Unknown',
-        role: authStore.userData?.role || 'student',
-        currentPage: getPageName(route.name),
-        currentActivity: getActivityFromRoute(route.name),
-        courseId: route.query?.courseId || null,
+        studentId: userData.studentId || '',
+        displayName: userData.displayName || authStore.user.displayName || 'Unknown',
+        role: 'student',
+        currentPage: getPageName(route?.name),
+        currentActivity: getActivityFromRoute(route?.name),
+        courseId: route?.query?.courseId || null,
         lastActive: serverTimestamp(),
         isOnline: true,
         ...additionalData
       }
 
+      console.log('[Presence] Updating:', presenceData.displayName, presenceData.currentPage)
       await setDoc(presenceDocRef, presenceData, { merge: true })
+      console.log('[Presence] ✅ Updated successfully')
     } catch (error) {
-      console.error('Failed to update presence:', error)
+      console.error('[Presence] Failed to update:', error)
     }
   }
 
@@ -167,21 +192,58 @@ export function usePresence() {
   }
 
   // Watch route changes
-  watch(() => route.name, (newRouteName) => {
+  watch(() => route?.name, (newRouteName) => {
     if (isTracking.value && newRouteName) {
       updatePresence()
     }
   })
 
-  // Lifecycle
-  onMounted(() => {
-    if (authStore.user && authStore.isStudent) {
+  // Watch for user login - start tracking when student logs in
+  watch(() => authStore.user, (newUser) => {
+    console.log('[Presence] User watch triggered:', newUser?.uid, 'isStudent:', isStudent())
+    if (newUser && isStudent()) {
+      console.log('[Presence] User logged in, starting heartbeat')
       startHeartbeat()
-      
-      // Listen for visibility changes
       document.addEventListener('visibilitychange', handleVisibilityChange)
-      
-      // Listen for page unload
+      window.addEventListener('beforeunload', handleBeforeUnload)
+    } else if (!newUser && isTracking.value) {
+      console.log('[Presence] User logged out, stopping heartbeat')
+      stopHeartbeat()
+      removePresence()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, { immediate: true })
+
+  // Also watch userProfile for role changes (this is the main one!)
+  watch(() => authStore.userProfile, (newData) => {
+    console.log('[Presence] userProfile watch triggered:', newData?.role, 'user:', authStore.user?.uid)
+    if (newData && authStore.user && isStudent() && !isTracking.value) {
+      console.log('[Presence] User profile loaded, starting heartbeat')
+      startHeartbeat()
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      window.addEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, { immediate: true, deep: true })
+
+  // Also watch isStudent computed directly
+  watch(() => authStore.isStudent, (newValue) => {
+    console.log('[Presence] isStudent watch triggered:', newValue)
+    if (newValue && authStore.user && !isTracking.value) {
+      console.log('[Presence] isStudent became true, starting heartbeat')
+      startHeartbeat()
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      window.addEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, { immediate: true })
+
+  // Lifecycle - cleanup on unmount
+  onMounted(() => {
+    // Check if user is already logged in
+    if (authStore.user && isStudent()) {
+      console.log('[Presence] Already logged in on mount, starting heartbeat')
+      startHeartbeat()
+      document.addEventListener('visibilitychange', handleVisibilityChange)
       window.addEventListener('beforeunload', handleBeforeUnload)
     }
   })

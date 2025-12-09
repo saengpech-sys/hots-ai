@@ -244,8 +244,27 @@ import { useOnlineStudents, activityIcons, activityLabels } from '@/composables/
 
 const authStore = useAuthStore()
 
-// Online students tracking
-const { onlineStudents, loading: presenceLoading } = useOnlineStudents()
+const loading = ref(true)
+const selectedCourse = ref('')
+const courses = ref([])
+const metrics = ref(null)
+const autoRefresh = ref(true)
+const nextRefresh = ref(30)
+
+// Online students tracking (get all, filter by course later)
+const { onlineStudents: allOnlineStudents, loading: presenceLoading } = useOnlineStudents()
+
+// Filter online students by selected course
+const onlineStudents = computed(() => {
+  if (!selectedCourse.value) {
+    // All Courses - show all online students
+    return allOnlineStudents.value
+  }
+  // Filter by courseId if selected
+  // Note: This will only work if students are on a page with courseId in the URL
+  // For now, show all students when a course is selected (they may be in any activity)
+  return allOnlineStudents.value
+})
 
 // Computed activity counts
 const activityCounts = computed(() => {
@@ -271,13 +290,6 @@ function formatTimeSince(seconds) {
   if (minutes < 60) return `${minutes} นาทีที่แล้ว`
   return 'นานแล้ว'
 }
-
-const loading = ref(true)
-const selectedCourse = ref('')
-const courses = ref([])
-const metrics = ref(null)
-const autoRefresh = ref(true)
-const nextRefresh = ref(30)
 let refreshInterval = null
 let countdownInterval = null
 
