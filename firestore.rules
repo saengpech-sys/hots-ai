@@ -1,0 +1,422 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==================== Helper Functions ====================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getUserRole() {
+      return getUserData().role;
+    }
+    
+    // Role Checks
+    function isStudent() {
+      return isSignedIn() && getUserRole() == 'student';
+    }
+    
+    function isTeacher() {
+      return isSignedIn() && getUserRole() == 'teacher';
+    }
+    
+    function isParent() {
+      return isSignedIn() && getUserRole() == 'parent';
+    }
+    
+    function isSchoolAdmin() {
+      return isSignedIn() && getUserRole() == 'school_admin';
+    }
+    
+    function isESAAdmin() {
+      return isSignedIn() && getUserRole() == 'esa_admin';
+    }
+    
+    function isMinistryAdmin() {
+      return isSignedIn() && getUserRole() == 'ministry_admin';
+    }
+    
+    function isAnyAdmin() {
+      return isSchoolAdmin() || isESAAdmin() || isMinistryAdmin();
+    }
+    
+    // Organization Checks
+    function isSameSchool(schoolId) {
+      return getUserData().schoolId == schoolId;
+    }
+    
+    function isSameESA(esaId) {
+      return getUserData().esaId == esaId;
+    }
+    
+    function canAccessSchool(schoolId) {
+      return isMinistryAdmin() || 
+             (isESAAdmin() && get(/databases/$(database)/documents/organizations/$(schoolId)).data.esaId == getUserData().esaId) ||
+             (isSchoolAdmin() && isSameSchool(schoolId));
+    }
+    
+    // ==================== Core Collections ====================
+    
+    // Users collection (ENHANCED with hierarchy)
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        isOwner(userId) || 
+        isAnyAdmin() ||
+        isTeacher() ||  // Teachers can read all users for dashboard
+        isParent()  // Parents can read users to link with students
+      );
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (isOwner(userId) || isAnyAdmin());
+      allow delete: if false; // No deletion allowed
+    }
+    
+    // Organizations collection (NEW)
+    // Allow reading ESAs and schools for profile setup (even without role)
+    match /organizations/{orgId} {
+      allow read: if isSignedIn(); // Anyone logged in can read (for profile setup)
+      allow create: if isMinistryAdmin() || isESAAdmin();
+      allow update: if isMinistryAdmin() || 
+                      (isESAAdmin() && resource.data.esaId == getUserData().esaId) ||
+                      (isSchoolAdmin() && resource.data.id == getUserData().schoolId);
+      allow delete: if isMinistryAdmin();
+    }
+    
+    // Classrooms collection (NEW)
+    match /classrooms/{classroomId} {
+      allow read: if isSignedIn() && (
+        canAccessSchool(resource.data.schoolId) ||
+        (isTeacher() && getUserData().uid in resource.data.teacherIds) ||
+        (isStudent() && request.auth.uid in resource.data.studentIds)
+      );
+      allow create: if isSchoolAdmin() || isTeacher();
+      allow update: if isSchoolAdmin() || 
+                      (isTeacher() && getUserData().uid in resource.data.teacherIds);
+      allow delete: if isSchoolAdmin();
+    }
+    
+    // Master Curriculums collection (NEW)
+    match /master_curriculums/{curriculumId} {
+      allow read: if isSignedIn(); // ทุกคนอ่านได้
+      allow create: if isMinistryAdmin(); // เฉพาะกระทรวงสร้างได้
+      allow update: if isMinistryAdmin();
+      allow delete: if isMinistryAdmin();
+    }
+    
+    // Educational Standards collection (NEW)
+    match /educational_standards/{standardId} {
+      allow read: if isSignedIn(); // ทุกคนอ่านได้
+      allow create: if isMinistryAdmin();
+      allow update: if isMinistryAdmin();
+      allow delete: if isMinistryAdmin();
+    }
+    
+    // Student Portfolios collection (NEW)
+    match /student_portfolios/{portfolioId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.studentId) ||
+        canAccessSchool(resource.data.schoolId)
+      );
+      allow create: if isSignedIn(); // Auto-created by system
+      allow update: if isSignedIn(); // Auto-updated by system
+      allow delete: if false; // Keep forever
+    }
+    
+    // National Analytics collection (NEW)
+    match /national_analytics/{analyticsId} {
+      allow read: if isMinistryAdmin() || isESAAdmin();
+      allow create: if isSignedIn(); // Cloud Functions create
+      allow update: if isSignedIn(); // Cloud Functions update
+      allow delete: if isMinistryAdmin();
+    }
+    
+    // Sessions collection
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      allow create: if isSignedIn() && isStudent();
+      allow update: if isSignedIn() && 
+                      (isOwner(resource.data.studentId) || isTeacher());
+      allow delete: if false;
+    }
+    
+    // Messages collection
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if false;
+      allow delete: if false;
+    }
+    
+    // Assessments collection
+    match /assessments/{assessmentId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      allow create: if isSignedIn(); // Cloud Functions create these
+      allow update: if isTeacher();
+      allow delete: if false;
+    }
+    
+    // Reports collection
+    match /reports/{reportId} {
+      allow read: if isTeacher();
+      allow create: if isTeacher();
+      allow update: if isTeacher();
+      allow delete: if isTeacher();
+    }
+    
+    // Courses collection (ENHANCED with school context)
+    match /courses/{courseId} {
+      allow read: if isSignedIn(); // ให้ทุกคนที่ login แล้วอ่านได้ (จะ filter ที่ client)
+      allow create: if isTeacher();
+      allow update: if isTeacher() && isOwner(resource.data.teacherId);
+      allow delete: if isTeacher() && isOwner(resource.data.teacherId);
+    }
+    
+    // Student Progress collection
+    match /studentProgress/{progressId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      allow create: if isSignedIn(); // Cloud Functions สร้าง
+      allow update: if isSignedIn(); // Cloud Functions อัปเดต
+      allow delete: if false; // ไม่อนุญาตให้ลบ
+    }
+    
+    // Questions collection (ENHANCED with sharing scope)
+    match /questions/{questionId} {
+      allow read: if isSignedIn(); // ให้ทุกคนที่ login แล้วอ่านได้ (จะ filter ที่ client)
+      allow create: if isTeacher();
+      allow update: if isTeacher() || isSignedIn(); // ครูแก้ได้ หรือ update usageCount
+      allow delete: if isTeacher() && isOwner(resource.data.teacherId);
+    }
+    
+    // Class Reports collection (NEW - for analytics dashboard)
+    match /classReports/{reportId} {
+      allow read: if isTeacher(); // เฉพาะครูอ่านได้
+      allow create: if isSignedIn(); // Cloud Functions สร้าง
+      allow update: if isSignedIn(); // Cloud Functions อัปเดต
+      allow delete: if isTeacher(); // เฉพาะครูลบได้
+    }
+    
+    // Learning Paths collection (ADAPTIVE LEARNING)
+    match /learningPaths/{pathId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions generate paths
+      allow update: if isSignedIn(); // Update progress
+      allow delete: if isTeacher();
+    }
+    
+    // Student Goals collection (GOAL SETTING)
+    match /studentGoals/{goalId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn() && isStudent();
+      allow update: if isSignedIn() && isOwner(resource.data.studentId);
+      allow delete: if isSignedIn() && isOwner(resource.data.studentId);
+    }
+    
+    // Micro Lessons collection (CONTENT FOR ADAPTIVE PATHS)
+    match /microLessons/{lessonId} {
+      allow read: if isSignedIn(); // ทุกคนอ่านได้
+      allow create: if isTeacher(); // เฉพาะครูสร้างได้
+      allow update: if isTeacher();
+      allow delete: if isTeacher();
+    }
+    
+    // 🆕 Lesson Completions collection (TRACK STUDENT LESSON PROGRESS)
+    match /lessonCompletions/{completionId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn() && isStudent(); // Students mark lessons complete
+      allow update: if isSignedIn() && isOwner(resource.data.studentId); // Update rating
+      allow delete: if false; // Keep completion history
+    }
+    
+    // 🆕 Recommendations collection (PERSONALIZED CONTENT RECOMMENDATIONS)
+    match /recommendations/{recommendationId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions generate recommendations
+      allow update: if isSignedIn() && isOwner(resource.data.studentId); // Mark as dismissed
+      allow delete: if isSignedIn() && isOwner(resource.data.studentId); // Delete old recommendations
+    }
+    
+    // 🆕 Review Schedule collection (SPACED REPETITION SYSTEM)
+    match /reviewSchedule/{scheduleId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions schedule reviews
+      allow update: if isSignedIn() && isOwner(resource.data.studentId); // Mark as completed
+      allow delete: if isTeacher(); // Teachers can clear old schedules
+    }
+    
+    // Progress History collection (TRACK IMPROVEMENTS OVER TIME)
+    match /progressHistory/{historyId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions record history
+      allow update: if false; // Immutable once created
+      allow delete: if false; // Keep history forever
+    }
+    
+    // Risk Predictions collection (PHASE 3: PREDICTIVE ANALYTICS)
+    match /riskPredictions/{predictionId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions generate predictions
+      allow update: if false; // Immutable once created
+      allow delete: if isTeacher(); // Teachers can delete old predictions
+    }
+    
+    // Skill Gap Analyses collection (PHASE 3: SKILL GAP ANALYSIS)
+    match /skillGapAnalyses/{analysisId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher());
+      allow create: if isSignedIn(); // Cloud Functions generate analyses
+      allow update: if false; // Immutable once created
+      allow delete: if isTeacher();
+    }
+    
+    // Intervention Plans collection (PHASE 3: AI INTERVENTIONS)
+    match /interventionPlans/{planId} {
+      allow read: if isTeacher(); // Only teachers can see intervention plans
+      allow create: if isSignedIn(); // Cloud Functions generate plans
+      allow update: if isTeacher(); // Teachers can mark as implemented
+      allow delete: if isTeacher();
+    }
+    
+    // Parent Reports collection (PHASE 3: PARENT REPORTS)
+    match /parentReports/{reportId} {
+      allow read: if isSignedIn() &&
+                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      allow create: if isSignedIn(); // Cloud Functions generate reports
+      allow update: if isTeacher(); // Teachers can add comments
+      allow delete: if isTeacher();
+    }
+    
+    // Notifications collection (PHASE 3: SMART NOTIFICATIONS)
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() &&
+                    (isOwner(resource.data.userId) || isTeacher());
+      allow create: if isSignedIn(); // System generates notifications
+      allow update: if isSignedIn() && isOwner(resource.data.userId); // Mark as read
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+    
+    // 🆕 Anti-Cheat Logs collection (MONITOR SUSPICIOUS ACTIVITY)
+    match /antiCheatLogs/{logId} {
+      allow read: if isTeacher() || isAnyAdmin(); // Only teachers and admins can view
+      allow create: if isSignedIn(); // Cloud Functions log suspicious activity
+      allow update: if isTeacher(); // Teachers can review and mark as resolved
+      allow delete: if isAnyAdmin(); // Only admins can delete logs
+    }
+    
+    // 🆕 Lesson Plans collection (AI-GENERATED TEACHING PLANS)
+    match /lessonPlans/{planId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.teacherId) || isAnyAdmin() ||
+                     (resource.data.status == 'published' && isTeacher()));
+      allow create: if isTeacher(); // Only teachers can create lesson plans
+      allow update: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can update
+      allow delete: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can delete
+    }
+    
+    // 🆕 Course Structures collection (AI CURRICULUM DESIGNER)
+    match /courseStructures/{structureId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.teacherId) || isAnyAdmin());
+      allow create: if isTeacher(); // Only teachers can create
+      allow update: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can update
+      allow delete: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can delete
+    }
+    
+    // 🆕 Learning Units collection (AI CURRICULUM DESIGNER - UNIT DETAILS)
+    match /learningUnits/{unitId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.teacherId) || isAnyAdmin());
+      allow create: if isTeacher(); // Only teachers can create
+      allow update: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can update
+      allow delete: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can delete
+    }
+    
+    // 🆕 AI Usage Logs collection (TRACK AI FEATURE USAGE)
+    match /aiUsageLogs/{logId} {
+      allow read: if isAnyAdmin(); // Only admins can view usage logs
+      allow create: if isSignedIn(); // Cloud Functions log AI usage
+      allow update: if false; // Immutable
+      allow delete: if isMinistryAdmin(); // Only ministry admin can delete
+    }
+    
+    // 🆕 Audit Logs collection (SYSTEM AUDIT TRAIL)
+    match /auditLogs/{logId} {
+      allow read: if isAnyAdmin(); // Only admins can view audit logs
+      allow create: if isSignedIn(); // Cloud Functions create audit logs
+      allow update: if false; // Immutable
+      allow delete: if false; // Never delete audit logs
+    }
+    
+    // ==================== ELECTRONIC WORKSHEET SYSTEM ====================
+    
+    // 🆕 Electronic Worksheets collection (AI-GENERATED WORKSHEETS)
+    match /eWorksheets/{worksheetId} {
+      allow read: if isSignedIn(); // All authenticated users can read
+      allow create: if isTeacher(); // Only teachers can create worksheets
+      // Allow teachers full update, students can only update stats
+      allow update: if isTeacher() || 
+                      (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats']));
+      allow delete: if isTeacher(); // Teachers can delete their worksheets
+    }
+    
+    // 🆕 Worksheet Submissions collection (STUDENT SUBMISSIONS)
+    match /worksheetSubmissions/{submissionId} {
+      allow read: if isSignedIn() && 
+                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      // Allow any signed-in user to create, check studentId matches their uid
+      allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSignedIn(); // System updates with assessment
+      allow delete: if false; // Never delete submissions
+    }
+    
+    // 🆕 Worksheet Drafts collection (STUDENT DRAFT ANSWERS)
+    match /worksheetDrafts/{draftId} {
+      allow read: if isSignedIn() && isOwner(resource.data.studentId);
+      // Allow any signed-in user to create/update their own drafts
+      allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+    
+    // 🆕 Learning Rooms collection (ACTIVITY ROOMS FOR COURSES)
+    match /learningRooms/{roomId} {
+      allow read: if isSignedIn(); // All authenticated users can view rooms
+      allow create: if isTeacher(); // Only teachers can create rooms
+      allow update: if isTeacher(); // Teachers can update their rooms
+      allow delete: if isTeacher(); // Teachers can delete their rooms
+    }
+    
+    // 🆕 Knowledge Sheets collection (AI-GENERATED KNOWLEDGE SHEETS)
+    match /knowledgeSheets/{sheetId} {
+      allow read: if isSignedIn(); // All authenticated users can read
+      allow create: if isTeacher(); // Only teachers can create
+      allow update: if isTeacher(); // Teachers can update their sheets
+      allow delete: if isTeacher(); // Teachers can delete their sheets
+    }
+    
+    // 🆕 Unit Knowledge Sheets collection (AI-GENERATED UNIT-LEVEL KNOWLEDGE SHEETS)
+    match /unitKnowledgeSheets/{sheetId} {
+      allow read: if isSignedIn(); // All authenticated users can read
+      allow create: if isTeacher(); // Only teachers can create
+      allow update: if isTeacher(); // Teachers can update their sheets
+      allow delete: if isTeacher(); // Teachers can delete their sheets
+    }
+  }
+}

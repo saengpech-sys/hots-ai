@@ -1,0 +1,25 @@
+{
+  "name": "hots-ai-chatloop",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AI Chatbot for Higher-Order Thinking Skills Assessment with Real-time Feedback",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "functions:serve": "cd functions && npm run serve",
+    "functions:deploy": "cd functions && npm run deploy"
+  },
+  "dependencies": {
+    "firebase": "^10.9.0",
+    "marked": "^17.0.0",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.1.6",
+    "vite-plugin-pwa": "^1.1.0"
+  }
+}

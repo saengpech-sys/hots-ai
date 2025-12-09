@@ -1,0 +1,718 @@
+<template>
+  <div class="portfolio-container">
+    <div class="header-section">
+      <div>
+        <h1>Teacher Professional Portfolio</h1>
+        <p>Track your impact on student excellence and talent development</p>
+      </div>
+      <button @click="generatePDF" class="btn btn-primary">
+        <span class="material-icons">picture_as_pdf</span>
+        Export Portfolio
+      </button>
+    </div>
+
+    <div v-if="loading" class="loading-container">
+      <LoadingSpinner />
+    </div>
+
+    <div v-else class="content-wrapper">
+      <!-- Impact Summary Cards -->
+      <div class="stats-grid">
+        <div class="stat-card border-blue">
+          <div class="stat-content">
+            <div>
+              <p class="stat-label">Total Students</p>
+              <h3 class="stat-value">{{ stats.totalStudents }}</h3>
+            </div>
+            <span class="material-icons stat-icon icon-blue">groups</span>
+          </div>
+        </div>
+
+        <div class="stat-card border-purple">
+          <div class="stat-content">
+            <div>
+              <p class="stat-label">Talent Track</p>
+              <h3 class="stat-value">{{ stats.talentCount }}</h3>
+              <p class="stat-sub text-green">
+                <span class="material-icons text-xs">trending_up</span>
+                {{ stats.talentPercentage }}% of class
+              </p>
+            </div>
+            <span class="material-icons stat-icon icon-purple">stars</span>
+          </div>
+        </div>
+
+        <div class="stat-card border-green">
+          <div class="stat-content">
+            <div>
+              <p class="stat-label">HOTS Growth</p>
+              <h3 class="stat-value">+{{ stats.avgGrowth }}%</h3>
+            </div>
+            <span class="material-icons stat-icon icon-green">show_chart</span>
+          </div>
+        </div>
+
+        <div class="stat-card border-amber">
+          <div class="stat-content">
+            <div>
+              <p class="stat-label">Teacher Level</p>
+              <h3 class="stat-value text-lg">{{ teacherLevel }}</h3>
+            </div>
+            <span class="material-icons stat-icon icon-amber">military_tech</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-grid">
+        <!-- Talent Distribution -->
+        <div class="card talent-section">
+          <h3 class="section-title">
+            <span class="material-icons text-purple">psychology</span>
+            Talent Track Distribution
+          </h3>
+          <div class="track-list">
+            <div v-for="(count, track) in stats.tracks" :key="track" class="track-item">
+              <div class="track-header">
+                <span class="track-badge">
+                  {{ formatTrackName(track) }}
+                </span>
+                <span class="track-count">
+                  {{ count }} students
+                </span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: (count / stats.totalStudents * 100) + '%' }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Teacher Badges -->
+        <div class="card badges-section">
+          <h3 class="section-title">
+            <span class="material-icons text-amber">workspace_premium</span>
+            Professional Achievements
+          </h3>
+          <div class="badges-grid">
+            <div v-for="badge in badges" :key="badge.id" 
+                 class="badge-card"
+                 :class="{ 'earned': badge.earned }">
+              <div class="badge-icon">{{ badge.icon }}</div>
+              <h4 class="badge-name">{{ badge.name }}</h4>
+              <p class="badge-criteria">{{ badge.criteria }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Student Success Stories -->
+      <div class="card students-section">
+        <div class="card-header">
+          <h3 class="section-title">
+            <span class="material-icons text-green">emoji_events</span>
+            Student Success Highlights
+          </h3>
+        </div>
+        <div class="table-responsive">
+          <table class="students-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Track</th>
+                <th>Top Skill</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="student in topStudents" :key="student.id">
+                <td>
+                  <div class="student-cell">
+                    <div class="avatar-circle">
+                      {{ student.name.charAt(0) }}
+                    </div>
+                    <span class="student-name">{{ student.name }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span v-for="tag in student.talentTags" :key="tag" class="tag-badge">
+                    {{ formatTrackName(tag) }}
+                  </span>
+                </td>
+                <td class="text-secondary">
+                  {{ getTopSkill(student.talentScores) }}
+                </td>
+                <td>
+                  <span class="status-badge active">Active</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { db } from '@/firebase/config'
+import { collection, query, where, getDocs } from 'firebase/firestore'
+import { useAuthStore } from '@/stores/auth'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+
+const authStore = useAuthStore()
+const loading = ref(true)
+const stats = ref({
+  totalStudents: 0,
+  talentCount: 0,
+  talentPercentage: 0,
+  avgGrowth: 0,
+  tracks: {}
+})
+const topStudents = ref([])
+
+const badges = ref([
+  { id: 1, name: 'Talent Scout', icon: '🕵️', criteria: 'Identify 5+ talent track students', earned: false },
+  { id: 2, name: 'Innovation Mentor', icon: '💡', criteria: '3+ students in Innovation Track', earned: false },
+  { id: 3, name: 'Research Guide', icon: '🔬', criteria: '3+ students in Research Track', earned: false },
+  { id: 4, name: 'HOTS Master', icon: '🧠', criteria: 'Class avg HOTS > 3.5', earned: false },
+  { id: 5, name: 'World Class', icon: '🌍', criteria: '10+ talent students', earned: false },,
+  { id: 6, name: 'National Contributor', icon: '🇺🇸', criteria: 'Share 5+ resources publicly', earned: false }{ id: 6, name: 'National Contributor', icon: '🤝', criteria: 'Share 5+ items to National PLC', earned: false }
+])])
+
+const teacherLevel = computed(() => {
+  const earnedCount = badges.value.filter(b => b.earned).length.earned).length
+  if (earnedCount >= 4) return 'Master Educator'
+  if (earnedCount >= 2) return 'Advanced Teacher'rn 'Advanced Teacher'
+  return 'Certified Teacher'return 'Certified Teacher'
+})})
+
+const formatTrackName = (track) => {
+  return track.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) return track.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+}}
+
+const getTopSkill = (scores) => {) => {
+  if (!scores) return 'N/A'
+  return Object.entries(scores).reduce((a, b) => a[1] > b[1] ? a : b)[0] return Object.entries(scores).reduce((a, b) => a[1] > b[1] ? a : b)[0]
+}}
+
+const fetchPortfolioData = async () => {etchPortfolioData = async () => {
+  try {
+    // 1. Get all students (in a real app, filter by teacher's courses)
+    // For demo, we'll fetch all students since we don't have complex course-student linking yet-student linking yet
+    const q = query(collection(db, 'users'), where('role', '==', 'student'))sers'), where('role', '==', 'student'))
+    const snapshot = await getDocs(q)const snapshot = await getDocs(q)
+    
+    let total = 0
+    let talent = 0
+    let tracks = { research_track: 0, innovation_track: 0 }search_track: 0, innovation_track: 0 }
+    let students = []let students = []
+    
+    snapshot.forEach(doc => {
+      const data = doc.data()ata = doc.data()
+      total++total++
+      
+      if (data.talentTags && data.talentTags.length > 0) {alentTags && data.talentTags.length > 0) {
+        talent++
+        data.talentTags.forEach(tag => {
+          if (tracks[tag] !== undefined) tracks[tag]++if (tracks[tag] !== undefined) tracks[tag]++
+        })})
+        
+        students.push({({
+          id: doc.id,
+          name: data.displayName || 'Student',tudent',
+          talentTags: data.talentTags,
+          talentScores: data.talentScorestalentScores: data.talentScores
+        }) })
+      }}
+    })})
+    
+    stats.value = {
+      totalStudents: total,,
+      talentCount: talent,
+      talentPercentage: total > 0 ? Math.round((talent / total) * 100) : 0,nd((talent / total) * 100) : 0,
+      avgGrowth: 15, // Mock data for growthwth: 15, // Mock data for growth
+      tracks tracks
+    }}
+    
+    topStudents.value = students.slice(0, 10)topStudents.value = students.slice(0, 10)
+    
+    // Check shared content for National Contributor badge
+    const sharedQuestionsQuery = query(
+      collection(db, 'questions'),  3
+      where('teacherId', '==', authStore.user.uid),rch_track >= 3
+      where('isPublic', '==', true)
+    )badges.value[4].earned = talent >= 10
+    const sharedLessonsQuery = query(
+      collection(db, 'microLessons'), 
+      where('teacherId', '==', authStore.user.uid),rror('Error fetching portfolio:', error)
+      where('isPublic', '==', true)
+    ) loading.value = false
+     }
+    const [sharedQuestionsSnap, sharedLessonsSnap] = await Promise.all([}
+      getDocs(sharedQuestionsQuery),
+      getDocs(sharedLessonsQuery)F = () => {
+    ]) window.print()
+    }
+    const totalShared = sharedQuestionsSnap.size + sharedLessonsSnap.size
+
+    // Calculate badgesfetchPortfolioData()
+    badges.value[0].earned = talent >= 5
+    badges.value[1].earned = tracks.innovation_track >= 3
+    badges.value[2].earned = tracks.research_track >= 3
+    badges.value[3].earned = true // Mock {
+    badges.value[4].earned = talent >= 10px;
+    badges.value[5].earned = totalShared >= 5
+    
+  } catch (error) {
+    console.error('Error fetching portfolio:', error) font-family: 'Inter', sans-serif;
+  } finally {}
+    loading.value = false
+  }{
+}
+ce-between;
+const generatePDF = () => {
+  window.print()rem;
+}rap;
+
+onMounted(() => {near-gradient(to right, var(--bg-secondary), transparent);
+  fetchPortfolioData()
+}) border-radius: 1rem;
+</script>}
+<style scoped>
+.portfolio-container {
+  max-width: 1200px;m;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  color: var(--text-primary););
+  font-family: 'Inter', sans-serif; letter-spacing: -0.025em;
+}}
+
+.header-section {
+  display: flex;secondary);
+  justify-content: space-between; font-size: 1.1rem;
+  align-items: center;}
+  margin-bottom: 3rem;
+  flex-wrap: wrap;
+  gap: 1.5rem;;
+  background: linear-gradient(to right, var(--bg-secondary), transparent);center;
+  padding: 2rem;
+  border-radius: 1rem;em;
+}75rem;
+;
+.header-section h1 {
+  font-size: 2.25rem;ll 0.3s ease;
+  font-weight: 800;
+  margin-bottom: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);}
+  letter-spacing: -0.025em;
+}
+
+.header-section p { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);}
+  font-size: 1.1rem;
+}
+inear-gradient(135deg, var(--primary), var(--primary-dark));
+.btn { color: white;
+  display: inline-flex;}
+  align-items: center;
+  gap: 0.75rem;er {
+  padding: 0.875rem 1.75rem;
+  border-radius: 0.75rem;t: center;
+  font-weight: 600; padding: 5rem;
+  cursor: pointer;}
+  transition: all 0.3s ease;
+  border: none; {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}tion: column;
+ gap: 3rem;
+.btn:hover {}
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); */
+}
+
+.btn-primary {ate-columns: repeat(auto-fit, minmax(260px, 1fr));
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark)); gap: 2rem;
+  color: white;}
+}
+
+.loading-container {r(--bg-primary);
+  display: flex; 1rem;
+  justify-content: center;
+  padding: 5rem;0, 0, 0.1);
+}
+ transition: transform 0.3s ease, box-shadow 0.3s ease;
+.content-wrapper {}
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+} box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+/* Stats Grid */
+.stats-grid {
+  display: grid;}
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;.stat-card.border-amber { border-left-color: #ed8936; }
+}
+
+.stat-card {
+  background-color: var(--bg-primary);etween;
+  border-radius: 1rem;s: flex-start;
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);e;
+  border-left: 6px solid transparent; overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;}
+}
+
+.stat-card:hover {;
+  transform: translateY(-5px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);se;
+}
+ndary);
+.stat-card.border-blue { border-left-color: #4299e1; }
+.stat-card.border-purple { border-left-color: #9f7aea; } if needed */
+.stat-card.border-green { border-left-color: #48bb78; } line-height: 1.2;
+.stat-card.border-amber { border-left-color: #ed8936; }}
+
+.stat-content {
+  display: flex;;
+  justify-content: space-between;
+  align-items: flex-start;(--text-primary);
+  gap: 1rem;
+  position: relative; line-height: 1.2;
+  overflow: hidden;}
+}
+
+.stat-label {
+  font-size: 0.9rem;5rem;
+  font-weight: 600;
+  text-transform: uppercase;center;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);;
+  margin-bottom: 0.5rem; flex-wrap: wrap;
+  /* Allow wrapping if needed */}
+  line-height: 1.2;
+}
+
+.stat-value {rem;
+  font-size: 2.5rem;;
+  font-weight: 800;;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;ent: center;
+}
+ height: 4rem;
+.stat-sub {}
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  display: flex; }
+  align-items: center;
+  gap: 0.35rem;.icon-amber { color: #ed8936; background-color: rgba(237, 137, 54, 0.1); }
+  font-weight: 500;
+  flex-wrap: wrap; */
+}
+
+.stat-icon {e-columns: repeat(auto-fit, minmax(450px, 1fr));
+  padding: 1rem; gap: 2.5rem;
+  border-radius: 1rem;}
+  font-size: 2rem;
+  flex-shrink: 0;
+  display: flex;-bg-primary);
+  align-items: center; 1.25rem;
+  justify-content: center;
+  width: 4rem;0, 0.1);
+  height: 4rem; border: 1px solid var(--border-color);
+}}
+
+.icon-blue { color: #4299e1; background-color: rgba(66, 153, 225, 0.1); }
+.icon-purple { color: #9f7aea; background-color: rgba(159, 122, 234, 0.1); }m;
+.icon-green { color: #48bb78; background-color: rgba(72, 187, 120, 0.1); }
+.icon-amber { color: #ed8936; background-color: rgba(237, 137, 54, 0.1); } 1.5rem;
+
+/* Main Grid */center;
+.main-grid {
+  display: grid;mary);
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 2.5rem; border-bottom: 2px solid var(--bg-secondary);
+}}
+
+.card {ck List */
+  background-color: var(--bg-primary);
+  border-radius: 1.25rem;
+  padding: 2rem;on: column;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); gap: 1.5rem;
+  border: 1px solid var(--border-color);}
+}
+
+.section-title { padding: 0.5rem 0;
+  font-size: 1.25rem;}
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;ce-between;
+  gap: 0.75rem;
+  color: var(--text-primary); margin-bottom: 0.75rem;
+  padding-bottom: 1rem;}
+  border-bottom: 2px solid var(--bg-secondary);
+}
+;
+/* Talent Track List */
+.track-list {;
+  display: flex;em;
+  flex-direction: column;9999px;
+  gap: 1.5rem;
+}f;
+ letter-spacing: 0.025em;
+.track-item {}
+  padding: 0.5rem 0;
+}
+r: rgba(128, 90, 213, 0.2);
+.track-header { color: #d6bcfa;
+  display: flex;}
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;;
+}
+ color: var(--text-secondary);
+.track-badge {}
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.35rem 0.75rem;--bg-secondary);
+  border-radius: 9999px;99px;
+  color: #805ad5; overflow: hidden;
+  background-color: #f3e8ff;}
+  letter-spacing: 0.025em;
+}{
+
+.dark-mode .track-badge {dient(90deg, #9f7aea, #805ad5);
+  background-color: rgba(128, 90, 213, 0.2);
+  color: #d6bcfa; transition: width 1s ease-out;
+}}
+
+.track-count { */
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);e-columns: repeat(auto-fill, minmax(120px, 1fr));
+} gap: 1.5rem;
+}
+.progress-bar {
+  height: 0.75rem;
+  background-color: var(--bg-secondary);
+  border-radius: 9999px;mn;
+  overflow: hidden;
+};
+
+.progress-fill {ar(--border-color);
+  height: 100%;
+  background: linear-gradient(90deg, #9f7aea, #805ad5);
+  border-radius: 9999px; background-color: var(--bg-secondary);
+  transition: width 1s ease-out;}
+}
+
+/* Badges Grid */
+.badges-grid {
+  display: grid; box-shadow: 0 4px 6px -1px rgba(236, 201, 75, 0.2);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));}
+  gap: 1.5rem;
+}
+ background: linear-gradient(135deg, rgba(236, 201, 75, 0.1), rgba(236, 201, 75, 0.05));
+.badge-card {}
+  display: flex;
+  flex-direction: column;(.earned) {
+  align-items: center;
+  padding: 1.5rem 1rem; filter: grayscale(100%);
+  border-radius: 1rem;}
+  border: 2px solid var(--border-color);
+  text-align: center;
+  transition: all 0.3s;
+  background-color: var(--bg-secondary);
+} filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+.badge-card.earned {
+  border-color: #ecc94b;
+  background: linear-gradient(135deg, #fffff0, #fff);;
+  box-shadow: 0 4px 6px -1px rgba(236, 201, 75, 0.2);
+}
+-primary);
+.dark-mode .badge-card.earned { line-height: 1.3;
+  background: linear-gradient(135deg, rgba(236, 201, 75, 0.1), rgba(236, 201, 75, 0.05));}
+}
+
+.badge-card:not(.earned) {
+  opacity: 0.6;-secondary);
+  filter: grayscale(100%); line-height: 1.4;
+}}
+
+.badge-icon {/
+  font-size: 2.5rem;tion {
+  margin-bottom: 0.75rem;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));den;
+}
+ box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+.badge-name {}
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  line-height: 1.3; border-bottom: 1px solid var(--border-color);
+}}
+
+.badge-criteria {section-title {
+  font-size: 0.75rem;
+  color: var(--text-secondary);e;
+  line-height: 1.4; padding-bottom: 0;
+}}
+
+/* Students Table */
+.students-section { overflow-x: auto;
+  padding: 0;}
+  overflow: hidden;
+  border: none;e {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}collapse;
+
+.card-header { background-color: var(--bg-primary);
+  padding: 2rem;}
+  background-color: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}.5rem;
+;
+.students-section .section-title {
+  margin-bottom: 0;se;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+ border-bottom: 2px solid var(--border-color);
+.table-responsive {}
+  overflow-x: auto;
+}
+
+.students-table {r(--border-color);
+  width: 100%;ry);
+  border-collapse: collapse; vertical-align: middle;
+  text-align: left;}
+  background-color: var(--bg-primary);
+}t-child td {
+ border-bottom: none;
+.students-table th {}
+  padding: 1.25rem 1.5rem;
+  font-size: 0.8rem;
+  font-weight: 700; background-color: var(--bg-hover);
+  text-transform: uppercase;}
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  background-color: var(--bg-secondary);
+  border-bottom: 2px solid var(--border-color);s: center;
+} gap: 1rem;
+}
+.students-table td {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}ear-gradient(135deg, #ebf8ff, #bee3f8);
+;
+.students-table tr:last-child td {
+  border-bottom: none;
+}center;
+
+.students-table tr:hover td {
+  background-color: var(--bg-hover); box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}}
+
+.student-cell {
+  display: flex;ear-gradient(135deg, rgba(66, 153, 225, 0.2), rgba(66, 153, 225, 0.1));
+  align-items: center; color: #90cdf4;
+  gap: 1rem;}
+}
+
+.avatar-circle {
+  width: 2.5rem; font-size: 0.95rem;
+  height: 2.5rem;}
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ebf8ff, #bee3f8);
+  color: #2b6cb0;;
+  display: flex;
+  align-items: center;em;
+  justify-content: center;px;
+  font-weight: 700;m;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);r: #e9d8fd;
+}
+
+.dark-mode .avatar-circle { border: 1px solid rgba(159, 122, 234, 0.2);
+  background: linear-gradient(135deg, rgba(66, 153, 225, 0.2), rgba(66, 153, 225, 0.1));}
+  color: #90cdf4;
+}
+r: rgba(128, 90, 213, 0.2);
+.student-name { color: #d6bcfa;
+  font-weight: 600;}
+  font-size: 0.95rem;
+}
+;
+.tag-badge {
+  display: inline-flex;em;
+  align-items: center;px;
+  padding: 0.25rem 0.75rem;m;
+  border-radius: 9999px; font-weight: 600;
+  font-size: 0.75rem;}
+  font-weight: 600;
+  background-color: #e9d8fd;
+  color: #553c9a;r: #c6f6d5;
+  margin-right: 0.5rem;
+  border: 1px solid rgba(159, 122, 234, 0.2); border: 1px solid rgba(72, 187, 120, 0.2);
+}}
+
+.dark-mode .tag-badge {
+  background-color: rgba(128, 90, 213, 0.2);r: rgba(72, 187, 120, 0.2);
+  color: #d6bcfa; color: #9ae6b4;
+}}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;}
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;ext-secondary); }
+  font-weight: 600;
+}.text-lg { font-size: 1.125rem; }
+
+.status-badge.active {
+  background-color: #c6f6d5;ns, .filter-section {
+  color: #22543d; display: none !important;
+  border: 1px solid rgba(72, 187, 120, 0.2);
+}
+
+.dark-mode .status-badge.active {tant;
+  background-color: rgba(72, 187, 120, 0.2); padding: 0 !important;
+  color: #9ae6b4;
+}
+
+/* Utilities */ee !important;
+.text-blue { color: #4299e1; } break-inside: avoid;
+.text-purple { color: #9f7aea; } }
+.text-green { color: #48bb78; }
+.text-amber { color: #ed8936; }</style>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</style>}  }    break-inside: avoid;    border: 1px solid #eee !important;    box-shadow: none !important;  .card, .stat-card {  }    padding: 0 !important;    max-width: none !important;    width: 100% !important;  .portfolio-container {  }    display: none !important;  .btn, .navbar, .quick-actions, .filter-section {@media print {.text-lg { font-size: 1.125rem; }.text-xs { font-size: 0.75rem; }.text-secondary { color: var(--text-secondary); }
