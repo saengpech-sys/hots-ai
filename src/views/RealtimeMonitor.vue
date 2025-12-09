@@ -30,6 +30,76 @@
       <span v-if="autoRefresh && nextRefresh">Next: {{ nextRefresh }}s</span>
     </div>
 
+    <!-- 🟢 Online Students Section (NEW) -->
+    <div class="online-students-section card">
+      <div class="section-header">
+        <h3>
+          <span class="online-dot"></span>
+          🟢 นักเรียนออนไลน์ตอนนี้ ({{ onlineStudents.length }})
+        </h3>
+        <span class="live-badge">LIVE</span>
+      </div>
+      
+      <div v-if="presenceLoading" class="loading-inline">
+        <span class="spinner-small"></span> กำลังโหลด...
+      </div>
+      
+      <div v-else-if="onlineStudents.length === 0" class="empty-state">
+        <p>😴 ไม่มีนักเรียนออนไลน์ในขณะนี้</p>
+      </div>
+      
+      <div v-else class="online-students-grid">
+        <div 
+          v-for="student in onlineStudents" 
+          :key="student.odId" 
+          class="online-student-card"
+          :class="student.currentActivity"
+        >
+          <div class="student-avatar">
+            {{ getInitials(student.displayName) }}
+          </div>
+          <div class="student-info">
+            <div class="student-name">{{ student.displayName }}</div>
+            <div class="student-id">{{ student.studentId || 'N/A' }}</div>
+          </div>
+          <div class="student-activity">
+            <span class="activity-icon">{{ activityIcons[student.currentActivity] }}</span>
+            <span class="activity-label">{{ activityLabels[student.currentActivity] }}</span>
+          </div>
+          <div class="student-page">
+            {{ student.currentPage }}
+          </div>
+          <div class="student-time">
+            {{ formatTimeSince(student.timeSinceActive) }}
+          </div>
+        </div>
+      </div>
+      
+      <!-- Activity Summary -->
+      <div v-if="onlineStudents.length > 0" class="activity-summary">
+        <div class="summary-item" v-if="activityCounts.chat > 0">
+          <span class="summary-icon">💬</span>
+          <span class="summary-count">{{ activityCounts.chat }}</span>
+          <span class="summary-label">กำลังตอบคำถาม</span>
+        </div>
+        <div class="summary-item" v-if="activityCounts.worksheet > 0">
+          <span class="summary-icon">📋</span>
+          <span class="summary-count">{{ activityCounts.worksheet }}</span>
+          <span class="summary-label">กำลังทำใบงาน</span>
+        </div>
+        <div class="summary-item" v-if="activityCounts.browsing > 0">
+          <span class="summary-icon">👀</span>
+          <span class="summary-count">{{ activityCounts.browsing }}</span>
+          <span class="summary-label">กำลังดูข้อมูล</span>
+        </div>
+        <div class="summary-item" v-if="activityCounts.idle > 0">
+          <span class="summary-icon">💤</span>
+          <span class="summary-count">{{ activityCounts.idle }}</span>
+          <span class="summary-label">ไม่มีกิจกรรม</span>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading && !metrics" class="loading-state">
       <div class="spinner"></div>
       <p>Loading real-time metrics...</p>
@@ -170,8 +240,37 @@ import { collection, query, where, getDocs, orderBy, limit } from 'firebase/fire
 import { db } from '@/firebase/config'
 import { useAuthStore } from '@/stores/auth'
 import RadarChart from '@/components/RadarChart.vue'
+import { useOnlineStudents, activityIcons, activityLabels } from '@/composables/usePresence'
 
 const authStore = useAuthStore()
+
+// Online students tracking
+const { onlineStudents, loading: presenceLoading } = useOnlineStudents()
+
+// Computed activity counts
+const activityCounts = computed(() => {
+  const counts = { chat: 0, worksheet: 0, browsing: 0, idle: 0 }
+  onlineStudents.value.forEach(student => {
+    const activity = student.currentActivity || 'idle'
+    if (counts[activity] !== undefined) {
+      counts[activity]++
+    }
+  })
+  return counts
+})
+
+// Helper functions for online students
+function getInitials(name) {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+}
+
+function formatTimeSince(seconds) {
+  if (seconds < 60) return 'เมื่อสักครู่'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} นาทีที่แล้ว`
+  return 'นานแล้ว'
+}
 
 const loading = ref(true)
 const selectedCourse = ref('')
@@ -749,6 +848,202 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 
+/* Online Students Section Styles */
+.online-students-section {
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  border: 2px solid #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(5, 150, 105, 0.05) 100%);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.online-dot {
+  width: 12px;
+  height: 12px;
+  background: #10b981;
+  border-radius: 50%;
+  display: inline-block;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-badge {
+  background: #ef4444;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.loading-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  padding: 1rem;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.online-students-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.online-student-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border-left: 4px solid var(--border-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.online-student-card:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.online-student-card.chat {
+  border-left-color: #667eea;
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1) 0%, transparent 100%);
+}
+
+.online-student-card.worksheet {
+  border-left-color: #10b981;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%);
+}
+
+.online-student-card.browsing {
+  border-left-color: #f59e0b;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%);
+}
+
+.online-student-card.idle {
+  border-left-color: #94a3b8;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.1) 0%, transparent 100%);
+}
+
+.student-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.student-info {
+  min-width: 150px;
+}
+
+.student-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.student-id {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.student-activity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 20px;
+  font-size: 0.875rem;
+}
+
+.activity-icon {
+  font-size: 1rem;
+}
+
+.activity-label {
+  color: var(--text-secondary);
+}
+
+.student-page {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: right;
+  min-width: 80px;
+}
+
+.activity-summary {
+  display: flex;
+  gap: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.summary-icon {
+  font-size: 1.25rem;
+}
+
+.summary-count {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.summary-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 768px) {
   .realtime-monitor {
     padding: 1rem;
@@ -766,6 +1061,22 @@ onUnmounted(() => {
 
   .metrics-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .online-student-card {
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem;
+  }
+  
+  .student-activity,
+  .student-page,
+  .student-time {
+    grid-column: 2;
+  }
+  
+  .activity-summary {
+    flex-direction: column;
+    gap: 0.75rem;
   }
 }
 </style>

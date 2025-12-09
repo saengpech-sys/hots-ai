@@ -17,10 +17,15 @@ import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
 import ReloadPrompt from '@/components/ReloadPrompt.vue'
 import ConsentModal from '@/components/ConsentModal.vue'
+import { usePresence } from '@/composables/usePresence'
 
 const themeStore = useThemeStore()
 const authStore = useAuthStore()
 const isDarkMode = computed(() => themeStore.isDarkMode)
+
+// Initialize presence tracking for students
+// This will automatically send heartbeats every 30 seconds
+const { isTracking } = usePresence()
 
 // Sync with Tailwind's dark mode
 const updateThemeClass = (dark) => {

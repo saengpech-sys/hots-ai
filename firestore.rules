@@ -418,5 +418,17 @@ service cloud.firestore {
       allow update: if isTeacher(); // Teachers can update their sheets
       allow delete: if isTeacher(); // Teachers can delete their sheets
     }
+    
+    // 🆕 User Presence collection (REAL-TIME ONLINE STATUS)
+    match /userPresence/{odId} {
+      // Teachers can read all presence data to see online students
+      // Students can only read their own presence
+      allow read: if isSignedIn() && (isOwner(odId) || isTeacher());
+      // Users can create/update their own presence only
+      allow create: if isSignedIn() && isOwner(odId);
+      allow update: if isSignedIn() && isOwner(odId);
+      // Users can delete their own presence (on disconnect)
+      allow delete: if isSignedIn() && isOwner(odId);
+    }
   }
 }

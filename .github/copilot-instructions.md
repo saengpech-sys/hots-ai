@@ -1,72 +1,102 @@
 # HOTS AI ChatLoop - AI Coding Agent Instructions
 
 ## Project Overview
-Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions. Now includes Electronic Worksheets, Lesson Plans, and National Scale features.
+Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (A.R.C.E. Framework: Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions.
+
+**Key Features:**
+- 🤖 AI-powered HOTS assessment with 4-dimensional scoring
+- 📝 Electronic Worksheets with automatic LO evaluation
+- 📚 5E Model Lesson Plans with A.R.C.E. integration
+- 🎮 Gamification (points, badges, streaks, leaderboard)
+- 📊 National Scale architecture (Ministry → ESA → School)
+- 🔒 Anti-cheat system (copy-paste prevention)
 
 ## 🗺️ Navigation & Access
-**Complete Guide**: See [NAVIGATION_GUIDE.md](../NAVIGATION_GUIDE.md)
 
 ### Student Features (9 Menus)
-All accessible from `/student` Dashboard Quick Actions:
-- 🚀 `/chat` - Start Assessment (Primary highlighted button)
-- 🏫 `/learning-rooms` - Learning activity rooms (✨ NEW - Worksheets)
-- 📈 `/my-progress` - LO Progress tracking
-- 📊 `/progress-analytics` - Detailed analytics
-- 🎯 `/adaptive-learning` - Personalized paths
-- 🎯 `/goal-setting` - Set learning goals
-- 🏆 `/leaderboard` - Compete with peers
-- 🗺️ `/progress-map` - LO visualization
-- 👤 `/profile` - User profile
+| Route | Feature | Description |
+|-------|---------|-------------|
+| `/chat` | 🚀 Assessment | Main HOTS chat interface |
+| `/learning-rooms` | 🏫 ห้องกิจกรรม | Electronic worksheet rooms |
+| `/my-progress` | 📈 ความคืบหน้า | LO progress tracking |
+| `/progress-analytics` | 📊 Analytics | Detailed charts |
+| `/adaptive-learning` | 🎯 Adaptive | AI learning paths |
+| `/goal-setting` | 🎯 Goals | Learning goals |
+| `/leaderboard` | 🏆 Leaderboard | Course ranking |
+| `/progress-map` | 🗺️ Progress Map | Visual LO map |
+| `/profile` | 👤 Profile | User settings |
 
-### Teacher Features (12 Menus)
-All accessible from `/teacher` Dashboard Quick Actions:
-- 📚 `/courses` - Course management
-- 💡 `/questions` - Question bank
-- 📊 `/class-analytics` - Class overview
-- 🎯 `/lo-reports` - LO reports
-- 🔮 `/teacher-analytics` - AI Predictions
-- 📡 `/realtime-monitor` - Live monitoring
-- 📝 `/lesson-plans` - Lesson plan management (✨ NEW - 5E + A.R.C.E.)
-- 📋 `/teacher/worksheets` - Electronic worksheets (✨ NEW)
-- 📊 `/teacher/worksheet-reports` - Worksheet reports (✨ NEW)
-- 📖 `/micro-lessons` - Lesson management
-- 📚 `/micro-lesson-library` - Lesson library
-- 👥 `/student-detail/:id` - Student details
+### Teacher Features (14 Menus)
+| Route | Feature | Description |
+|-------|---------|-------------|
+| `/courses` | 📚 รายวิชา | Course management |
+| `/questions` | 💡 คลังคำถาม | Question bank + AI generation |
+| `/class-analytics` | 📊 วิเคราะห์ | Class overview + export |
+| `/lo-reports` | 🎯 รายงาน LO | LO heatmap |
+| `/teacher-analytics` | 🔮 AI Predictions | Predictive analytics |
+| `/realtime-monitor` | 📡 Monitor | Live activity |
+| `/lesson-plans` | 📝 แผนการสอน | 5E lesson plans |
+| `/teacher/worksheets` | 📋 ใบงาน | Worksheet management |
+| `/teacher/worksheet-reports` | 📊 รายงานใบงาน | Worksheet reports + LO |
+| `/micro-lessons` | 📖 Micro Lessons | Short content |
+| `/micro-lesson-library` | 📚 คลัง Lessons | Lesson library |
+| `/student-detail/:id` | 👥 นักเรียน | Individual detail |
+| `/admin-lo-manager` | 🛠️ Admin LO | Edit student LOs |
+| `/knowledge-sheet/:id` | 📄 ใบความรู้ | Pre-learning content |
 
 ## Architecture & Data Flow
 
 ### Tech Stack
-- **Frontend**: Vue 3.4 + Vite 5 + Pinia (Composition API pattern)
-- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20)
-- **AI**: OpenAI GPT-4o-mini (switched from gpt-4o for cost savings)
-- **Deployment**: Firebase Hosting + Functions
+```
+Frontend:  Vue 3.4 + Vite 5 + Pinia (8 stores)
+Backend:   Firebase (Auth, Firestore, Functions Node.js 20)
+AI:        OpenAI gpt-4o-mini (15-20x cheaper than gpt-4o)
+Deploy:    Firebase Hosting + Functions (us-central1)
+```
 
-### Critical Flow: Student Answer Assessment
-1. Student types answer in `ChatView.vue` (copy-paste blocked)
-2. Confirmation dialog validates minimum 20 characters + debounce (2s)
-3. `chat.js` store calls Cloud Function `assessAnswer` via HTTPS
-4. Function sends to OpenAI with structured prompt (`createAssessmentPrompt`)
-5. AI returns JSON with `rubricScores` (0-5 per dimension) + feedback
-6. **Markdown wrapper cleaning**: GPT-4o-mini wraps JSON in ```json blocks - must strip before `JSON.parse()`
-7. Function saves to `assessments` collection, updates `studentProgress` for LO tracking
-8. Frontend receives real-time update via Firestore listeners
+### Critical Flow: Assessment Chat
+```
+1. Student types answer in ChatView.vue (copy-paste blocked)
+2. Confirmation dialog: min 20 chars + preview + debounce 2s
+3. chat.js → Cloud Function assessAnswer via HTTPS
+4. Function → OpenAI with structured prompt (createAssessmentPrompt)
+5. AI returns JSON: rubricScores (0-5 per dimension) + feedback
+6. ⚠️ Clean markdown wrappers before JSON.parse()
+7. Save to assessments + update studentProgress
+8. Frontend receives via Firestore listener
+```
 
-### Key Collections Schema
+### Critical Flow: Worksheet LO
+```
+1. Teacher creates Lesson Plan with LOs
+2. generateElectronicWorksheet → stores learningOutcomes in metadata
+3. Student completes worksheet → assessWorksheetSubmission
+4. Function calls assessLearningOutcomesInternal (same as chat)
+5. Save loAssessment to worksheetSubmissions
+6. Update studentProgress.passedLOs (merged)
+7. All pages use loProgress.js for consistent LO display
+```
+
+### Key Collections
 ```javascript
-// users: role-based (student/teacher), includes studentId (5 digits), grade, room, number, section
-// courses: teacher-owned, contains learningOutcomes[] with {code, description}
-// questions: courseId-linked, has hasSolution flag (excludes from student pool)
-// sessions: tracks active chats, messageCount
-// messages: sessionId-linked, references assessmentId
-// assessments: stores rubricScores{analysis, reasoning, creativity, evidence}, loAssessment{passedLOs[], analysis}
-// studentProgress: {studentId}_${courseId} doc tracking cumulative passedLOs[]
+users              // role (student/teacher), studentId, grade, room, number
+courses            // teacherId, learningOutcomes[]
+questions          // courseId, relatedLOs[], hasSolution, loConfigs[]
+sessions           // Chat sessions
+messages           // sessionId, assessmentId
+assessments        // rubricScores, loAssessment{passedLOs[], analysis}
+studentProgress    // {studentId}_{courseId}, passedLOs[], loProgress{}
+eWorksheets        // metadata.learningOutcomes[], sections[]
+worksheetSubmissions // answers, assessment, loAssessment
+lessonPlans        // 5E model content
+learningRooms      // Activity rooms
 ```
 
 ## Critical Conventions
 
-### 1. AI Response Handling Pattern
-**ALWAYS clean markdown wrappers from GPT responses before parsing:**
+### 1. AI Response Handling (MANDATORY)
 ```javascript
+// ⚠️ GPT-4o-mini wraps JSON in ```json blocks - MUST strip first
 let cleanedText = responseText.trim()
 if (cleanedText.startsWith('```')) {
   cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
@@ -74,36 +104,68 @@ if (cleanedText.startsWith('```')) {
 }
 const result = JSON.parse(cleanedText)
 ```
-Applied in: `assessAnswer`, `generateLearningOutcomes`, `generateHOTSQuestion`, `generateSolution`
+**Used in:** assessAnswer, assessWorksheetSubmission, generateLearningOutcomes, generateHOTSQuestion, generateSolution, generateElectronicWorksheet
 
-### 2. Learning Outcomes (LO) System
-- Questions tagged with `relatedLOs: ["LO1", "LO3"]`
-- Smart question selection prioritizes weak LOs (from `studentProgress`)
-- Questions with `hasSolution: true` are EXCLUDED from student pool (teacher exam keys)
-- LO assessment requires: content match + skill level + HOTS score ≥3 for relevant dimension
-
-### 3. Security & Copy-Paste Prevention
-Client-side: `@paste.prevent`, `@copy.prevent`, `@cut.prevent`, `@contextmenu.prevent` on textareas
-Server-side: Detection heuristics in `detectCopyPaste()` (unusual spacing, long words, mixed scripts)
-
-### 4. Firestore Security Pattern
+### 2. LO Progress Utility (MANDATORY)
 ```javascript
+// ⚠️ Always use loProgress.js for LO counting - ensures consistency
+import { getStudentPassedLOs } from '@/utils/loProgress'
+const { passedLOs, assessmentCount, worksheetCount } = 
+  await getStudentPassedLOs(studentUid, courseId)
+
+// This queries BOTH assessments AND worksheetSubmissions
+```
+
+### 3. LO Passing Criteria
+```
+An LO is "passed" when ALL 3 conditions are met:
+1. Content Match: Answer covers LO's intent substantially
+2. Skill Level: Evidence of expected understanding/skill
+3. HOTS Score ≥ 3: Related dimension(s) must score ≥ 3/5
+   - Analysis verbs → analysis ≥ 3
+   - Reasoning verbs → reasoning ≥ 3
+   - Creative verbs → creativity ≥ 3
+   - Evidence verbs → evidence ≥ 3
+```
+
+### 4. Security Patterns
+```javascript
+// Client-side copy-paste prevention
+@paste.prevent @copy.prevent @cut.prevent @contextmenu.prevent
+
+// Server-side detection (detectCopyPaste function)
+- Unusual spacing patterns
+- Very long words (>25 chars)
+- Mixed script detection
+- Suspicious character ratios
+
+// Firestore rules
 function isTeacher() {
   return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
 }
 ```
-Teacher-only: courses, questions, reports, full student data
-Student: own data + session messages + assessments
 
-### 5. State Management (Pinia)
-- `auth.js`: Google Sign-In, user profile with role checking
-- `chat.js`: Session lifecycle, message streaming, question selection algorithm
-- `theme.js`: Dark mode toggle with localStorage persistence
-- `gamification.js`: Points, badges, streaks, leaderboard
-- `learningPath.js`: Adaptive learning path management
-- `lessonPlan.js`: Lesson plan CRUD and AI generation
-- `notifications.js`: Toast and badge notifications
-- `dashboard.js`: Aggregated student data for teachers
+### 5. Question Selection Algorithm (chat.js)
+```javascript
+1. Get weak LOs from studentProgress
+2. Filter unused questions (not in usedQuestionIds)
+3. Exclude hasSolution: true (teacher exam keys)
+4. Priority 1: Questions targeting weak LOs
+5. Priority 2: Random unused
+6. Fallback: Least-used (by usageCount)
+```
+
+### 6. State Management (Pinia)
+| Store | Purpose |
+|-------|---------|
+| `auth.js` | Google Sign-In, role checking |
+| `chat.js` | Session, questions, LO tracking |
+| `gamification.js` | Points, badges, streaks, actualPassedLOs |
+| `theme.js` | Dark mode (localStorage) |
+| `lessonPlan.js` | Lesson plan CRUD |
+| `learningPath.js` | Adaptive learning |
+| `notifications.js` | Toast messages |
+| `dashboard.js` | Teacher dashboard data |
 
 ## Development Workflow
 
