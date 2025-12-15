@@ -124,6 +124,44 @@
               <small>แฟ้มสะสมผลงานครู + รางวัลระดับโลก</small>
             </div>
           </button>
+          <button @click="$router.push('/plc')" class="action-btn highlight-plc">
+            <span class="action-icon">👥</span>
+            <div class="action-text">
+              <strong>PLC ชุมชนครู</strong>
+              <small>แชร์แผนการสอน กลยุทธ์ ข้อมูลเชิงลึก</small>
+            </div>
+            <span class="badge-new">NEW</span>
+          </button>
+          <!-- Social Network Section -->
+          <div class="action-divider">🌐 Social Network</div>
+          <button @click="$router.push('/feed')" class="action-btn highlight-social">
+            <span class="action-icon">📰</span>
+            <div class="action-text">
+              <strong>Social Feed</strong>
+              <small>ดูโพสต์ แชร์ความรู้ กิจกรรม</small>
+            </div>
+          </button>
+          <button @click="$router.push('/groups')" class="action-btn highlight-social">
+            <span class="action-icon">👨‍👩‍👧‍👦</span>
+            <div class="action-text">
+              <strong>Groups</strong>
+              <small>กลุ่มการเรียนรู้ ชุมชนครู</small>
+            </div>
+          </button>
+          <button @click="$router.push('/teacher/inbox')" class="action-btn highlight-trust">
+            <span class="action-icon">📥</span>
+            <div class="action-text">
+              <strong>Trust Inbox</strong>
+              <small>ตรวจ AI Trust Queue + อนุมัติโพสต์</small>
+            </div>
+          </button>
+          <button @click="$router.push('/teacher/appeals')" class="action-btn highlight-trust">
+            <span class="action-icon">⚖️</span>
+            <div class="action-text">
+              <strong>Appeals Management</strong>
+              <small>จัดการคำร้องอุทธรณ์จากนักเรียน</small>
+            </div>
+          </button>
           <!-- Research Tools Section -->
           <div class="action-divider">🔬 เครื่องมือวิจัย (Research)</div>
           <button @click="$router.push('/research/pretest-posttest')" class="action-btn highlight-research">
@@ -984,6 +1022,68 @@ async function handleSignOut() {
   margin-top: 0.5rem;
 }
 
+/* Social Network Styling */
+.highlight-social {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+  position: relative;
+}
+
+.highlight-social::before {
+  content: '🌐 Social';
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  background: #60a5fa;
+  color: #1e3a8a;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: bold;
+}
+
+.highlight-social:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.highlight-social .action-text strong,
+.highlight-social .action-text small {
+  color: white;
+}
+
+/* Trust Layer Styling */
+.highlight-trust {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  border: none;
+  position: relative;
+}
+
+.highlight-trust::before {
+  content: '🔒 Trust';
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  background: #fbbf24;
+  color: #78350f;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: bold;
+}
+
+.highlight-trust:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.highlight-trust .action-text strong,
+.highlight-trust .action-text small {
+  color: white;
+}
+
 .highlight-research {
   background: linear-gradient(135deg, #0891b2, #0e7490);
   color: white;
@@ -1011,6 +1111,37 @@ async function handleSignOut() {
 
 .highlight-research .action-text strong,
 .highlight-research .action-text small {
+  color: white;
+}
+
+/* PLC Community Styling */
+.highlight-plc {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  position: relative;
+}
+
+.highlight-plc::before {
+  content: '👥 PLC';
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  background: #34d399;
+  color: #064e3b;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.highlight-plc:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.highlight-plc .action-text strong,
+.highlight-plc .action-text small {
   color: white;
 }
 

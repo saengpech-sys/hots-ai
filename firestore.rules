@@ -430,5 +430,236 @@ service cloud.firestore {
       // Users can delete their own presence (on disconnect)
       allow delete: if isSignedIn() && isOwner(odId);
     }
+    
+    // ==================== SLC/PLC COMMUNITY SYSTEM ====================
+    
+    // 🆕 Communities collection (SLC for students, PLC for teachers)
+    match /communities/{communityId} {
+      allow read: if isSignedIn(); // Anyone can browse communities
+      allow create: if isSignedIn(); // Anyone can create a community
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.creatorId) || 
+        request.auth.uid in resource.data.moderatorIds ||
+        isAnyAdmin()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.creatorId) || isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Community Members subcollection
+    match /communities/{communityId}/members/{memberId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(memberId); // Users add themselves
+      allow update: if isSignedIn() && (
+        isOwner(memberId) || 
+        request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.moderatorIds
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(memberId) ||
+        request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.moderatorIds
+      );
+    }
+    
+    // 🆕 Discussions collection (linked to content - assessments, worksheets, lessons)
+    match /discussions/{discussionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Discussion Replies subcollection
+    match /discussions/{discussionId}/replies/{replyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.authorId);
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Help Requests collection (LO-based help system)
+    match /helpRequests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Anyone can request help
+      allow update: if isSignedIn(); // Update when helped/resolved
+      allow delete: if isSignedIn() && isOwner(resource.data.requesterId);
+    }
+    
+    // 🆕 Help Offers subcollection
+    match /helpRequests/{requestId}/offers/{offerId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && !isOwner(get(/databases/$(database)/documents/helpRequests/$(requestId)).data.requesterId); // Can't offer help to yourself
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.helperId) ||
+        request.auth.uid == get(/databases/$(database)/documents/helpRequests/$(requestId)).data.requesterId
+      );
+      allow delete: if isSignedIn() && isOwner(resource.data.helperId);
+    }
+    
+    // 🆕 Shared Content collection (curated best answers, study materials)
+    match /sharedContent/{contentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Anyone can share
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.sharerId) ||
+        isTeacher() // Teachers can feature content
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.sharerId) ||
+        isTeacher()
+      );
+    }
+    
+    // 🆕 Study Sessions collection (scheduled study/tutoring sessions)
+    match /studySessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.hostId) ||
+        request.auth.uid in resource.data.participantIds
+      );
+      allow delete: if isSignedIn() && isOwner(resource.data.hostId);
+    }
+    
+    // 🆕 Study Session Participants subcollection
+    match /studySessions/{sessionId}/participants/{participantId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(participantId);
+      allow update: if isSignedIn() && isOwner(participantId);
+      allow delete: if isSignedIn() && (
+        isOwner(participantId) ||
+        request.auth.uid == get(/databases/$(database)/documents/studySessions/$(sessionId)).data.hostId
+      );
+    }
+    
+    // 🆕 Mentor Relationships collection (peer mentoring)
+    match /mentorRelationships/{relationId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.mentorId) ||
+        isOwner(resource.data.menteeId) ||
+        isTeacher()
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.mentorId) ||
+        isOwner(resource.data.menteeId)
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.mentorId) ||
+        isOwner(resource.data.menteeId)
+      );
+    }
+    
+    // 🆕 Resource Library collection (shared resources - files, links, notes)
+    match /resourceLibrary/{resourceId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.uploaderId) ||
+        isTeacher()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.uploaderId) ||
+        isTeacher()
+      );
+    }
+    
+    // 🆕 Community Notifications collection
+    match /communityNotifications/{notifId} {
+      allow read: if isSignedIn() && isOwner(resource.data.userId);
+      allow create: if isSignedIn(); // System creates notifications
+      allow update: if isSignedIn() && isOwner(resource.data.userId); // Mark as read
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+    
+    // 🆕 Teaching Strategies collection (PLC - teacher knowledge sharing)
+    match /teachingStrategies/{strategyId} {
+      allow read: if isTeacher() || isAnyAdmin(); // Only teachers can view
+      allow create: if isTeacher();
+      allow update: if isTeacher() && (
+        isOwner(resource.data.authorId) ||
+        isAnyAdmin()
+      );
+      allow delete: if isTeacher() && (
+        isOwner(resource.data.authorId) ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Strategy Comments subcollection
+    match /teachingStrategies/{strategyId}/comments/{commentId} {
+      allow read: if isTeacher() || isAnyAdmin();
+      allow create: if isTeacher();
+      allow update: if isTeacher() && isOwner(resource.data.authorId);
+      allow delete: if isTeacher() && (
+        isOwner(resource.data.authorId) ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Lesson Plan Shares collection (PLC - shared lesson plans with ratings)
+    match /lessonPlanShares/{shareId} {
+      allow read: if isTeacher() || isAnyAdmin();
+      allow create: if isTeacher();
+      allow update: if isTeacher(); // Update ratings, downloads
+      allow delete: if isTeacher() && isOwner(resource.data.sharerId);
+    }
+    
+    // 🆕 Question Bank Collaborations collection (PLC - collaborative question creation)
+    match /questionCollabs/{collabId} {
+      allow read: if isTeacher() || isAnyAdmin();
+      allow create: if isTeacher();
+      allow update: if isTeacher() && (
+        isOwner(resource.data.initiatorId) ||
+        request.auth.uid in resource.data.collaboratorIds
+      );
+      allow delete: if isTeacher() && isOwner(resource.data.initiatorId);
+    }
+    
+    // 🆕 Collab Questions subcollection
+    match /questionCollabs/{collabId}/questions/{questionId} {
+      allow read: if isTeacher();
+      allow create: if isTeacher();
+      allow update: if isTeacher();
+      allow delete: if isTeacher();
+    }
+    
+    // 🆕 Analytics Insights collection (PLC - shared analytics findings)
+    match /analyticsInsights/{insightId} {
+      allow read: if isTeacher() || isAnyAdmin();
+      allow create: if isTeacher();
+      allow update: if isTeacher() && isOwner(resource.data.authorId);
+      allow delete: if isTeacher() && (
+        isOwner(resource.data.authorId) ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 User Follows collection (follow relationships)
+    match /userFollows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.followerId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.followerId == request.auth.uid;
+    }
+    
+    // 🆕 Activity Feed collection (aggregated activities)
+    match /activityFeed/{activityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // System creates activities
+      allow update: if false; // Immutable
+      allow delete: if isAnyAdmin();
+    }
   }
 }

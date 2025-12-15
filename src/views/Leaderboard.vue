@@ -238,6 +238,9 @@ onUnmounted(() => {
   max-width: 900px;
   margin: 0 auto;
   padding: 2rem;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {

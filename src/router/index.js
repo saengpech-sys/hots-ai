@@ -92,11 +92,10 @@ const routes = [
     component: () => import('@/views/CurriculumManagement.vue'),
     meta: { requiresAuth: true, role: 'ministry_admin' }
   },
+  // Redirect old student-portfolio to portfolio
   {
     path: '/student-portfolio/:studentId?',
-    name: 'StudentPortfolio',
-    component: () => import('@/views/StudentPortfolio.vue'),
-    meta: { requiresAuth: true }
+    redirect: to => to.params.studentId ? `/portfolio/${to.params.studentId}` : '/portfolio'
   },
   {
     path: '/lo-reports',
@@ -127,13 +126,11 @@ const routes = [
     name: 'Leaderboard',
     component: () => import('@/views/Leaderboard.vue'),
     meta: { requiresAuth: true }
-  }
-  ,
+  },
+  // Redirect old progress-map to my-progress
   {
     path: '/progress-map',
-    name: 'ProgressMap',
-    component: () => import('@/views/StudentProgressMap.vue'),
-    meta: { requiresAuth: true }
+    redirect: '/my-progress'
   },
   {
     path: '/micro-lessons',
@@ -161,9 +158,7 @@ const routes = [
   },
   {
     path: '/progress-analytics',
-    name: 'ProgressAnalytics',
-    component: () => import('@/views/ProgressAnalytics.vue'),
-    meta: { requiresAuth: true, role: 'student' }
+    redirect: '/my-progress'
   },
   {
     path: '/teacher-analytics',
@@ -293,6 +288,176 @@ const routes = [
     path: '/research/expert-validation',
     name: 'ExpertValidation',
     component: () => import('@/views/ExpertValidation.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  
+  // ==========================================
+  // Learning Social Network Routes
+  // ==========================================
+  
+  // Social - Feed & Posts
+  {
+    path: '/feed',
+    name: 'Feed',
+    component: () => import('@/views/social/FeedView.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // Social - Groups (redirect to SLC)
+  {
+    path: '/groups',
+    redirect: '/community/study-groups'
+  },
+  {
+    path: '/groups/:id',
+    redirect: to => `/community/study-groups/${to.params.id}`
+  },
+  
+  // Trust Layer - Teacher Inbox
+  {
+    path: '/teacher/inbox',
+    name: 'TeacherInbox',
+    component: () => import('@/views/trust/TeacherInbox.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  
+  // Portfolio System
+  {
+    path: '/portfolio/:userId?',
+    name: 'Portfolio',
+    component: () => import('@/views/portfolio/PortfolioView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/verify/:hash',
+    name: 'Verify',
+    component: () => import('@/views/portfolio/VerifyPage.vue'),
+    meta: { requiresAuth: false }  // Public verification
+  },
+  {
+    path: '/evidence/:id',
+    name: 'EvidencePack',
+    component: () => import('@/views/portfolio/EvidencePackDetail.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // Assignment System
+  {
+    path: '/assignments',
+    name: 'Assignments',
+    component: () => import('@/views/assignment/AssignmentList.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/assignments/:id',
+    name: 'AssignmentDetail',
+    component: () => import('@/views/assignment/AssignmentDetail.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/assignments/:id/submit',
+    name: 'AssignmentSubmit',
+    component: () => import('@/views/assignment/AssignmentSubmit.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/submissions/:id',
+    name: 'SubmissionDetail',
+    component: () => import('@/views/assignment/SubmissionDetail.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // Appeal System
+  {
+    path: '/appeals/submit/:submissionId',
+    name: 'SubmitAppeal',
+    component: () => import('@/views/appeal/SubmitAppeal.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/appeals/my',
+    name: 'MyAppeals',
+    component: () => import('@/views/appeal/MyAppeals.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/teacher/appeals',
+    name: 'AppealsManagement',
+    component: () => import('@/views/appeal/AppealsManagement.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  
+  // ==========================================
+  // SLC - Student Learning Community Routes
+  // ==========================================
+  {
+    path: '/community',
+    name: 'StudentCommunityHub',
+    component: () => import('@/views/community/StudentCommunityHub.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/community/study-groups',
+    name: 'StudyGroupList',
+    component: () => import('@/views/community/StudyGroupList.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/community/study-groups/:id',
+    name: 'StudyGroupDetail',
+    component: () => import('@/views/community/StudyGroupDetail.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/community/help',
+    name: 'HelpRequestBoard',
+    component: () => import('@/views/community/HelpRequestBoard.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/community/mentors',
+    name: 'PeerMentorMatch',
+    component: () => import('@/views/community/PeerMentorMatch.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/community/gallery',
+    name: 'SharedAnswersGallery',
+    component: () => import('@/views/community/SharedAnswersGallery.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  
+  // ==========================================
+  // PLC - Professional Learning Community Routes
+  // ==========================================
+  {
+    path: '/plc',
+    name: 'TeacherCommunityHub',
+    component: () => import('@/views/community/TeacherCommunityHub.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/plc/lesson-library',
+    name: 'LessonPlanLibrary',
+    component: () => import('@/views/community/LessonPlanLibrary.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/plc/question-collab',
+    name: 'QuestionBankCollab',
+    component: () => import('@/views/community/QuestionBankCollab.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/plc/strategies',
+    name: 'TeachingStrategies',
+    component: () => import('@/views/community/TeachingStrategies.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/plc/insights',
+    name: 'AnalyticsInsights',
+    component: () => import('@/views/community/AnalyticsInsights.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
 ]

@@ -592,6 +592,10 @@ export default {
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
@@ -604,7 +608,7 @@ export default {
 }
 
 .header p {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .course-selector {
@@ -653,7 +657,7 @@ export default {
 
 .btn-secondary {
   background: #f0f0f0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .btn-edit {
@@ -707,7 +711,7 @@ export default {
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.2rem;
 }
 
@@ -718,7 +722,7 @@ export default {
 }
 
 .lesson-card {
-  background: white;
+  background: var(--card-bg);
   border: 1px solid #e0e0e0;
   border-radius: 12px;
   padding: 1.5rem;
@@ -732,7 +736,7 @@ export default {
 
 .lesson-header h3 {
   margin-bottom: 0.5rem;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .lesson-meta {
@@ -743,7 +747,7 @@ export default {
 }
 
 .time {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -763,7 +767,7 @@ export default {
 
 .lesson-content {
   margin: 1rem 0;
-  color: #555;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -787,7 +791,7 @@ export default {
 }
 
 .modal-content {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   max-width: 700px;
   width: 95%;
@@ -816,7 +820,7 @@ export default {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .modal-body {
@@ -890,12 +894,12 @@ export default {
 .view-content h3,
 .view-video h3 {
   margin-bottom: 1rem;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .content-text {
   line-height: 1.8;
-  color: #444;
+  color: var(--text-primary);
 }
 
 /* Dark mode support */

@@ -498,7 +498,7 @@ function formatDate(timestamp) {
 
 .header h1 {
   font-size: 2em;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .filters-section {
@@ -516,7 +516,7 @@ function formatDate(timestamp) {
 
 .filter-group label {
   font-weight: 600;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .form-input, .form-select, .form-textarea {
@@ -534,7 +534,7 @@ function formatDate(timestamp) {
 .loading {
   text-align: center;
   padding: 60px;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1em;
 }
 
@@ -545,7 +545,7 @@ function formatDate(timestamp) {
 }
 
 .curriculum-item {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 25px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -567,7 +567,7 @@ function formatDate(timestamp) {
 
 .curriculum-title h3 {
   margin: 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .subject-code {
@@ -615,7 +615,7 @@ function formatDate(timestamp) {
 }
 
 .stat-label {
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .curriculum-actions {
@@ -710,7 +710,7 @@ function formatDate(timestamp) {
 .empty-state {
   text-align: center;
   padding: 60px;
-  color: #999;
+  color: var(--text-secondary);
   font-size: 1.1em;
 }
 
@@ -723,7 +723,7 @@ function formatDate(timestamp) {
 
 .lo-section h4 {
   margin-bottom: 15px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .lo-list {
@@ -748,11 +748,11 @@ function formatDate(timestamp) {
 
 .lo-type {
   font-size: 0.85em;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .lo-description {
-  color: #333;
+  color: var(--text-primary);
   line-height: 1.6;
   margin: 8px 0;
 }
@@ -762,7 +762,7 @@ function formatDate(timestamp) {
   padding-top: 10px;
   border-top: 1px solid #e0e0e0;
   font-size: 0.9em;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .lo-indicators ul {
@@ -784,7 +784,7 @@ function formatDate(timestamp) {
 }
 
 .modal-dialog {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   width: 90%;
   max-width: 800px;
@@ -803,7 +803,7 @@ function formatDate(timestamp) {
 
 .modal-header h2 {
   margin: 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .btn-close {
@@ -811,7 +811,7 @@ function formatDate(timestamp) {
   border: none;
   font-size: 1.5em;
   cursor: pointer;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .btn-close:hover {
@@ -838,7 +838,7 @@ function formatDate(timestamp) {
   display: block;
   margin-bottom: 8px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .required {
@@ -874,7 +874,7 @@ function formatDate(timestamp) {
 
 .section-header h3 {
   margin: 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .lo-form-item {

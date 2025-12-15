@@ -583,6 +583,10 @@ function viewStudentDetail(studentUid) {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .page-header {

@@ -177,46 +177,79 @@
         </div>
       </div>
 
-      <!-- Quick Actions -->
+      <!-- Quick Actions - จัดกลุ่มเป็นหมวดหมู่ -->
       <div class="quick-actions card">
         <h3>⚡ เมนูด่วน</h3>
-        <div class="action-buttons">
-          <button @click="$router.push('/chat')" class="action-btn highlight-primary">
-            <span class="action-icon">💬</span>
-            <span class="action-label">เริ่มทำ Assessment</span>
-          </button>
-          <button @click="$router.push('/learning-rooms')" class="action-btn highlight-new">
-            <span class="action-icon">🏫</span>
-            <span class="action-label">ห้องกิจกรรม</span>
-          </button>
-          <button @click="$router.push('/my-progress')" class="action-btn">
-            <span class="action-icon">📈</span>
-            <span class="action-label">ความคืบหน้า LO</span>
-          </button>
-          <button @click="$router.push('/progress-analytics')" class="action-btn highlight-new">
-            <span class="action-icon">📊</span>
-            <span class="action-label">Progress Analytics</span>
-          </button>
-          <button @click="$router.push('/adaptive-learning')" class="action-btn highlight-new">
-            <span class="action-icon">🎯</span>
-            <span class="action-label">Adaptive Learning</span>
-          </button>
-          <button @click="$router.push('/goal-setting')" class="action-btn highlight-new">
-            <span class="action-icon">🎯</span>
-            <span class="action-label">Goal Setting</span>
-          </button>
-          <button @click="$router.push('/leaderboard')" class="action-btn">
-            <span class="action-icon">🏆</span>
-            <span class="action-label">ลีดเดอร์บอร์ด</span>
-          </button>
-          <button @click="$router.push('/progress-map')" class="action-btn">
-            <span class="action-icon">🗺️</span>
-            <span class="action-label">Progress Map</span>
-          </button>
-          <button @click="$router.push('/profile')" class="action-btn">
-            <span class="action-icon">👤</span>
-            <span class="action-label">โปรไฟล์</span>
-          </button>
+        
+        <!-- กลุ่มหลัก: การเรียนรู้ -->
+        <div class="action-group">
+          <span class="group-label">📚 การเรียนรู้</span>
+          <div class="action-buttons">
+            <button @click="$router.push('/chat')" class="action-btn highlight-primary">
+              <span class="action-icon">🚀</span>
+              <span class="action-label">ทำ Assessment</span>
+            </button>
+            <button @click="$router.push('/learning-rooms')" class="action-btn highlight-new">
+              <span class="action-icon">🏫</span>
+              <span class="action-label">ห้องกิจกรรม</span>
+            </button>
+            <button @click="$router.push('/assignments')" class="action-btn highlight-assignment">
+              <span class="action-icon">📝</span>
+              <span class="action-label">งานที่ได้รับ</span>
+            </button>
+            <button @click="$router.push('/adaptive-learning')" class="action-btn highlight-new">
+              <span class="action-icon">🎯</span>
+              <span class="action-label">Adaptive Learning</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- กลุ่ม: ติดตามความก้าวหน้า -->
+        <div class="action-group">
+          <span class="group-label">📊 ความก้าวหน้า</span>
+          <div class="action-buttons">
+            <button @click="$router.push('/my-progress')" class="action-btn">
+              <span class="action-icon">📈</span>
+              <span class="action-label">ความคืบหน้า LO</span>
+            </button>
+            <button @click="$router.push('/leaderboard')" class="action-btn">
+              <span class="action-icon">🏆</span>
+              <span class="action-label">ลีดเดอร์บอร์ด</span>
+            </button>
+            <button @click="$router.push('/goal-setting')" class="action-btn">
+              <span class="action-icon">🎯</span>
+              <span class="action-label">ตั้งเป้าหมาย</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- กลุ่ม: สังคม -->
+        <div class="action-group">
+          <span class="group-label">👥 ชุมชน</span>
+          <div class="action-buttons">
+            <button @click="$router.push('/community')" class="action-btn highlight-social">
+              <span class="action-icon">💬</span>
+              <span class="action-label">ชุมชนการเรียนรู้</span>
+            </button>
+            <button @click="$router.push('/community/study-groups')" class="action-btn highlight-social">
+              <span class="action-icon">👨‍👩‍👧‍👦</span>
+              <span class="action-label">กลุ่มเรียน</span>
+            </button>
+            <button @click="$router.push('/portfolio')" class="action-btn highlight-portfolio">
+              <span class="action-icon">💼</span>
+              <span class="action-label">Portfolio</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- โปรไฟล์ -->
+        <div class="action-group profile-group">
+          <div class="action-buttons">
+            <button @click="$router.push('/profile')" class="action-btn">
+              <span class="action-icon">👤</span>
+              <span class="action-label">โปรไฟล์</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1202,10 +1235,38 @@ function dismissRecommendation(recId) {
   color: var(--text-color);
 }
 
+/* Action Groups */
+.action-group {
+  margin-bottom: 1.5rem;
+}
+
+.action-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  padding-left: 0.25rem;
+}
+
+.profile-group {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.profile-group .action-buttons {
+  justify-content: center;
+}
+
 .action-buttons {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
 }
 
 .action-btn {
@@ -1295,6 +1356,81 @@ function dismissRecommendation(recId) {
   transform: translateY(-4px);
   box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
   border-color: #059669;
+}
+
+/* Community Button - SLC */
+.action-btn.community-btn {
+  position: relative;
+  border: 2px solid #8b5cf6;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(192, 132, 252, 0.2));
+}
+
+.action-btn.community-btn::after {
+  content: "👥";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.5);
+  animation: pulse-community 2s ease-in-out infinite;
+}
+
+@keyframes pulse-community {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.action-btn.community-btn:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
+  border-color: #a78bfa;
+}
+
+/* Social Network Button */
+.action-btn.highlight-social {
+  position: relative;
+  border: 2px solid #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(96, 165, 250, 0.2));
+}
+
+.action-btn.highlight-social:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+  border-color: #60a5fa;
+}
+
+/* Assignment Button */
+.action-btn.highlight-assignment {
+  position: relative;
+  border: 2px solid #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2));
+}
+
+.action-btn.highlight-assignment:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+  border-color: #fbbf24;
+}
+
+/* Portfolio Button */
+.action-btn.highlight-portfolio {
+  position: relative;
+  border: 2px solid #ec4899;
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(244, 114, 182, 0.2));
+}
+
+.action-btn.highlight-portfolio:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(236, 72, 153, 0.4);
+  border-color: #f472b6;
 }
 
 .action-icon {

@@ -350,6 +350,10 @@ async function submitToMinistry() {
   padding: 20px;
   max-width: 1600px;
   margin: 0 auto;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
@@ -362,7 +366,7 @@ async function submitToMinistry() {
 }
 
 .esa-name {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1em;
 }
 
@@ -374,7 +378,7 @@ async function submitToMinistry() {
 }
 
 .stat-card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -395,7 +399,7 @@ async function submitToMinistry() {
 
 .stat-content p {
   margin: 5px 0 0 0;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .tabs {
@@ -411,7 +415,7 @@ async function submitToMinistry() {
   background: none;
   cursor: pointer;
   font-size: 1em;
-  color: #666;
+  color: var(--text-secondary);
   border-bottom: 3px solid transparent;
   transition: all 0.3s;
 }
@@ -427,7 +431,7 @@ async function submitToMinistry() {
 }
 
 .tab-content {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 30px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -455,7 +459,7 @@ async function submitToMinistry() {
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .schools-grid {
@@ -525,7 +529,7 @@ async function submitToMinistry() {
 }
 
 .score-none {
-  color: #999;
+  color: var(--text-secondary);
 }
 
 .school-actions {
@@ -587,7 +591,7 @@ async function submitToMinistry() {
 .data-table th {
   background: #f5f5f5;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .data-table tr:hover {
@@ -609,11 +613,11 @@ async function submitToMinistry() {
 
 .report-card h3 {
   margin-top: 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .report-card p {
-  color: #666;
+  color: var(--text-secondary);
   margin-bottom: 15px;
 }
 

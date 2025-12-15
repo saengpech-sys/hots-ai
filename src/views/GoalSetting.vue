@@ -355,6 +355,9 @@ export default {
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
@@ -371,7 +374,7 @@ export default {
 }
 
 .header p {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1rem;
 }
 
@@ -414,7 +417,7 @@ export default {
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1rem;
 }
 
@@ -425,7 +428,7 @@ export default {
 }
 
 .goal-card {
-  background: white;
+  background: var(--card-bg);
   border: 2px solid #e0e0e0;
   border-radius: 16px;
   padding: 1.5rem;
@@ -473,7 +476,7 @@ export default {
 }
 
 .goal-description {
-  color: #666;
+  color: var(--text-secondary);
   margin-bottom: 1.5rem;
   line-height: 1.6;
 }
@@ -497,7 +500,7 @@ export default {
 }
 
 .progress-text {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -562,7 +565,7 @@ export default {
 }
 
 .modal-content {
-  background: white;
+  background: var(--card-bg);
   border-radius: 16px;
   width: 90%;
   max-width: 600px;
@@ -587,7 +590,7 @@ export default {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .modal-body {
@@ -635,7 +638,7 @@ export default {
 
 .btn-secondary {
   background: #f0f0f0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .goal-preview {
@@ -653,7 +656,7 @@ export default {
 
 .goal-preview p {
   margin-bottom: 0.25rem;
-  color: #333;
+  color: var(--text-primary);
 }
 
 /* Dark mode */

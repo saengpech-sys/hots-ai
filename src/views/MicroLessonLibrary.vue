@@ -376,6 +376,10 @@ function renderMarkdown(content) {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .library-header {
@@ -416,7 +420,7 @@ function renderMarkdown(content) {
 
 .tab-btn.active {
   border-color: #3b82f6;
-  background: #ffffff;
+  background: var(--card-bg);
   font-weight: 600;
 }
 
@@ -445,7 +449,7 @@ function renderMarkdown(content) {
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 1rem;
-  background: white;
+  background: var(--card-bg);
   cursor: pointer;
 }
 
@@ -640,7 +644,7 @@ function renderMarkdown(content) {
 }
 
 .modal-content {
-  background: white;
+  background: var(--card-bg);
   border-radius: 16px;
   max-width: 900px;
   width: 100%;

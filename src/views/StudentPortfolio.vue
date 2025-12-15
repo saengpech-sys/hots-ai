@@ -345,7 +345,7 @@ function truncate(text, length) {
   align-items: center;
   margin-bottom: 30px;
   padding: 30px;
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.1);
 }
@@ -384,17 +384,17 @@ function truncate(text, length) {
 
 .info-text h1 {
   margin: 0 0 8px 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .student-id {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.95em;
   margin: 4px 0;
 }
 
 .school-info {
-  color: #999;
+  color: var(--text-secondary);
   font-size: 0.9em;
   margin: 4px 0;
 }
@@ -424,7 +424,7 @@ function truncate(text, length) {
 .loading {
   text-align: center;
   padding: 60px;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1em;
 }
 
@@ -435,7 +435,7 @@ function truncate(text, length) {
 }
 
 .card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 30px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -443,7 +443,7 @@ function truncate(text, length) {
 
 .card h2 {
   margin: 0 0 25px 0;
-  color: #333;
+  color: var(--text-primary);
   font-size: 1.5em;
 }
 
@@ -490,12 +490,12 @@ function truncate(text, length) {
 .score-value {
   font-size: 3em;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .score-label {
   font-size: 0.9em;
-  color: #666;
+  color: var(--text-secondary);
   margin-top: 5px;
 }
 
@@ -538,13 +538,13 @@ function truncate(text, length) {
 .dim-content h3 {
   margin: 0 0 8px 0;
   font-size: 1em;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .dim-score {
   font-size: 1.8em;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
@@ -584,13 +584,13 @@ function truncate(text, length) {
   display: block;
   font-size: 2.5em;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 5px;
 }
 
 .stat-label {
   display: block;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9em;
 }
 
@@ -632,14 +632,14 @@ function truncate(text, length) {
 }
 
 .lo-description {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9em;
   line-height: 1.5;
   margin: 8px 0;
 }
 
 .lo-achievement small {
-  color: #999;
+  color: var(--text-secondary);
   font-size: 0.85em;
 }
 
@@ -696,16 +696,16 @@ function truncate(text, length) {
 }
 
 .timeline-header strong {
-  color: #333;
+  color: var(--text-primary);
 }
 
 .timeline-date {
-  color: #999;
+  color: var(--text-secondary);
   font-size: 0.85em;
 }
 
 .timeline-question {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9em;
   margin: 8px 0;
 }
@@ -778,7 +778,7 @@ function truncate(text, length) {
 
 .strengths h3, .improvements h3 {
   margin: 0 0 15px 0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .strengths ul, .improvements ul {
@@ -788,7 +788,7 @@ function truncate(text, length) {
 
 .strengths li, .improvements li {
   margin-bottom: 10px;
-  color: #666;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 

@@ -196,7 +196,7 @@ function goHome() {
 .error-details {
   margin-top: 15px;
   text-align: left;
-  background: white;
+  background: var(--card-bg);
   padding: 15px;
   border-radius: 8px;
 }
@@ -214,7 +214,7 @@ function goHome() {
 
 .error-details ol {
   margin: 10px 0 0 20px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .error-details li {
@@ -246,8 +246,8 @@ function goHome() {
   justify-content: center;
   gap: 0.75rem;
   padding: 0.875rem 1.5rem;
-  background: white;
-  color: #444;
+  background: var(--card-bg);
+  color: var(--text-primary);
   border: 2px solid #ddd;
   border-radius: 8px;
   font-size: 1rem;

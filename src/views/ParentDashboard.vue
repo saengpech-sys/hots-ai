@@ -495,6 +495,9 @@ onMounted(() => {
   margin: 0 auto;
   padding: 2rem 1rem;
   color: var(--text-primary);
+
+  min-height: 100vh;
+  background: var(--bg-primary);
 }
 
 .dashboard-header {

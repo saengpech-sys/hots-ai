@@ -581,6 +581,9 @@ function exportNationalData() {
   max-width: 1800px;
   margin: 0 auto;
   color: var(--text-primary);
+
+  min-height: 100vh;
+  background: var(--bg-primary);
 }
 
 .header {
@@ -791,14 +794,14 @@ function exportNationalData() {
 
 .mini-fill {
   height: 100%;
-  background: white;
+  background: var(--card-bg);
   border-radius: 4px;
 }
 
 .btn-view {
   width: 100%;
   padding: 12px;
-  background: white;
+  background: var(--card-bg);
   color: #667eea;
   border: none;
   border-radius: 6px;
@@ -864,12 +867,12 @@ function exportNationalData() {
 
 .rank-gold {
   background: #FFD700;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .rank-silver {
   background: #C0C0C0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .rank-bronze {

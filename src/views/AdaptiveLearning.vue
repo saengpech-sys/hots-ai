@@ -539,6 +539,9 @@ export default {
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
@@ -555,7 +558,7 @@ export default {
 }
 
 .header p {
-  color: #e2e8f0;
+  color: var(--text-secondary);
   font-size: 1.1rem;
   font-weight: 500;
 }
@@ -573,7 +576,7 @@ export default {
   border-radius: 12px;
   font-size: 1.05rem;
   min-width: 400px;
-  background: white;
+  background: var(--card-bg);
   cursor: pointer;
   transition: all 0.3s;
   font-weight: 600;
@@ -623,7 +626,7 @@ export default {
 }
 
 .lo-selection-card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 1.5rem;
   cursor: pointer;
@@ -668,7 +671,7 @@ export default {
 
 .lo-progress-badge.fair {
   background: #fdcb6e;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .lo-progress-badge.weak {
@@ -793,7 +796,7 @@ export default {
 }
 
 .progress-overview {
-  background: white;
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 2rem;
   margin-bottom: 2rem;
@@ -842,7 +845,7 @@ export default {
 }
 
 .progress-text {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -909,7 +912,7 @@ export default {
 }
 
 .step-card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 16px;
   padding: 2rem;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -1019,7 +1022,7 @@ export default {
 
 .difficulty-3 {
   background: #fdcb6e;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .difficulty-4, .difficulty-5 {

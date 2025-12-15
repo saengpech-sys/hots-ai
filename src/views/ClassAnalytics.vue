@@ -381,6 +381,10 @@ onMounted(async () => {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .analytics-header {

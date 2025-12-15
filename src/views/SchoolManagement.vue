@@ -464,6 +464,10 @@ async function addTeacher() {
   padding: 20px;
   max-width: 1400px;
   margin: 0 auto;
+
+  min-height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .header {
@@ -505,7 +509,7 @@ async function addTeacher() {
 }
 
 .school-name {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1.1em;
 }
 
@@ -517,7 +521,7 @@ async function addTeacher() {
 }
 
 .stat-card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -538,7 +542,7 @@ async function addTeacher() {
 
 .stat-content p {
   margin: 5px 0 0 0;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .tabs {
@@ -554,7 +558,7 @@ async function addTeacher() {
   background: none;
   cursor: pointer;
   font-size: 1em;
-  color: #666;
+  color: var(--text-secondary);
   border-bottom: 3px solid transparent;
   transition: all 0.3s;
 }
@@ -570,7 +574,7 @@ async function addTeacher() {
 }
 
 .tab-content {
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   padding: 30px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -610,7 +614,7 @@ async function addTeacher() {
 .data-table th {
   background: #f5f5f5;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .data-table tr:hover {
@@ -671,7 +675,7 @@ async function addTeacher() {
   padding: 6px 12px;
   font-size: 0.9em;
   background: #f0f0f0;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .btn-small:hover {
@@ -681,7 +685,7 @@ async function addTeacher() {
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .analytics-grid {
