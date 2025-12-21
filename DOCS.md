@@ -1,10 +1,12 @@
-# 📚 HOTS AI ChatLoop - Complete Documentation
+# 📚 HOTS AI ChatLoop — Complete Technical Documentation
 
-**Last Updated:** December 20, 2025 | **Version:** 5.0
+<div align="center">
 
-> Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (A.R.C.E. Framework). Built with Vue 3 + Firebase + Cloud Functions.
+**Version 5.1** | **Last Updated: December 21, 2025**
 
-**🏆 DPA Assessment:** 11/11 criteria passed (see [DPA_ASSESSMENT_CHECKLIST.md](DPA_ASSESSMENT_CHECKLIST.md))
+*Comprehensive technical reference for developers, researchers, and system administrators*
+
+</div>
 
 ---
 
@@ -15,306 +17,269 @@
 3. [Navigation Guide](#3-navigation-guide)
 4. [User Manual](#4-user-manual)
 5. [Deployment Guide](#5-deployment-guide)
-6. [Testing Checklist](#6-testing-checklist)
+6. [Testing](#6-testing)
 7. [Security Systems](#7-security-systems)
-8. [Additional Features](#8-additional-features)
+8. [A.R.C.E. Framework Implementation](#8-arce-framework-implementation)
 9. [Worksheet LO System](#9-worksheet-lo-system)
 10. [Cloud Functions Reference](#10-cloud-functions-reference)
-11. [Firestore Collections](#11-firestore-collections)
+11. [Firestore Collections Schema](#11-firestore-collections-schema)
 12. [Development Patterns](#12-development-patterns)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
 ## 1. System Summary
 
-### Tech Stack
-| Layer | Technology | Details |
-|-------|------------|---------|
-| Frontend | Vue 3.4 + Vite 5 | Composition API, Pinia (8 stores) |
-| Backend | Firebase | Auth, Firestore, Cloud Functions (Node.js 20) |
-| AI | OpenAI | `gpt-4o-mini` (cost-effective, 15-20x cheaper than gpt-4o) |
-| Deploy | Firebase | Hosting + Functions (us-central1) |
-| PWA | Vite PWA | Installable, offline-ready |
+### Technology Stack
 
-**Project Stats:**
-- 45+ Vue Views
-- 45+ Routes
-- 41 Cloud Functions
-- 8 Pinia Stores
-- 25+ Firestore Collections
-- 123 Tests (48 Backend + 75 Frontend)
+| Layer | Technology | Version | Purpose |
+|-------|------------|---------|---------|
+| **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI with Composition API |
+| **State Management** | Pinia | 2.x | 8 modular stores |
+| **Routing** | Vue Router | 4.x | 45+ routes with guards |
+| **Backend** | Firebase Cloud Functions | Node.js 20 | 41 serverless functions |
+| **Database** | Cloud Firestore | - | 25+ collections, real-time sync |
+| **AI Engine** | OpenAI API | GPT-4o-mini | Cost-effective LLM (15-20x cheaper than GPT-4o) |
+| **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
+| **Hosting** | Firebase Hosting | - | CDN-backed static hosting |
+| **PWA** | Vite PWA | - | Installable, offline-ready |
 
-### A.R.C.E. Framework (HOTS Assessment)
+### Project Statistics
+
+| Metric | Count | Notes |
+|--------|-------|-------|
+| Vue Components | 80+ | Including 45+ full views |
+| Cloud Functions | 41 | HTTP + Scheduled + Triggers |
+| Backend Code | 9,200+ lines | Modular architecture |
+| Firestore Collections | 25+ | Normalized schema |
+| Test Cases | 123 | 48 backend + 75 frontend |
+| Routes | 45+ | Role-based access control |
+| Pinia Stores | 8 | auth, chat, gamification, theme, lessonPlan, learningPath, notifications, dashboard |
+
+### A.R.C.E. Framework Quick Reference
+
 | Dimension | Thai | Description | Score Range |
 |-----------|------|-------------|-------------|
-| **A**nalysis | การวิเคราะห์ | แยกแยะประเด็น, หาความสัมพันธ์ | 0-5 |
-| **R**easoning | การให้เหตุผล | อธิบายเหตุผล, สรุปตรรกะ | 0-5 |
-| **C**reativity | ความคิดสร้างสรรค์ | เสนอมุมมองใหม่, คิดนอกกรอบ | 0-5 |
-| **E**vidence | การใช้หลักฐาน | อ้างอิงข้อมูล, ยกตัวอย่าง | 0-5 |
+| **A**nalysis | การวิเคราะห์ | แยกแยะประเด็น, หาความสัมพันธ์, เปรียบเทียบ | 0-5 |
+| **R**easoning | การให้เหตุผล | อธิบายเหตุผล, สรุปตรรกะ, อ้างหลักการ | 0-5 |
+| **C**reativity | ความคิดสร้างสรรค์ | เสนอมุมมองใหม่, คิดนอกกรอบ, ออกแบบ | 0-5 |
+| **E**vidence | การใช้หลักฐาน | อ้างอิงข้อมูล, ยกตัวอย่าง, สนับสนุน | 0-5 |
 
 **Total Score: 0-20** (sum of 4 dimensions)
-
-### Core Data Collections
-```
-users              → Role-based (student/teacher); studentId, grade, room, number, section
-courses            → Teacher-owned; learningOutcomes[], courseCode
-questions          → courseId-linked; hasSolution, relatedLOs[], loConfigs[]
-sessions           → Chat lifecycle; messageCount, status
-messages           → References assessmentId
-assessments        → rubricScores (A.R.C.E.) + loAssessment
-studentProgress    → {studentId}_{courseId} tracking passedLOs[], loProgress{}
-eWorksheets        → Electronic worksheets with sections, questions, metadata.learningOutcomes
-worksheetSubmissions → Student answers, assessment, loAssessment
-lessonPlans        → 5E model lesson plans with A.R.C.E. integration
-learningRooms      → Activity rooms for worksheets
-knowledgeSheets    → Pre-learning content sheets
-```
-
-### Core Patterns
-```javascript
-// 1. Always clean GPT markdown wrappers before JSON.parse
-let cleanedText = responseText.trim()
-if (cleanedText.startsWith('```')) {
-  cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-  cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
-}
-const result = JSON.parse(cleanedText)
-
-// 2. Use standard LO utility (consistency across all pages)
-import { getStudentPassedLOs } from '@/utils/loProgress'
-const { passedLOs, assessmentCount, worksheetCount } = await getStudentPassedLOs(studentUid, courseId)
-
-// 3. CSV Export with Thai BOM
-const BOM = '\uFEFF'
-const blob = new Blob([BOM + csvContent], {type: 'text/csv;charset=utf-8'})
-
-// 4. Firestore increment pattern
-await updateDoc(ref, { count: FieldValue.increment(1) })
-
-// 5. Role checking in Vue component
-const authStore = useAuthStore()
-const isTeacher = computed(() => authStore.userProfile?.role === 'teacher')
-```
-
-### 🔬 Phase 2: AI Precision & Integrity (NEW)
-```javascript
-// Deterministic AI Scoring
-temperature: 0,        // No randomness
-seed: 42,              // Reproducible results
-
-// Chain of Thought (CoT) Reasoning
-chainOfThought: {
-  step1_summary: "สรุปประเด็นหลัก",
-  step2_evidence: { analysis: "...", reasoning: "..." },
-  step3_anchor_match: "ตรงกับ Anchor ระดับ 4",
-  step4_decision: "เหตุผลการตัดสินใจ"
-}
-
-// AI Confidence Score
-aiConfidence: 85,               // 0-100%
-aiConfidenceReason: "คำตอบชัดเจน มีตัวอย่าง"
-
-// Prompt Injection Defense
-const sanitizedAnswer = answer
-  .replace(/```/g, "'''")
-  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')  // Remove XML tags
-  .replace(/\{\{[^}]*\}\}/g, '')         // Remove templates
-  .substring(0, 3000)                   // Limit length
-
-// XML Tag Isolation
-<system_instruction>...</system_instruction>
-<student_answer>${sanitizedAnswer}</student_answer>
-
-// Full Audit Trail
-auditTrail: {
-  modelUsed: 'gpt-4o-mini',
-  temperature: 0,
-  seed: 42,
-  rawResponseLength: 1234,
-  parseAttempts: 1,
-  timestamp: '2024-...'
-}
-```
 
 ---
 
 ## 2. Architecture
 
 ### Project Structure
+
 ```
-HOTS-AI-CHATLOOP/
-├── src/
-│   ├── views/              # 45+ Vue pages
-│   │   ├── ChatView.vue           # Main assessment chat
-│   │   ├── WorksheetResult.vue    # Worksheet results + LO section
-│   │   ├── WorksheetReports.vue   # Teacher reports + LO column
-│   │   ├── AdminLOManager.vue     # Admin LO editing tool
-│   │   ├── MyProgress.vue         # Student progress
-│   │   ├── LOReports.vue          # Teacher LO reports
+hots-ai/
+├── 📁 src/                          # Frontend source
+│   ├── 📁 views/                    # 45+ Vue pages
+│   │   ├── ChatView.vue             # Main assessment chat
+│   │   ├── WorksheetResult.vue      # Worksheet results + LO section
+│   │   ├── WorksheetReports.vue     # Teacher worksheet reports
+│   │   ├── AdminLOManager.vue       # Admin LO editing tool
+│   │   ├── MyProgress.vue           # Student progress
+│   │   ├── LOReports.vue            # Teacher LO reports
+│   │   ├── ClassAnalytics.vue       # Class analytics dashboard
+│   │   ├── LessonPlans.vue          # 5E lesson plan management
 │   │   └── ...
-│   ├── components/         # Reusable components
-│   │   ├── RadarChart.vue         # ARCE visualization
-│   │   ├── LOProgressCards.vue    # LO progress display
+│   ├── 📁 components/               # Reusable components
+│   │   ├── RadarChart.vue           # A.R.C.E. visualization
+│   │   ├── LOProgressCards.vue      # LO progress display
+│   │   ├── GamificationStats.vue    # Points, badges, streaks
 │   │   └── ...
-│   ├── stores/             # Pinia state management
-│   │   ├── auth.js                # Authentication + role
-│   │   ├── chat.js                # Session + questions
-│   │   ├── gamification.js        # Points, badges, streaks
-│   │   └── ...
-│   ├── utils/              # Utility functions
-│   │   ├── loProgress.js          # ⭐ Standard LO counting
-│   │   └── antiCheat.js           # Copy-paste detection
-│   ├── firebase/           # Firebase config
-│   └── router/             # Vue Router with guards
-├── functions/              # Cloud Functions
-│   ├── index.js            # Main functions (9200+ lines)
-│   │   ├── assessAnswer           # Chat assessment
-│   │   ├── assessWorksheetSubmission  # Worksheet assessment
-│   │   ├── generateElectronicWorksheet
-│   │   └── ... (25+ functions)
-│   ├── gamification.js     # Badge definitions
-│   └── national-scale.js   # Ministry/ESA functions
-├── firestore.rules         # Security rules
-├── firestore.indexes.json  # Composite indexes
-└── DOCS.md                 # This file
+│   ├── 📁 stores/                   # Pinia state management
+│   │   ├── auth.js                  # Authentication + role
+│   │   ├── chat.js                  # Session + questions
+│   │   ├── gamification.js          # Points, badges, streaks
+│   │   ├── theme.js                 # Dark mode
+│   │   ├── lessonPlan.js            # Lesson plan CRUD
+│   │   ├── learningPath.js          # Adaptive learning
+│   │   ├── notifications.js         # Toast messages
+│   │   └── dashboard.js             # Teacher dashboard data
+│   ├── 📁 utils/                    # Utility functions
+│   │   ├── loProgress.js            # ⭐ Standard LO counting
+│   │   ├── antiCheat.js             # Copy-paste detection
+│   │   ├── errorHandler.js          # Error handling
+│   │   └── logger.js                # Client-side logging
+│   ├── 📁 firebase/                 # Firebase config
+│   │   └── config.js
+│   ├── 📁 router/                   # Vue Router with guards
+│   │   └── index.js
+│   └── 📁 styles/                   # Global styles
+│       └── main.css
+├── 📁 functions/                    # Cloud Functions
+│   ├── index.js                     # Main functions (9200+ lines)
+│   ├── gamification.js              # Badge definitions
+│   ├── national-scale.js            # Ministry/ESA functions
+│   ├── 📁 utils/                    # Backend utilities
+│   │   ├── prompts.js               # AI prompt templates
+│   │   ├── loAssessment.js          # LO assessment logic
+│   │   ├── aiParser.js              # JSON response cleaning
+│   │   ├── aiDetection.js           # AI-generated content detection
+│   │   ├── reliability.js           # Schema validation
+│   │   ├── rateLimiter.js           # Rate limiting
+│   │   └── researchData.js          # Research data helpers
+│   ├── 📁 services/                 # Business logic
+│   │   └── assessmentService.js     # Assessment orchestration
+│   ├── 📁 controllers/              # Request handlers
+│   │   └── assessmentController.js
+│   └── 📁 __tests__/                # Backend tests
+│       ├── prompts.test.js
+│       ├── loAssessment.test.js
+│       ├── aiParser.test.js
+│       └── rateLimiter.test.js
+├── 📁 public/                       # Static assets
+├── 📄 firestore.rules               # Security rules
+├── 📄 firestore.indexes.json        # Composite indexes
+├── 📄 firebase.json                 # Firebase config
+├── 📄 package.json                  # Frontend dependencies
+└── 📄 vite.config.js                # Vite config
 ```
 
-### Key Stores (Pinia)
+### Pinia Stores Reference
+
 | Store | Purpose | Key Methods |
 |-------|---------|-------------|
-| `auth.js` | Google Sign-In, user profile | `signInWithGoogle()`, `signOut()` |
-| `chat.js` | Session lifecycle, questions | `startSession()`, `sendAnswer()`, `selectQuestion()` |
-| `gamification.js` | Points, badges, streaks | `awardPoints()`, `checkBadges()`, `refreshActualPassedLOs()` |
+| `auth.js` | Google Sign-In, user profile, role checking | `signInWithGoogle()`, `signOut()`, `isTeacher` |
+| `chat.js` | Session lifecycle, question selection | `startSession()`, `sendAnswer()`, `selectQuestion()` |
+| `gamification.js` | Points, badges, streaks, leaderboard | `awardPoints()`, `checkBadges()`, `refreshActualPassedLOs()` |
 | `theme.js` | Dark mode toggle | `toggleDarkMode()` |
 | `lessonPlan.js` | Lesson plan CRUD | `createPlan()`, `generateWithAI()` |
 | `learningPath.js` | Adaptive learning | `getAdaptivePath()` |
 | `notifications.js` | Toast messages | `showToast()`, `showError()` |
 | `dashboard.js` | Teacher dashboard data | `loadClassData()` |
 
-### Question Selection Algorithm (chat.js)
+### Question Selection Algorithm
+
 ```javascript
-// Priority-based selection for adaptive learning
-1. Get student's weak LOs from `studentProgress`
-2. Filter unused questions (not in session's `usedQuestionIds`)
-3. Exclude questions with `hasSolution: true` (teacher exam keys)
-4. Priority 1: Questions targeting weak LOs (`relatedLOs` intersection)
-5. Priority 2: Random unused questions
-6. Fallback: Least-used question (by `usageCount`)
+// Priority-based selection for adaptive learning (chat.js)
+async function selectNextQuestion(courseId, sessionId) {
+  // 1. Get student's weak LOs from studentProgress
+  const weakLOs = await getWeakLOs(studentId, courseId);
+  
+  // 2. Filter unused questions (not in session's usedQuestionIds)
+  const unusedQuestions = questions.filter(q => !usedQuestionIds.includes(q.id));
+  
+  // 3. Exclude questions with hasSolution: true (teacher exam keys)
+  const studentQuestions = unusedQuestions.filter(q => !q.hasSolution);
+  
+  // 4. Priority 1: Questions targeting weak LOs
+  const priorityQuestions = studentQuestions.filter(q => 
+    q.relatedLOs.some(lo => weakLOs.includes(lo))
+  );
+  
+  if (priorityQuestions.length > 0) {
+    return randomSelect(priorityQuestions);
+  }
+  
+  // 5. Priority 2: Random unused questions
+  if (studentQuestions.length > 0) {
+    return randomSelect(studentQuestions);
+  }
+  
+  // 6. Fallback: Least-used question (by usageCount)
+  return questions.reduce((min, q) => q.usageCount < min.usageCount ? q : min);
+}
 ```
-3. Exclude `hasSolution: true` (teacher solutions)
-4. Priority: Questions targeting weak LOs
-5. Fallback: Random unused or least-used
 
 ---
 
 ## 3. Navigation Guide
 
 ### 🎓 Student Features (9 Menus)
-| # | Feature | Route | Description |
-|---|---------|-------|-------------|
-| 1 | 🚀 เริ่มทำ Assessment | `/chat` | Chat-based HOTS assessment |
-| 2 | 🏫 ห้องกิจกรรม | `/learning-rooms` | Electronic worksheet rooms |
-| 3 | 📈 ความคืบหน้า LO | `/my-progress` | Personal LO tracking |
-| 4 | 📊 Progress Analytics | `/progress-analytics` | Detailed analytics charts |
-| 5 | 🎯 Adaptive Learning | `/adaptive-learning` | AI-powered learning paths |
-| 6 | 🎯 Goal Setting | `/goal-setting` | Personal learning goals |
-| 7 | 🏆 Leaderboard | `/leaderboard` | Course-based ranking |
-| 8 | 🗺️ Progress Map | `/progress-map` | Visual LO progress |
-| 9 | 👤 โปรไฟล์ | `/profile` | User settings |
 
-### 👨‍🏫 Teacher Features (14 Menus)
-| # | Feature | Route | Description |
-|---|---------|-------|-------------|
-| 1 | 📚 จัดการรายวิชา | `/courses` | Course CRUD + AI LO generation |
-| 2 | 💡 คลังคำถาม | `/questions` | Question bank + AI generation |
-| 3 | 📊 วิเคราะห์ห้องเรียน | `/class-analytics` | Class overview + export |
-| 4 | 🎯 รายงาน LO | `/lo-reports` | LO heatmap by student |
-| 5 | 🔮 AI Predictions | `/teacher-analytics` | Predictive analytics |
-| 6 | 📡 Real-time Monitor | `/realtime-monitor` | Live student activity |
-| 7 | 📝 แผนการสอน | `/lesson-plans` | 5E model lesson plans |
-| 8 | 📋 ใบงาน | `/teacher/worksheets` | Electronic worksheets |
-| 9 | 📊 รายงานใบงาน | `/teacher/worksheet-reports` | Worksheet reports + LO |
-| 10 | 📖 Micro Lessons | `/micro-lessons` | Short lesson content |
-| 11 | 📚 คลัง Lessons | `/micro-lesson-library` | Lesson library |
-| 12 | 👥 รายละเอียดนักเรียน | `/student-detail/:id` | Individual student view |
-| 13 | 🛠️ **Admin LO Manager** | `/admin-lo-manager` | Edit student LO data |
-| 14 | 📄 Knowledge Sheets | `/knowledge-sheet/:id` | Pre-learning content |
+| # | Route | Feature | Description | Key Components |
+|---|-------|---------|-------------|----------------|
+| 1 | `/chat` | 🚀 Assessment Chat | Chat-based HOTS assessment | ChatView.vue |
+| 2 | `/learning-rooms` | 🏫 ห้องกิจกรรม | Electronic worksheet rooms | LearningRoomList.vue |
+| 3 | `/my-progress` | 📈 ความคืบหน้า LO | Personal LO tracking | MyProgress.vue |
+| 4 | `/progress-analytics` | 📊 Analytics | Detailed analytics charts | ProgressAnalytics.vue |
+| 5 | `/adaptive-learning` | 🎯 Adaptive Learning | AI-powered learning paths | AdaptiveLearning.vue |
+| 6 | `/goal-setting` | 🎯 Goal Setting | Personal learning goals | GoalSetting.vue |
+| 7 | `/leaderboard` | 🏆 Leaderboard | Course-based ranking | Leaderboard.vue |
+| 8 | `/progress-map` | 🗺️ Progress Map | Visual LO progress | ProgressMap.vue |
+| 9 | `/profile` | 👤 โปรไฟล์ | User settings | Profile.vue |
+
+### 👨‍🏫 Teacher Features (14+ Menus)
+
+| # | Route | Feature | Description | Key Components |
+|---|-------|---------|-------------|----------------|
+| 1 | `/courses` | 📚 จัดการรายวิชา | Course CRUD + AI LO generation | CourseManagement.vue |
+| 2 | `/questions` | 💡 คลังคำถาม | Question bank + AI generation | QuestionBank.vue |
+| 3 | `/class-analytics` | 📊 วิเคราะห์ห้องเรียน | Class overview + export | ClassAnalytics.vue |
+| 4 | `/lo-reports` | 🎯 รายงาน LO | LO heatmap by student | LOReports.vue |
+| 5 | `/teacher-analytics` | 🔮 AI Predictions | Predictive analytics | TeacherAnalytics.vue |
+| 6 | `/realtime-monitor` | 📡 Real-time Monitor | Live student activity | RealtimeMonitor.vue |
+| 7 | `/lesson-plans` | 📝 แผนการสอน | 5E model lesson plans | LessonPlans.vue |
+| 8 | `/teacher/worksheets` | 📋 ใบงาน | Electronic worksheets | TeacherWorksheets.vue |
+| 9 | `/teacher/worksheet-reports` | 📊 รายงานใบงาน | Worksheet reports + LO | WorksheetReports.vue |
+| 10 | `/micro-lessons` | 📖 Micro Lessons | Short lesson content | MicroLessons.vue |
+| 11 | `/micro-lesson-library` | 📚 คลัง Lessons | Lesson library | MicroLessonLibrary.vue |
+| 12 | `/student-detail/:id` | 👥 รายละเอียดนักเรียน | Individual student view | StudentDetail.vue |
+| 13 | `/admin-lo-manager` | 🛠️ Admin LO Manager | Edit student LO data | AdminLOManager.vue |
+| 14 | `/knowledge-sheet/:id` | 📄 Knowledge Sheets | Pre-learning content | KnowledgeSheet.vue |
 
 ### 🔬 Research Features
-| Route | Description |
-|-------|-------------|
-| `/research/export` | Export anonymized data |
-| `/research/pretest-posttest` | Pre/Post test management |
-| `/research/expert-validation` | AI scoring validation |
-| `/research/expert-calibration` | Calibration tools |
 
-### System Flow Diagrams
-
-**Assessment Chat Flow:**
-```
-Student Dashboard → Select Course → /chat → Answer Question
-    ↓
-AI Assessment (assessAnswer) → ARCE Scores + LO Evaluation
-    ↓
-Save to assessments + studentProgress → Show Feedback
-```
-
-**Worksheet Flow:**
-```
-Teacher: /lesson-plans → Create 5E Plan → Generate Worksheet 
-    ↓
-/teacher/worksheets → Edit → Publish to Learning Room
-    ↓
-Student: /learning-rooms → Select Room → /worksheet/:id → Submit
-    ↓
-AI Assessment (assessWorksheetSubmission) → ARCE + LO Evaluation
-    ↓
-/worksheet-result/:id → Show Results with LO Section
-```
+| Route | Description | Key Functions |
+|-------|-------------|---------------|
+| `/research/export` | Export anonymized data | exportResearchData |
+| `/research/pretest-posttest` | Pre/Post test management | logInterventionEvent |
+| `/research/expert-validation` | AI scoring validation | calculateIRR |
+| `/research/expert-calibration` | Calibration tools | irrReport |
 
 ---
 
 ## 4. User Manual
 
-### สำหรับนักเรียน
+### สำหรับนักเรียน (Student Guide)
 
-**การเข้าสู่ระบบ:**
-1. เปิด https://hots-ai-chatloop.web.app
+#### การเข้าสู่ระบบ
+1. เปิด https://hots-ai-d028b.web.app
 2. คลิก "เข้าสู่ระบบด้วย Google"
-3. กรอกข้อมูลโปรไฟล์ครั้งแรก (รหัส, ชั้น, ห้อง, เลขที่)
+3. กรอกข้อมูลโปรไฟล์ครั้งแรก (รหัสนักเรียน, ชั้น, ห้อง, เลขที่)
+4. ยอมรับข้อกำหนด PDPA
 
-**การทำ Assessment:**
+#### การทำ Assessment Chat
 1. เลือกรายวิชาจาก Dashboard
 2. คลิก "เริ่มทำ Assessment"
-3. อ่านคำถาม → พิมพ์คำตอบ (≥20 ตัวอักษร)
+3. อ่านคำถาม → พิมพ์คำตอบ (ขั้นต่ำ 20 ตัวอักษร)
 4. คลิก "ส่งคำตอบ" → ยืนยันในกล่อง Dialog
 5. รอ AI ประเมิน → ดูคะแนน 4 มิติ (A.R.C.E.)
+6. อ่าน Feedback และ Scaffolding hints
 
-**การทำใบงาน:**
+#### การทำใบงานอิเล็กทรอนิกส์
 1. ไปที่ "ห้องกิจกรรม" (`/learning-rooms`)
-2. เลือกห้องที่ต้องการ
+2. เลือกห้องที่ครูมอบหมาย
 3. ทำใบงานทีละข้อ → ส่งคำตอบ
-4. ดูผลประเมิน A.R.C.E. และ feedback
+4. ดูผลประเมิน A.R.C.E. และ LO ที่ผ่าน
 
-### สำหรับครู
+### สำหรับครู (Teacher Guide)
 
-**การสร้างรายวิชา:**
+#### การสร้างรายวิชา
 1. ไปที่ `/courses` → "สร้างรายวิชาใหม่"
-2. กรอกข้อมูล → "AI สร้าง Learning Outcomes"
-3. ตรวจสอบและบันทึก
+2. กรอกข้อมูลพื้นฐาน (ชื่อ, รหัส, ระดับชั้น)
+3. คลิก "AI สร้าง Learning Outcomes" หรือเพิ่มเอง
+4. ตรวจสอบและบันทึก
 
-**การสร้างคำถาม:**
+#### การสร้างคำถาม HOTS
 1. ไปที่ `/questions` → เลือกวิชา
 2. "เพิ่มคำถามใหม่" หรือ "AI สร้างคำถาม"
 3. เชื่อม LO ที่เกี่ยวข้อง
-4. (Optional) "สร้าง Solution" สำหรับเฉลย
+4. (Optional) "สร้าง Solution" สำหรับเฉลยข้อสอบ
 
-**การสร้างใบงาน:**
+#### การสร้างใบงานอิเล็กทรอนิกส์
 1. ไปที่ `/lesson-plans` → สร้างแผนการสอน 5E
-2. คลิก "สร้างใบงาน" → AI สร้างอัตโนมัติ
-3. แก้ไขที่ `/teacher/worksheets` → เผยแพร่
+2. กำหนด Learning Outcomes ของแผน
+3. คลิก "สร้างใบงาน" → AI สร้างอัตโนมัติ
+4. แก้ไขที่ `/teacher/worksheets`
+5. สร้าง Learning Room → เผยแพร่ให้นักเรียน
 
-**การจัดการ LO ของนักเรียน:**
+#### การจัดการ LO ของนักเรียน
 1. ไปที่ `/admin-lo-manager`
 2. เลือกวิชา → ค้นหานักเรียน
 3. Quick Add: เพิ่ม LO ที่ขาด
@@ -325,12 +290,16 @@ AI Assessment (assessWorksheetSubmission) → ARCE + LO Evaluation
 ## 5. Deployment Guide
 
 ### Prerequisites
-- Node.js 18+
-- Firebase CLI (`npm install -g firebase-tools`)
-- OpenAI API Key
-- Firebase Blaze Plan (for Cloud Functions)
+
+| Requirement | Version | Installation |
+|-------------|---------|--------------|
+| Node.js | 18+ LTS | [nodejs.org](https://nodejs.org) |
+| Firebase CLI | Latest | `npm install -g firebase-tools` |
+| OpenAI API Key | - | [platform.openai.com](https://platform.openai.com) |
+| Firebase Project | Blaze plan | Required for Cloud Functions |
 
 ### Quick Deploy
+
 ```bash
 # 1. Install dependencies
 npm install
@@ -345,7 +314,9 @@ firebase login
 firebase use --add  # Select your project
 
 # 4. Deploy
+npm run build
 firebase deploy     # Deploy all
+
 # OR selective:
 firebase deploy --only hosting
 firebase deploy --only functions
@@ -354,29 +325,30 @@ firebase deploy --only firestore:rules
 
 ### Environment Variables
 
-**Frontend (.env):**
-```
-VITE_FIREBASE_API_KEY=xxx
-VITE_FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=xxx
-VITE_FIREBASE_STORAGE_BUCKET=xxx.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=xxx
-VITE_FIREBASE_APP_ID=xxx
-VITE_FUNCTIONS_URL=https://us-central1-xxx.cloudfunctions.net
+**Frontend (`.env`):**
+```env
+VITE_FIREBASE_API_KEY=AIza...
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
+VITE_FUNCTIONS_URL=https://us-central1-your-project.cloudfunctions.net
 ```
 
-**Functions (functions/.env):**
-```
-OPENAI_API_KEY=sk-xxx
+**Backend (`functions/.env`):**
+```env
+OPENAI_API_KEY=sk-your-openai-api-key
 OPENAI_MODEL=gpt-4o-mini
 ```
 
 ### Local Development
+
 ```bash
 # Frontend (port 5173)
 npm run dev
 
-# Functions emulator
+# Functions emulator (port 5001)
 cd functions && npm run serve
 
 # Build for production
@@ -387,7 +359,8 @@ npm run build
 
 ## 6. Testing
 
-### Automated Tests
+### Test Commands
+
 ```bash
 # Frontend tests (Vitest)
 npm test                    # Run 75 tests
@@ -398,22 +371,29 @@ npm run coverage            # Coverage report
 cd functions && npm test    # Run 48 tests
 ```
 
-**Test Coverage:**
-| Category | Tests | Files |
-|----------|-------|-------|
-| Frontend | 75 | auth.test.js, gamification.test.js, errorHandler.test.js |
-| Backend | 48 | assessment.test.js, prompts.test.js, reliability.test.js |
-| **Total** | **123** | |
+### Test Coverage
+
+| Category | File | Tests | Focus |
+|----------|------|-------|-------|
+| **Frontend** | auth.test.js | 17 | Pinia auth store, role checking |
+| | gamification.test.js | 26 | Levels, badges, streaks, points |
+| | errorHandler.test.js | 18 | Thai error messages |
+| | loProgress.test.js | 14 | LO counting consistency |
+| **Backend** | prompts.test.js | 10 | AI prompt templates |
+| | loAssessment.test.js | 10 | LO evaluation logic |
+| | aiParser.test.js | 18 | JSON response cleaning |
+| | rateLimiter.test.js | 10 | Rate limiting |
+| **Total** | | **123** | |
 
 ### Manual Testing Checklist
 
-### Authentication
+#### Authentication
 - [ ] Login ด้วย Google สำเร็จ
 - [ ] Redirect ตาม role (student/teacher)
 - [ ] Route guard ทำงานถูกต้อง
-- [ ] Profile Setup แสดงครั้งแรก (มี ม.4-6)
+- [ ] Profile Setup แสดงครั้งแรก
 
-### Student Features
+#### Student Features
 - [ ] Dashboard แสดงข้อมูลถูกต้อง
 - [ ] เลือกวิชาและเริ่ม session ได้
 - [ ] ส่งคำตอบ (≥20 chars) + กล่องยืนยัน
@@ -421,15 +401,14 @@ cd functions && npm test    # Run 48 tests
 - [ ] รับ feedback และคะแนน real-time
 - [ ] Gamification: แต้ม, Badge, Streak
 
-### Teacher Features
+#### Teacher Features
 - [ ] Course/Question CRUD
 - [ ] AI Generate: LO, Question, Solution
 - [ ] Class Analytics + Export CSV
 - [ ] LO Reports Heatmap
-- [ ] Real-time Monitor
 - [ ] Lesson Plan (5E) + Worksheet
 
-### LO Consistency
+#### LO Consistency
 - [ ] นักเรียนเห็น LO = ครูเห็น LO (ใช้ `loProgress.js`)
 - [ ] Admin LO Manager แก้ไขได้
 
@@ -437,302 +416,432 @@ cd functions && npm test    # Run 48 tests
 
 ## 7. Security Systems
 
-### Role-Based Access (Firestore Rules)
-```javascript
-function isTeacher() {
-  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
-}
-// Teacher-only: courses, questions, reports
-// Student: own data + session messages + assessments
+### Multi-Layer Security Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SECURITY ARCHITECTURE                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ LAYER 1: CLIENT-SIDE PROTECTION                                 │   │
+│  │ • @paste.prevent, @copy.prevent, @cut.prevent                   │   │
+│  │ • @contextmenu.prevent                                          │   │
+│  │ • Character counting, minimum length                            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                              ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ LAYER 2: SERVER-SIDE INPUT VALIDATION                           │   │
+│  │ • detectCopyPaste() — unusual spacing, long words, mixed script │   │
+│  │ • analyzeAIContent() — AI-generated text detection              │   │
+│  │ • Rate limiting — prevent abuse                                 │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                              ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ LAYER 3: AI PROMPT INJECTION DEFENSE                            │   │
+│  │ • Input sanitization (strip code blocks, XML, templates)        │   │
+│  │ • XML tag isolation (student input separated from system)       │   │
+│  │ • Hard length limit (3000 characters)                           │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                              ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ LAYER 4: DATABASE SECURITY                                      │   │
+│  │ • Firestore security rules (role-based)                         │   │
+│  │ • School isolation (isSameSchool helper)                        │   │
+│  │ • Data validation rules                                         │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                              ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ LAYER 5: PRIVACY COMPLIANCE (PDPA)                              │   │
+│  │ • Consent modal on first login                                  │   │
+│  │ • No PII sent to OpenAI                                         │   │
+│  │ • Anonymized research export                                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Anti-Cheat System
-**Client-side:**
-- `@paste.prevent`, `@copy.prevent`, `@cut.prevent` on textareas
-- `@contextmenu.prevent`
+### Prompt Injection Defense Implementation
 
-**Server-side (`detectCopyPaste()`):**
-- Unusual spacing patterns
-- Very long words (>25 chars)
-- Mixed script detection (Thai + unexpected)
-- Suspicious character ratios
-
-### PDPA Compliance
-- Consent modal on first login
-- Data anonymization for research export
-- User can request data deletion
-- Minimal data collection policy
-- **No PII sent to AI**: ไม่ส่งชื่อ/รหัสนักเรียนไป OpenAI
-
-### 🔬 Phase 2: AI Security
 ```javascript
-// Prompt Injection Defense (functions/index.js:758-766)
+// functions/index.js — Input Sanitization
 const sanitizedAnswer = answer
-  .replace(/```/g, "'''")
-  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')
-  .replace(/\{\{[^}]*\}\}/g, '')
-  .substring(0, 3000)
+  .replace(/```/g, "'''")                    // Escape code blocks
+  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')      // Remove XML-like tags
+  .replace(/\{\{[^}]*\}\}/g, '')            // Remove template expressions
+  .substring(0, 3000);                       // Hard length limit
 
-// XML Tag Isolation
-<system_instruction>...</system_instruction>
+// XML Tag Isolation — Student input isolated from system instructions
+const prompt = `
+<system_instruction>
+  คุณเป็นครูผู้ประเมินคำตอบตาม A.R.C.E. Framework
+  ประเมินอย่างเป็นกลาง ไม่ลำเอียง ใช้หลักฐานจากคำตอบเท่านั้น
+</system_instruction>
+
+<question_context>${questionContext}</question_context>
+
 <student_answer>${sanitizedAnswer}</student_answer>
+
+<output_format>JSON only, no markdown wrappers</output_format>
+`;
 ```
 
-### Deterministic Scoring
-- `temperature: 0` → ไม่มี randomness
-- `seed: 42` → Reproducible results
-- Same answer = Same score (ทุกครั้ง)
+### Firestore Security Rules
 
----
-
-## 8. Additional Features
-
-### Gamification System
-- **Points:** 10-100 per assessment based on score
-- **Badges:** 20+ types (First Answer, Perfect Score, Streak Master, etc.)
-- **Streaks:** Daily login tracking
-- **Leaderboard:** Course-based ranking
-
-### AI Scaffolding (Assessment Feedback)
-| Score | Level | Feedback Style |
-|-------|-------|----------------|
-| ≤4 | 1 | ให้คำใบ้ชัดเจน + ตัวอย่าง |
-| 5-8 | 2 | แนะนำแนวคิด |
-| 9-12 | 3 | ถามคำถามชวนคิด |
-| 13-16 | 4 | ท้าทายเพิ่มเติม |
-| 17-20 | 5 | ยกย่อง + ขยายความ |
-
-### PWA Support
-- Installable on mobile/desktop
-- Offline capability (basic)
-- Push notifications ready
-
-### National Scale Architecture
-```
-Ministry (กระทรวง)
-    └── ESA (เขตพื้นที่การศึกษา)
-            └── School (โรงเรียน)
-                    └── Teacher → Students
-```
-Dashboards: `/national-dashboard`, `/esa-dashboard`, `/school-management`
-
-### Research Data Export
-- `/research/export` - Export anonymized data
-- `/research/pretest-posttest` - Pre/Post test management
-- `/research/expert-validation` - AI scoring validation
-
----
-
-## 🔑 Key Files Reference
-
-| File | Purpose |
-|------|---------|
-| `functions/index.js` | All Cloud Functions, AI prompts (4000+ lines) |
-| `src/stores/chat.js` | Question selection, LO tracking (600+ lines) |
-| `src/utils/loProgress.js` | **Standard LO counting** - ใช้ทุกหน้า รวม assessments + worksheetSubmissions |
-| `src/views/ChatView.vue` | Confirmation dialog, copy-paste blocking |
-| `src/views/AdminLOManager.vue` | Admin tool for LO management |
-| `src/views/WorksheetResult.vue` | Worksheet result with LO section |
-| `src/views/WorksheetReports.vue` | Teacher worksheet reports with LO column |
-| `firestore.rules` | Role-based security |
-
----
-
-## 🎯 Worksheet LO System (NEW)
-
-### How it works:
-1. **generateElectronicWorksheet** - เก็บ `learningOutcomes` ใน metadata ของ worksheet
-2. **assessWorksheetSubmission** - เรียก `assessLearningOutcomesInternal` เพื่อประเมิน LO
-3. **loProgress.js** - ดึงข้อมูลจากทั้ง `assessments` และ `worksheetSubmissions` collections
-4. **WorksheetResult.vue** - แสดง LO section ให้นักเรียนเห็น
-5. **WorksheetReports.vue** - แสดงคอลัมน์ LO ในตารางรายงาน
-
-### Data stored:
 ```javascript
-// worksheetSubmissions document
-{
-  loAssessment: {
-    passedLOs: ["LO1", "LO2"],
-    analysis: "..."
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isTeacher() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isStudent() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+    
+    function isSameSchool(schoolId) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
+    }
+    
+    // Users — own data only
+    match /users/{userId} {
+      allow read: if isLoggedIn() && (isOwner(userId) || isTeacher());
+      allow write: if isOwner(userId);
+    }
+    
+    // Courses — teacher owns, students read enrolled
+    match /courses/{courseId} {
+      allow read: if isLoggedIn();
+      allow write: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+    }
+    
+    // Questions — teacher CRUD
+    match /questions/{questionId} {
+      allow read: if isLoggedIn();
+      allow write: if isTeacher();
+    }
+    
+    // Assessments — student owns, teacher reads
+    match /assessments/{assessmentId} {
+      allow read: if isLoggedIn() && (
+        resource.data.studentId == request.auth.uid || isTeacher()
+      );
+      allow create: if isStudent();
+    }
   }
 }
+```
 
-// studentProgress document
-{
-  passedLOs: ["LO1", "LO2", "LO3"], // merged from all sources
-  worksheetAssessments: [{
-    worksheetId,
-    passedLOs: ["LO1"],
-    ...
-  }]
+---
+
+## 8. A.R.C.E. Framework Implementation
+
+### Phase 2: Deterministic AI Scoring
+
+```javascript
+// functions/index.js — AI Configuration
+const assessmentConfig = {
+  model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  temperature: 0,        // Zero randomness
+  seed: 42,              // Fixed seed for reproducibility
+  max_tokens: 1500,
+  response_format: { type: 'json_object' }
+};
+
+// Chain of Thought (CoT) Structure
+const expectedOutput = {
+  chainOfThought: {
+    step1_summary: "สรุปประเด็นหลักของคำตอบนักเรียน",
+    step2_evidence: {
+      analysis: "หลักฐานการวิเคราะห์ที่พบ...",
+      reasoning: "หลักฐานการให้เหตุผลที่พบ...",
+      creativity: "หลักฐานความคิดสร้างสรรค์ที่พบ...",
+      evidence: "หลักฐานการอ้างอิงที่พบ..."
+    },
+    step3_anchor_match: "หลักฐานตรงกับ Anchor ระดับ X เนื่องจาก...",
+    step4_decision: "เหตุผลในการตัดสินใจให้คะแนนสุดท้าย"
+  },
+  rubricScores: {
+    analysis: 0-5,
+    reasoning: 0-5,
+    creativity: 0-5,
+    evidence: 0-5
+  },
+  overallScore: 0-20,
+  feedback: "...",
+  aiConfidence: 0-100,
+  aiConfidenceReason: "..."
+};
+```
+
+### AI Response Cleaning (MANDATORY)
+
+```javascript
+// functions/utils/aiParser.js — ALWAYS clean GPT responses before JSON.parse
+function cleanAIResponse(responseText) {
+  let cleanedText = responseText.trim();
+  
+  // GPT-4o-mini often wraps JSON in ```json blocks — MUST strip
+  if (cleanedText.startsWith('```')) {
+    cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '');
+    cleanedText = cleanedText.replace(/\n?```\s*$/i, '');
+  }
+  
+  // Remove any leading/trailing whitespace after stripping
+  cleanedText = cleanedText.trim();
+  
+  try {
+    return JSON.parse(cleanedText);
+  } catch (error) {
+    console.error('JSON parse failed:', error);
+    console.error('Raw text:', cleanedText.substring(0, 200));
+    throw new Error('Invalid AI response format');
+  }
 }
 ```
+
+### Scaffolding System
+
+| Score Range | Scaffolding Level | Feedback Style |
+|-------------|-------------------|----------------|
+| 0-4 | Level 1 (Explicit) | ให้คำใบ้ชัดเจน + ตัวอย่าง |
+| 5-8 | Level 2 (Guided) | แนะนำแนวคิด |
+| 9-12 | Level 3 (Probing) | ถามคำถามชวนคิด |
+| 13-16 | Level 4 (Challenge) | ท้าทายเพิ่มเติม |
+| 17-20 | Level 5 (Praise) | ยกย่อง + ขยายความ |
 
 ---
 
 ## 9. Worksheet LO System
 
-### Overview
-ระบบ Worksheet LO ทำให้ใบงานอิเล็กทรอนิกส์ประเมินและบันทึก Learning Outcomes เหมือนกับ Assessment Chat ทำให้ครูและนักเรียนเห็นข้อมูล LO ที่ตรงกัน 100%
+### System Flow
 
-### Architecture Flow
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Worksheet LO System Flow                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Teacher Creates Lesson Plan                                        │
-│       ↓                                                             │
-│  generateElectronicWorksheet (Cloud Function)                       │
-│       ├── Extract LOs from Lesson Plan                              │
-│       ├── Generate questions with AI                                │
-│       └── Store learningOutcomes[] in worksheet.metadata            │
-│       ↓                                                             │
-│  eWorksheets Collection                                             │
-│  {                                                                  │
-│    metadata: {                                                      │
-│      learningOutcomes: [                                            │
-│        { loCode: "LO1", loDescription: "..." },                     │
-│        { loCode: "LO2", loDescription: "..." }                      │
-│      ]                                                              │
-│    },                                                               │
-│    sections: [...]                                                  │
-│  }                                                                  │
-│       ↓                                                             │
-│  Student Completes Worksheet                                        │
-│       ↓                                                             │
-│  assessWorksheetSubmission (Cloud Function)                         │
-│       ├── Assess ARCE scores                                        │
-│       ├── Call assessLearningOutcomesInternal()                     │
-│       │      ├── Build rubric scores from ARCE                      │
-│       │      ├── Evaluate each LO (same logic as Assessment Chat)   │
-│       │      └── Return passedLOs[] + analysis                      │
-│       ├── Save loAssessment to worksheetSubmissions                 │
-│       └── Update studentProgress.passedLOs (merged)                 │
-│       ↓                                                             │
-│  loProgress.js (Frontend Utility)                                   │
-│       ├── Query assessments collection                              │
-│       ├── Query worksheetSubmissions collection                     │
-│       └── Merge unique passedLOs from both sources                  │
-│       ↓                                                             │
-│  All pages show consistent LO data                                  │
-│       ├── MyProgress.vue (Student)                                  │
-│       ├── LOReports.vue (Teacher)                                   │
-│       ├── WorksheetResult.vue (Student)                             │
-│       ├── WorksheetReports.vue (Teacher)                            │
-│       └── gamification.js (actualPassedLOs)                         │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    WORKSHEET LO SYSTEM FLOW                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  TEACHER CREATES LESSON PLAN                                            │
+│       ↓                                                                 │
+│  generateElectronicWorksheet (Cloud Function)                           │
+│       ├── Extract LOs from Lesson Plan                                  │
+│       ├── Generate questions with AI                                    │
+│       └── Store learningOutcomes[] in worksheet.metadata                │
+│       ↓                                                                 │
+│  eWorksheets Collection                                                 │
+│  {                                                                      │
+│    metadata: {                                                          │
+│      learningOutcomes: [                                                │
+│        { loCode: "LO1", loDescription: "..." },                         │
+│        { loCode: "LO2", loDescription: "..." }                          │
+│      ]                                                                  │
+│    },                                                                   │
+│    sections: [...]                                                      │
+│  }                                                                      │
+│       ↓                                                                 │
+│  STUDENT COMPLETES WORKSHEET                                            │
+│       ↓                                                                 │
+│  assessWorksheetSubmission (Cloud Function)                             │
+│       ├── Assess A.R.C.E. scores                                        │
+│       ├── Call assessLearningOutcomesInternal()                         │
+│       │      ├── Build rubric scores from A.R.C.E.                      │
+│       │      ├── Evaluate each LO (same logic as Assessment Chat)       │
+│       │      └── Return passedLOs[] + analysis                          │
+│       ├── Save loAssessment to worksheetSubmissions                     │
+│       └── Update studentProgress.passedLOs (merged)                     │
+│       ↓                                                                 │
+│  loProgress.js (Frontend Utility)                                       │
+│       ├── Query assessments collection                                  │
+│       ├── Query worksheetSubmissions collection                         │
+│       └── Merge unique passedLOs from both sources                      │
+│       ↓                                                                 │
+│  CONSISTENT LO DISPLAY ACROSS ALL PAGES                                 │
+│       ├── MyProgress.vue (Student)                                      │
+│       ├── LOReports.vue (Teacher)                                       │
+│       ├── WorksheetResult.vue (Student)                                 │
+│       ├── WorksheetReports.vue (Teacher)                                │
+│       └── gamification.js (actualPassedLOs)                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Functions
+### loProgress.js — Standard LO Counting (MANDATORY)
 
-**loProgress.js - Standard LO Counting:**
 ```javascript
-// Get student's passed LOs for a specific course
-// Combines data from BOTH assessments AND worksheetSubmissions
+// src/utils/loProgress.js — ALWAYS use this for LO counting
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/firebase/config';
+
+/**
+ * Get student's passed LOs for a specific course
+ * Combines data from BOTH assessments AND worksheetSubmissions
+ */
 export async function getStudentPassedLOs(studentUid, courseId) {
-  // Returns: { passedLOs: [], assessmentCount, worksheetCount, assessments, worksheets }
+  const passedLOs = new Set();
+  let assessmentCount = 0;
+  let worksheetCount = 0;
+  
+  // 1. Query assessments collection
+  const assessmentsQuery = query(
+    collection(db, 'assessments'),
+    where('studentId', '==', studentUid),
+    where('courseId', '==', courseId)
+  );
+  const assessmentSnap = await getDocs(assessmentsQuery);
+  assessmentSnap.forEach(doc => {
+    const data = doc.data();
+    if (data.loAssessment?.passedLOs) {
+      data.loAssessment.passedLOs.forEach(lo => passedLOs.add(lo));
+    }
+    assessmentCount++;
+  });
+  
+  // 2. Query worksheetSubmissions collection
+  const worksheetQuery = query(
+    collection(db, 'worksheetSubmissions'),
+    where('studentId', '==', studentUid),
+    where('courseId', '==', courseId)
+  );
+  const worksheetSnap = await getDocs(worksheetQuery);
+  worksheetSnap.forEach(doc => {
+    const data = doc.data();
+    if (data.loAssessment?.passedLOs) {
+      data.loAssessment.passedLOs.forEach(lo => passedLOs.add(lo));
+    }
+    worksheetCount++;
+  });
+  
+  return {
+    passedLOs: Array.from(passedLOs),
+    assessmentCount,
+    worksheetCount,
+    totalSources: assessmentCount + worksheetCount
+  };
 }
 
-// Get ALL passed LOs across ALL courses
-export async function getStudentAllPassedLOs(studentUid) {
-  // Returns: { passedLOs: [], assessmentCount, worksheetCount, courseBreakdown }
-}
-
-// Batch query for multiple students (teacher reports)
+/**
+ * Batch query for multiple students (teacher reports)
+ */
 export async function getBatchStudentPassedLOs(studentUids, courseId) {
-  // Returns: { [uid]: { passedLOs, assessmentCount, worksheetCount } }
+  const results = {};
+  
+  // Parallel queries for efficiency
+  await Promise.all(studentUids.map(async uid => {
+    results[uid] = await getStudentPassedLOs(uid, courseId);
+  }));
+  
+  return results;
 }
 ```
-
-### LO Passing Criteria
-An LO is considered "passed" when ALL 3 conditions are met:
-1. **Content Match**: Student's answer covers the LO's intent substantially
-2. **Skill Level**: Evidence of understanding/skill the LO expects
-3. **HOTS Score ≥ 3**: Related dimension(s) must score at least 3/5
-   - Analysis verbs → analysis ≥ 3
-   - Reasoning verbs → reasoning ≥ 3
-   - Creative verbs → creativity ≥ 3
-   - Evidence verbs → evidence ≥ 3
 
 ---
 
 ## 10. Cloud Functions Reference
 
 ### Assessment Functions
-| Function | Purpose | Input |
-|----------|---------|-------|
-| `assessAnswer` | Chat-based HOTS assessment | answer, questionId, courseId |
-| `assessWorksheetSubmission` | Worksheet assessment + LO | submissionId, worksheetId, answers |
-| `assessLearningOutcomesInternal` | Internal LO evaluation | studentAnswer, learningOutcomes, assessmentResult |
+
+| Function | Type | Purpose | Input |
+|----------|------|---------|-------|
+| `assessAnswer` | HTTP | Chat-based HOTS assessment | answer, questionId, courseId |
+| `assessWorksheetSubmission` | HTTP | Worksheet assessment + LO | submissionId, worksheetId, answers |
+| `assessLearningOutcomesInternal` | Internal | LO evaluation | studentAnswer, learningOutcomes, assessmentResult |
 
 ### Generation Functions
-| Function | Purpose | Input |
-|----------|---------|-------|
-| `generateLearningOutcomes` | AI generate LOs for course | courseId, description |
-| `generateHOTSQuestion` | AI generate HOTS question | courseId, topic, difficulty |
-| `generateSolution` | AI generate model answer | questionId |
-| `generateLessonPlan` | AI generate 5E lesson plan | topic, gradeLevel, duration |
-| `generateElectronicWorksheet` | AI generate worksheet | lessonPlanId, questionCount |
-| `generateKnowledgeSheet` | AI generate knowledge sheet | lessonPlanId |
-| `generateCourseStructure` | AI generate course units | courseId |
+
+| Function | Type | Purpose | Input |
+|----------|------|---------|-------|
+| `generateLearningOutcomes` | HTTP | AI generate LOs for course | courseId, description |
+| `generateHOTSQuestion` | HTTP | AI generate HOTS question | courseId, topic, difficulty |
+| `generateSolution` | HTTP | AI generate model answer | questionId |
+| `generateLessonPlan` | HTTP | AI generate 5E lesson plan | topic, gradeLevel, duration |
+| `generateElectronicWorksheet` | HTTP | AI generate worksheet | lessonPlanId, questionCount |
+| `generateKnowledgeSheet` | HTTP | AI generate knowledge sheet | lessonPlanId |
+| `generateCourseStructure` | HTTP | AI generate course units | courseId |
 
 ### Analytics Functions
-| Function | Purpose | Input |
-|----------|---------|-------|
-| `generateClassAnalytics` | Class performance summary | courseId |
-| `generateDailyReport` | Daily activity report | date |
-| `getWorksheetReports` | Worksheet submission reports | worksheetId |
-| `analyzeTalentTracks` | Talent analysis | studentId |
-| `generateAdaptivePath` | Personalized learning path | studentId, courseId |
+
+| Function | Type | Purpose | Trigger |
+|----------|------|---------|---------|
+| `generateClassAnalytics` | HTTP | Class performance summary | Manual call |
+| `generateDailyReport` | Scheduled | Daily activity report | Daily 06:00 |
+| `getWorksheetReports` | HTTP | Worksheet submission reports | Manual call |
+| `analyzeTalentTracks` | Scheduled | Talent analysis | Weekly Monday |
+| `generateAdaptivePath` | HTTP | Personalized learning path | Manual call |
 
 ### Gamification Functions
-| Function | Purpose | Input |
-|----------|---------|-------|
-| `getLeaderboard` | Course leaderboard | courseId, limit |
-| `getBadgeDefinitions` | Available badges | - |
-| `claimDailyReward` | Daily login reward | userId |
+
+| Function | Type | Purpose | Input |
+|----------|------|---------|-------|
+| `getLeaderboard` | HTTP | Course leaderboard | courseId, limit |
+| `getBadgeDefinitions` | HTTP | Available badges | - |
+| `claimDailyReward` | HTTP | Daily login reward | userId |
+
+### Research Functions
+
+| Function | Type | Purpose | Input |
+|----------|------|---------|-------|
+| `calculateIRR` | HTTP | Inter-Rater Reliability | expertScores, aiScores |
+| `irrReport` | HTTP | IRR detailed report | courseId |
+| `calculateEffectSize` | HTTP | Effect size calculation | preScores, postScores |
+| `exportResearchData` | HTTP | Export anonymized data | courseId, format |
+| `correlationAnalysis` | HTTP | Variable correlation | courseId |
+| `exportKAnonymousDataAPI` | HTTP | K-Anonymity export | courseId, k, level |
 
 ### System Functions
-| Function | Purpose | Trigger |
-|----------|---------|---------|
-| `onUserDelete` | Cleanup user data | Auth trigger |
-| `dailyConsistencyCheck` | Data integrity check | Scheduled |
-| `recalculateStudentProgress` | Recalc progress | Manual |
+
+| Function | Type | Purpose | Trigger |
+|----------|------|---------|---------|
+| `onUserDelete` | Trigger | Cleanup user data | Auth user deletion |
+| `dailyConsistencyCheck` | Scheduled | Data integrity check | Daily 03:00 |
+| `recalculateStudentProgress` | HTTP | Recalc progress | Manual call |
+| `healthCheck` | HTTP | System health monitoring | Manual call |
 
 ---
 
-## 11. Firestore Collections
+## 11. Firestore Collections Schema
 
 ### users
+
 ```javascript
 {
-  uid: "xxx",                    // Firebase Auth UID
+  uid: "firebase-auth-uid",          // Firebase Auth UID
   email: "student@example.com",
   displayName: "นักเรียน ทดสอบ",
   role: "student" | "teacher",
-  studentId: "12345",           // 5-digit student ID
+  studentId: "12345",                // 5-digit student ID
   grade: "ม.4",
   room: "1",
   number: "15",
-  section: "A",                  // Optional
+  section: "A",                      // Optional
   photoURL: "https://...",
   createdAt: Timestamp,
   lastLoginAt: Timestamp,
-  consentGiven: true,           // PDPA
+  consentGiven: true,                // PDPA
   consentDate: Timestamp
 }
 ```
 
 ### courses
+
 ```javascript
 {
-  id: "xxx",
+  id: "auto-generated",
   courseCode: "CS101",
   courseName: "วิทยาการคำนวณ",
   description: "...",
-  teacherId: "xxx",
+  teacherId: "teacher-uid",
   teacherName: "ครู ทดสอบ",
   gradeLevel: "ม.4",
   learningOutcomes: [
@@ -745,34 +854,36 @@ An LO is considered "passed" when ALL 3 conditions are met:
 ```
 
 ### questions
+
 ```javascript
 {
-  id: "xxx",
-  courseId: "xxx",
+  id: "auto-generated",
+  courseId: "course-id",
   question: "คำถาม HOTS...",
-  context: "บริบท...",          // Optional
+  context: "บริบท...",               // Optional
   difficulty: 1-5,
   relatedLOs: ["LO1", "LO3"],
-  loConfigs: [                   // LO-dimension mapping
+  loConfigs: [                        // LO-dimension mapping
     { loCode: "LO1", relatedDimensions: ["analysis", "reasoning"] }
   ],
-  hasSolution: false,            // true = exclude from student pool
-  solution: { ... },             // If hasSolution
+  hasSolution: false,                 // true = exclude from student pool
+  solution: { ... },                  // If hasSolution
   usageCount: 0,
   createdAt: Timestamp,
-  createdBy: "teacherId"
+  createdBy: "teacher-uid"
 }
 ```
 
 ### assessments
+
 ```javascript
 {
-  id: "xxx",
-  sessionId: "xxx",
-  studentId: "xxx",              // Auth UID
-  courseId: "xxx",
-  questionId: "xxx",
-  studentAnswer: "คำตอบ...",
+  id: "auto-generated",
+  sessionId: "session-id",
+  studentId: "student-uid",           // Auth UID
+  courseId: "course-id",
+  questionId: "question-id",
+  studentAnswer: "คำตอบนักเรียน...",
   rubricScores: {
     analysis: 4,
     reasoning: 3,
@@ -784,53 +895,27 @@ An LO is considered "passed" when ALL 3 conditions are met:
   loAssessment: {
     passedLOs: ["LO1", "LO3"],
     analysis: "...",
-    manuallyModified: false,     // If admin edited
-    modifiedBy: "teacherId",
+    manuallyModified: false,          // If admin edited
+    modifiedBy: "teacher-uid",
     modifiedAt: Timestamp
   },
-  questionData: { ... },         // Snapshot
+  chainOfThought: { ... },            // Phase 2
+  aiConfidence: 85,                   // Phase 2
+  aiConfidenceReason: "...",          // Phase 2
+  auditTrail: { ... },                // Phase 2
+  questionData: { ... },              // Snapshot
   createdAt: Timestamp
 }
 ```
 
-### worksheetSubmissions
-```javascript
-{
-  id: "xxx",
-  worksheetId: "xxx",
-  studentId: "xxx",
-  courseId: "xxx",
-  roomId: "xxx",
-  answers: {
-    "section1_q1": "คำตอบ...",
-    "section1_q2": ["a", "c"]
-  },
-  assessment: {
-    summary: { totalScore, maxScore, percentage, paLevel },
-    arceScores: { analysis, reasoning, creativity, evidence },
-    questionResults: [...],
-    strengths: [...],
-    weaknesses: [...]
-  },
-  loAssessment: {                // NEW: LO evaluation
-    passedLOs: ["LO1", "LO2"],
-    analysis: "..."
-  },
-  status: "graded",
-  timeSpent: 1800,               // seconds
-  submittedAt: Timestamp,
-  gradedAt: Timestamp,
-  studentData: { displayName, studentId, grade, room, number }
-}
-```
-
 ### studentProgress
+
 ```javascript
 {
   id: "{studentId}_{courseId}",
-  studentId: "xxx",
-  courseId: "xxx",
-  passedLOs: ["LO1", "LO2", "LO3"],  // Merged from all sources
+  studentId: "student-uid",
+  courseId: "course-id",
+  passedLOs: ["LO1", "LO2", "LO3"],   // Merged from all sources
   loProgress: {                       // Progressive tracking
     "LO1": { accumulatedScore: 15, targetScore: 20, attempts: 3, passed: true },
     "LO2": { accumulatedScore: 8, targetScore: 20, attempts: 2, passed: false }
@@ -844,33 +929,34 @@ An LO is considered "passed" when ALL 3 conditions are met:
 ```
 
 ### eWorksheets
+
 ```javascript
 {
-  id: "xxx",
+  id: "auto-generated",
   metadata: {
     title: "ใบงาน...",
     description: "...",
-    lessonPlanId: "xxx",
-    courseId: "xxx",
+    lessonPlanId: "lesson-plan-id",
+    courseId: "course-id",
     courseName: "...",
-    teacherId: "xxx",
+    teacherId: "teacher-uid",
     gradeLevel: "ม.4",
     topic: "...",
     duration: 50,
     totalQuestions: 8,
     maxScore: 20,
-    learningOutcomes: [              // NEW: For LO assessment
+    learningOutcomes: [               // For LO assessment
       { loCode: "LO1", loDescription: "..." },
       { loCode: "LO2", loDescription: "..." }
     ],
-    createdAt: "2025-12-09T..."
+    createdAt: "2025-12-21T..."
   },
   instructions: "คำชี้แจง...",
   sections: [
     {
       id: "section_1",
       title: "ส่วนที่ 1",
-      phase: "exploration",          // 5E phase
+      phase: "exploration",           // 5E phase
       arceFocus: ["analysis"],
       questions: [
         {
@@ -891,13 +977,46 @@ An LO is considered "passed" when ALL 3 conditions are met:
 }
 ```
 
+### worksheetSubmissions
+
+```javascript
+{
+  id: "auto-generated",
+  worksheetId: "worksheet-id",
+  studentId: "student-uid",
+  courseId: "course-id",
+  roomId: "room-id",
+  answers: {
+    "section1_q1": "คำตอบ...",
+    "section1_q2": ["a", "c"]
+  },
+  assessment: {
+    summary: { totalScore, maxScore, percentage, paLevel },
+    arceScores: { analysis, reasoning, creativity, evidence },
+    questionResults: [...],
+    strengths: [...],
+    weaknesses: [...]
+  },
+  loAssessment: {                     // LO evaluation
+    passedLOs: ["LO1", "LO2"],
+    analysis: "..."
+  },
+  status: "graded",
+  timeSpent: 1800,                    // seconds
+  submittedAt: Timestamp,
+  gradedAt: Timestamp,
+  studentData: { displayName, studentId, grade, room, number }
+}
+```
+
 ---
 
 ## 12. Development Patterns
 
 ### Adding a New Cloud Function
+
 ```javascript
-// 1. Export in functions/index.js
+// functions/index.js
 exports.myNewFunction = functions.runWith({ 
   secrets: [openaiApiKey],
   timeoutSeconds: 60,
@@ -905,53 +1024,50 @@ exports.myNewFunction = functions.runWith({
 }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
-      // 2. Validate method
+      // 1. Validate method
       if (req.method !== 'POST') {
-        return res.status(405).send({ error: 'Method not allowed' })
+        return res.status(405).send({ error: 'Method not allowed' });
       }
       
-      // 3. Extract params
-      const { param1, param2 } = req.body
+      // 2. Extract params
+      const { param1, param2 } = req.body;
       
-      // 4. Your logic here...
+      // 3. Your logic here...
       
-      // 5. If using OpenAI, always clean response
-      let cleanedText = responseText.trim()
-      if (cleanedText.startsWith('```')) {
-        cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-        cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
-      }
-      const result = JSON.parse(cleanedText)
+      // 4. If using OpenAI, ALWAYS clean response
+      const cleanedResult = cleanAIResponse(aiResponse);
       
-      return res.status(200).send({ success: true, data: result })
+      return res.status(200).send({ success: true, data: cleanedResult });
     } catch (error) {
-      console.error('❌ Error:', error)
-      return res.status(500).send({ error: error.message })
+      console.error('❌ Error:', error);
+      return res.status(500).send({ error: error.message });
     }
-  })
-})
+  });
+});
 ```
 
 ### Adding a New Vue View
+
 ```javascript
 // 1. Create src/views/NewView.vue
 <template>
   <div class="new-view">
+    <h1>New View</h1>
     <!-- Your template -->
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useAuthStore } from '@/stores/auth'
+import { ref, computed, onMounted } from 'vue';
+import { useAuthStore } from '@/stores/auth';
 
-const authStore = useAuthStore()
-const loading = ref(true)
+const authStore = useAuthStore();
+const loading = ref(true);
 
 onMounted(async () => {
-  await loadData()
-  loading.value = false
-})
+  await loadData();
+  loading.value = false;
+});
 </script>
 
 // 2. Add route in src/router/index.js
@@ -966,49 +1082,69 @@ onMounted(async () => {
 }
 ```
 
-### Using loProgress.js
+### Using loProgress.js (MANDATORY for LO counting)
+
 ```javascript
-import { getStudentPassedLOs, getBatchStudentPassedLOs } from '@/utils/loProgress'
+import { getStudentPassedLOs, getBatchStudentPassedLOs } from '@/utils/loProgress';
 
 // Single student
 const { passedLOs, assessmentCount, worksheetCount } = 
-  await getStudentPassedLOs(studentUid, courseId)
+  await getStudentPassedLOs(studentUid, courseId);
 
 // Multiple students (teacher reports)
-const studentData = await getBatchStudentPassedLOs(studentUids, courseId)
+const studentData = await getBatchStudentPassedLOs(studentUids, courseId);
 // studentData[uid] = { passedLOs: [...], assessmentCount, worksheetCount }
 ```
 
-### Firestore Security Pattern
+### CSV Export with Thai Characters
+
 ```javascript
-// In firestore.rules
-function isOwner(userId) {
-  return request.auth != null && request.auth.uid == userId;
-}
-
-function isTeacher() {
-  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
-}
-
-function isStudent() {
-  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
-}
+// ALWAYS use BOM for Thai CSV export
+const BOM = '\uFEFF';
+const csvContent = 'ชื่อ,คะแนน\nนักเรียน1,15\nนักเรียน2,18';
+const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8' });
 ```
 
 ---
 
-## ⚠️ Anti-Patterns to Avoid
+## 13. Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| JSON parse error from AI | GPT wraps JSON in markdown | Use `cleanAIResponse()` |
+| Firestore query fails | Missing composite index | Check Firebase Console → Firestore → Indexes |
+| LO counts don't match | Not using loProgress.js | Always use `getStudentPassedLOs()` |
+| Thai CSV garbled | Missing BOM | Add `\uFEFF` prefix |
+| Rate limit error | Too many AI calls | Check rate limiter settings |
+
+### Debug Commands
+
+```bash
+# View function logs
+firebase functions:log
+
+# View specific function
+firebase functions:log --only assessAnswer
+
+# Start emulators
+firebase emulators:start
+
+# Check Firestore rules
+firebase deploy --only firestore:rules --debug
+```
+
+### Anti-Patterns to Avoid
 
 | ❌ Don't | ✅ Do Instead |
 |----------|---------------|
-| `JSON.parse(gptResponse)` directly | Clean markdown wrappers first |
-| Multiple `where()` + `orderBy()` | Create composite index |
-| `doc.data().count + 1` | `FieldValue.increment(1)` |
+| `JSON.parse(gptResponse)` directly | Use `cleanAIResponse()` first |
+| Multiple `where()` + `orderBy()` without index | Create composite index |
+| `doc.data().count + 1` | Use `FieldValue.increment(1)` |
 | Send `hasSolution: true` to students | Filter in question selection |
 | Export Thai CSV without BOM | Add `\uFEFF` prefix |
 | Different LO counting logic per page | Use `loProgress.js` everywhere |
-| Hardcode courseId in queries | Pass as parameter |
-| Store sensitive data in localStorage | Use Firestore with rules |
 
 ---
 
@@ -1017,16 +1153,13 @@ function isStudent() {
 | File | Purpose | Lines |
 |------|---------|-------|
 | `functions/index.js` | All Cloud Functions, AI prompts | ~9200 |
-| `functions/utils/prompts.js` | **NEW:** Modular prompt templates | ~200 |
-| `functions/utils/loAssessment.js` | **NEW:** LO assessment logic | ~150 |
-| `functions/services/assessmentService.js` | **NEW:** Assessment orchestration | ~100 |
-| `src/stores/chat.js` | Question selection, session management | ~600 |
-| `src/utils/loProgress.js` | **Standard LO counting** (assessments + worksheets) | ~420 |
-| `src/views/ChatView.vue` | Main chat interface, copy-paste blocking | ~800 |
-| `src/views/TeacherWorksheets.vue` | Worksheet management + ARCE normalization | ~1500 |
-| `src/views/WorksheetResult.vue` | Worksheet results with LO section | ~1900 |
-| `src/views/WorksheetReports.vue` | Teacher worksheet reports with LO | ~2700 |
-| `src/views/AdminLOManager.vue` | Admin tool for LO editing | ~800 |
+| `functions/utils/prompts.js` | Modular prompt templates | ~200 |
+| `functions/utils/loAssessment.js` | LO assessment logic | ~150 |
+| `functions/utils/aiParser.js` | JSON response cleaning | ~100 |
+| `src/stores/chat.js` | Session management, question selection | ~600 |
+| `src/utils/loProgress.js` | **Standard LO counting** | ~420 |
+| `src/views/ChatView.vue` | Main chat interface | ~800 |
+| `src/views/AdminLOManager.vue` | Admin LO editing | ~800 |
 | `firestore.rules` | Security rules | ~150 |
 
 ---
@@ -1035,7 +1168,7 @@ function isStudent() {
 
 ### URLs
 - **Production**: https://hots-ai-d028b.web.app
-- **Console**: https://console.firebase.google.com/project/hots-ai-d028b
+- **Firebase Console**: https://console.firebase.google.com/project/hots-ai-d028b
 - **Functions Region**: us-central1
 - **Repository**: https://github.com/saengpech-sys/hots-ai
 
@@ -1048,43 +1181,18 @@ cd functions && npm run serve  # Functions emulator
 # Build & Deploy
 npm run build                  # Build frontend
 firebase deploy                # Deploy all
-firebase deploy --only hosting # Deploy hosting only
-firebase deploy --only functions:assessWorksheetSubmission  # Single function
 
 # Debug
 firebase functions:log         # View function logs
 firebase emulators:start       # Start all emulators
 ```
 
-### Environment Variables
-```bash
-# .env (Frontend)
-VITE_FIREBASE_API_KEY=xxx
-VITE_FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=xxx
-VITE_FUNCTIONS_URL=https://us-central1-xxx.cloudfunctions.net
-
-# functions/.env (Backend)
-OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-4o-mini
-```
-
 ---
 
-## 🏆 DPA Competition Compliance
+<div align="center">
 
-ระบบผ่านการประเมินตามเกณฑ์ DPA 4 มิติ:
+**HOTS AI ChatLoop — Technical Documentation**
 
-| มิติ | หัวข้อ | สถานะ |
-|------|--------|--------|
-| **Pedagogical** | AI Scaffolding, ARCE Alignment, HOTS Verification | ✅ 3/3 |
-| **Technical** | Prompt Security, Error Handling, Data Integrity | ✅ 3/3 |
-| **Measurement** | Rubric Consistency, Analytics, Traceability | ✅ 3/3 |
-| **Scalability** | Universal Design, PDPA Compliance | ✅ 2/2 |
+*Version 5.1 | December 21, 2025*
 
-**รายละเอียด:** [DPA_ASSESSMENT_CHECKLIST.md](DPA_ASSESSMENT_CHECKLIST.md)
-
----
-
-*Document last updated: December 20, 2025 | Version 5.0*
-*Total lines: ~1100 | Covers: Architecture, Phase 2 AI, Navigation, Testing, Deployment, Security, LO System, Cloud Functions, Firestore Schema, DPA Compliance*
+</div>

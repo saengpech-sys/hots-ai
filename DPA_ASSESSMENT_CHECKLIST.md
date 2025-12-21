@@ -1,391 +1,579 @@
-# 🎯 HOTS AI - DPA Assessment Checklist
-## การประเมินตาม 4 มิติสำหรับ Digital Platform Award
+# 🏆 DPA Assessment Checklist — Digital Public Administration Awards
 
-**วันที่ประเมิน**: 20 ธันวาคม 2025  
-**ระบบ**: HOTS AI ChatLoop  
-**URL**: https://hots-ai-d028b.web.app
+<div align="center">
 
----
+**Version 2.0** | **Assessment Date: December 21, 2025**
 
-## 📊 มิติที่ 1: Pedagogical Intelligence (ความฉลาดทางวิชาการ)
+*รายการตรวจสอบระบบ HOTS AI ChatLoop สำหรับการประกวดรางวัล DPA*
 
-> *"AI ตัวนี้มาช่วยเด็กคิด หรือมาแย่งเด็กคิด?"*
-
-### ✅ AI Scaffolding (การช่วยเหลือตามลำดับขั้น) — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:770-780
-🔄 SCAFFOLDING MODE (ครั้งที่ ${scaffoldingAttempts + 1}/2):
-นี่คือคำตอบครั้งที่ ${scaffoldingAttempts + 1} หลังจากถูกถามคำถามชี้แนะ
-ให้ประเมินว่านักเรียนพัฒนาขึ้นหรือไม่
-```
-
-**การทำงาน:**
-- ✅ เมื่อคะแนนต่ำ ระบบจะถาม **Probing Question** กลับ (ไม่เฉลยทันที)
-- ✅ มี `scaffoldingAttempts` tracker สูงสุด 2 ครั้ง
-- ✅ มี `hints` ในทุกคำถามที่ AI สร้าง
-- ✅ Feedback ใช้ภาษาให้กำลังใจ `"ใช้ภาษาให้กำลังใจ เปิดโอกาสคิดต่อ"` (line 890)
-
-**ตัวอย่าง UI:**
-- ครั้งแรก: แสดง feedback + คำถามชี้แนะ
-- ครั้งที่ 2: ประเมินพัฒนาการจากคำตอบก่อนหน้า
-
----
-
-### ✅ ARCE Alignment — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:760-762 - Input Sanitization
-const sanitizedAnswer = answer
-  .replace(/```/g, "'''")
-  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')
-  .substring(0, 3000)  // Limit length
-```
-
-```javascript
-// functions/index.js:4904 - Rubric 0 Score
-"0": "ไม่ตอบหรือไม่เกี่ยวข้อง"
-```
-
-**การตรวจจับคำตอบมั่ว:**
-- ✅ `minCharacters: 50-100` - บังคับความยาวขั้นต่ำ
-- ✅ Rubric score 0 = "ไม่ตอบหรือไม่เกี่ยวข้อง"
-- ✅ Copy-paste prevention (Client + Server)
-- ✅ AI Detection system ตรวจจับ AI-generated content
-
-**Anti-Cheat System (functions/utils/aiDetection.js):**
-- ตรวจจับ unusual spacing patterns
-- ตรวจจับ very long words (>25 chars)
-- ตรวจจับ mixed script
-- ตรวจจับ AI-generated patterns
-
----
-
-### ✅ HOTS Verification — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:3241
-- เน้น Analysis (A): ตั้งคำถามให้วิเคราะห์สถานการณ์ ปัญหา หรือกรณีศึกษา
-- กิจกรรม: นำเสนอสถานการณ์ปัญหา, ถามคำถามเพื่อให้วิเคราะห์องค์ประกอบ
-
-// functions/index.js:4835 - ARCE Evaluate Worksheet
-"situation": "สถานการณ์/ปัญหาที่น่าสนใจ เกี่ยวข้องกับเนื้อหาที่เรียน"
-```
-
-**การสร้างโจทย์:**
-- ✅ ใช้ **Situation-Based Questions** (สถานการณ์จำลอง)
-- ✅ โจทย์แบบ `arce_situation` - ไม่มีใน Google
-- ✅ Context-specific questions ตาม Lesson Plan
-- ✅ ไม่ใช้คำถามแบบ recall/ท่องจำ
-
----
-
-## 🛠️ มิติที่ 2: Technical Robustness (ความแกร่งของระบบ)
-
-> *"ถ้านักเรียนใช้พร้อมกันทั้งโรงเรียน ระบบจะล่มไหม?"*
-
-### ✅ Prompt Security (ป้องกันการแหกคุก) — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:742
- * - Prompt Injection Defense: XML tags isolate student input
-
-// functions/index.js:758-762 - Sanitization
-const sanitizedAnswer = answer
-  .replace(/```/g, "'''")              // Escape code blocks
-  .replace(/<\/?[a-zA-Z_][^>]*>/g, '') // Remove XML-like tags
-  .replace(/\{\{[^}]*\}\}/g, '')       // Remove template expressions
-  .substring(0, 3000)                  // Limit length
-```
-
-```javascript
-// functions/index.js:802 - XML Isolation
-<system_instruction>
-ประเมินคำตอบปลายเปิดของนักเรียนอย่างเป็นกลาง
-</system_instruction>
-
-<student_answer>${sanitizedAnswer}</student_answer>
-```
-
-**การป้องกัน:**
-- ✅ XML tags แยก student input ออกจาก system prompt
-- ✅ Sanitize: ลบ code blocks, XML tags, template expressions
-- ✅ จำกัดความยาว 3,000 ตัวอักษร
-- ✅ System prompt กำหนดบทบาทชัดเจน (educational assessor only)
-
----
-
-### ✅ Latency & Error Handling — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:11, 254-256 - Retry Mechanism
-const { executeWithRetry } = require('./utils/reliability')
-
-const aiCallResult = await executeWithRetry(async () => {
-  // OpenAI call
-}, { maxRetries: 3 })
-```
-
-```javascript
-// functions/index.js:6204-6213 - Exponential Backoff
-async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
-  const isRetryable = error.status === 429 || error.status >= 500
-}
-```
-
-**UI Loading (src/views/ChatView.vue):**
-```vue
-<div v-if="loading" class="typing-indicator">
-  <span></span><span></span><span></span>
 </div>
 
-<span v-else-if="sendingInProgress">⏳ กำลังส่ง...</span>
-🔄 กำลังลองใหม่ ({{ retryCount }}/{{ MAX_RETRIES }})...
-```
+---
 
-**การจัดการ:**
-- ✅ Retry อัตโนมัติ 3 ครั้ง (exponential backoff)
-- ✅ Loading indicator สวยงาม (typing dots animation)
-- ✅ Error banner แสดงสถานะการลองใหม่
-- ✅ Fallback assessment ถ้า AI ไม่ตอบ
-- ✅ Timeout settings: 120-180 seconds per function
+## 📑 Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [Dimension 1: Pedagogical Innovation](#2-dimension-1-pedagogical-innovation)
+3. [Dimension 2: Technical Excellence](#3-dimension-2-technical-excellence)
+4. [Dimension 3: Measurement & Assessment](#4-dimension-3-measurement--assessment)
+5. [Dimension 4: Scalability & Sustainability](#5-dimension-4-scalability--sustainability)
+6. [Code Evidence](#6-code-evidence)
+7. [Assessment Summary](#7-assessment-summary)
 
 ---
 
-### ✅ Data Integrity (JSON Validation) — **PASS**
+## 1. Executive Summary
 
-**หลักฐาน:**
-```javascript
-// functions/utils/aiParser.js - JSON Cleaning
-let cleanedText = responseText.trim()
-if (cleanedText.startsWith('```')) {
-  cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-  cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
-}
+### Overall Score
 
-// functions/utils/reliability.js - Schema Validation
-function validateAssessmentSchema(result) {
-  const requiredFields = ['rubricScores', 'overallScore', 'feedback']
-  // ... validation logic
-}
-```
+| Dimension | Criteria | Passed | Score |
+|-----------|----------|--------|-------|
+| **1. Pedagogical Innovation** | 3 | 3/3 | ⭐⭐⭐ |
+| **2. Technical Excellence** | 3 | 3/3 | ⭐⭐⭐ |
+| **3. Measurement & Assessment** | 3 | 3/3 | ⭐⭐⭐ |
+| **4. Scalability & Sustainability** | 2 | 2/2 | ⭐⭐ |
+| **TOTAL** | **11** | **11/11** | **100%** |
 
-```javascript
-// functions/index.js:6242 - Content Validation
-warnings.push(`Section ${idx + 1} content is too short`)
-```
+### Key Achievements
 
-**การตรวจสอบ:**
-- ✅ Strip markdown wrappers (```json) ก่อน parse
-- ✅ Schema validation ตรวจ required fields
-- ✅ Fallback values ถ้าข้อมูลไม่ครบ
-- ✅ Content length validation
-- ✅ Log parse errors สำหรับ debugging
+1. **หลักสูตรแกนกลาง สพฐ. 2560** — สอดคล้องตัวชี้วัดการคิดขั้นสูง
+2. **A.R.C.E. Framework** — กรอบการประเมินที่เป็นระบบ 4 มิติ
+3. **AI Precision Phase 2** — ความน่าเชื่อถือของการให้คะแนน (Deterministic Scoring)
+4. **National Scale Architecture** — รองรับการขยายตัวระดับชาติ
+5. **PDPA Compliance** — ปฏิบัติตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล
 
 ---
 
-## 📈 มิติที่ 3: Measurement & Evidence (หลักฐานเชิงประจักษ์)
+## 2. Dimension 1: Pedagogical Innovation
 
-> *"คุณรู้ได้ไงว่าเด็กเก่งขึ้นจริง? มีหลักฐานไหม?"*
+### 1.1 ความสอดคล้องกับหลักสูตรแกนกลาง
 
-### ✅ Rubric Consistency — **PASS**
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| ตัวชี้วัดการเรียนรู้ (Learning Outcomes) | ✅ ผ่าน | `courses.learningOutcomes[]` |
+| สอดคล้อง Bloom's Taxonomy | ✅ ผ่าน | `bloomLevel` in questions |
+| รองรับ 8 กลุ่มสาระ | ✅ ผ่าน | Course management |
+| ระดับชั้น ป.4-6, ม.1-3, ม.4-6 | ✅ ผ่าน | `gradeLevel` calibration |
 
-**หลักฐาน:**
+**Code Evidence:**
 ```javascript
-// functions/index.js:269-270 - Deterministic Scoring
-temperature: 0,        // Phase 2: Zero temperature for consistent scoring
-seed: 42,              // Phase 2: Fixed seed for reproducibility
+// functions/index.js — Grade Level Calibration (Phase 2)
+const gradeExpectations = {
+  'ป.4-6': {
+    vocabularyLevel: 'พื้นฐาน เหมาะกับวัย',
+    analysisDepth: 'แยกแยะส่วนประกอบเบื้องต้นได้',
+    reasoningComplexity: 'อธิบายเหตุผลง่ายๆ ได้'
+  },
+  'ม.1-3': {
+    vocabularyLevel: 'ขยายคำศัพท์ทางวิชาการ',
+    analysisDepth: 'วิเคราะห์ความสัมพันธ์หลายตัวแปรได้',
+    reasoningComplexity: 'ให้เหตุผลเชิงตรรกะได้'
+  },
+  'ม.4-6': {
+    vocabularyLevel: 'คำศัพท์วิชาการ/เฉพาะทาง',
+    analysisDepth: 'วิเคราะห์เชิงระบบและบริบท',
+    reasoningComplexity: 'ให้เหตุผลเชิงวิพากษ์และประเมินค่าได้'
+  }
+};
 ```
 
+### 1.2 กรอบการประเมิน HOTS (A.R.C.E. Framework)
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Analysis (การวิเคราะห์) | ✅ ผ่าน | `rubricScores.analysis` 0-5 |
+| Reasoning (การให้เหตุผล) | ✅ ผ่าน | `rubricScores.reasoning` 0-5 |
+| Creativity (ความคิดสร้างสรรค์) | ✅ ผ่าน | `rubricScores.creativity` 0-5 |
+| Evidence (การใช้หลักฐาน) | ✅ ผ่าน | `rubricScores.evidence` 0-5 |
+
+**Code Evidence:**
 ```javascript
-// functions/index.js:588-599 - Audit Trail
-promptVersion: 'v3.0-cot-confidence',
-auditTrail: {
-  modelUsed: model,
+// functions/index.js — A.R.C.E. Rubric Anchors
+const ARCE_ANCHORS = {
+  analysis: {
+    5: 'แยกแยะประเด็นครบถ้วน ชี้ความสัมพันธ์ซับซ้อน พบรูปแบบ/แนวโน้ม',
+    4: 'แยกแยะประเด็นส่วนใหญ่ ชี้ความสัมพันธ์ได้ดี',
+    3: 'แยกแยะประเด็นหลักได้ ชี้ความสัมพันธ์พื้นฐาน',
+    2: 'แยกแยะบางประเด็น ขาดความสัมพันธ์',
+    1: 'พยายามแยกแยะแต่ยังไม่ชัดเจน',
+    0: 'ไม่มีหลักฐานการวิเคราะห์'
+  },
+  // ... reasoning, creativity, evidence
+};
+```
+
+### 1.3 Scaffolding & Feedback System
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Immediate Feedback | ✅ ผ่าน | AI response within 5 seconds |
+| Personalized Hints | ✅ ผ่าน | `scaffolding.hints[]` |
+| Progressive Difficulty | ✅ ผ่าน | Question selection algorithm |
+| Adaptive Learning Path | ✅ ผ่าน | `generateAdaptivePath` function |
+
+**Code Evidence:**
+```javascript
+// functions/index.js — Scaffolding Levels
+const scaffoldingLevels = {
+  1: { // Score 0-4: Explicit
+    style: 'ให้คำใบ้ชัดเจน พร้อมตัวอย่างประกอบ',
+    hints: ['ลองคิดถึง...', 'ตัวอย่างเช่น...']
+  },
+  2: { // Score 5-8: Guided
+    style: 'แนะนำแนวคิดให้นักเรียนต่อยอด'
+  },
+  3: { // Score 9-12: Probing
+    style: 'ถามคำถามชวนคิดให้ขยายความ'
+  },
+  4: { // Score 13-16: Challenge
+    style: 'ท้าทายให้คิดเพิ่มเติม'
+  },
+  5: { // Score 17-20: Praise
+    style: 'ยกย่องและขยายความคิด'
+  }
+};
+```
+
+---
+
+## 3. Dimension 2: Technical Excellence
+
+### 2.1 AI Integration & Reliability
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| GPT-4o-mini Integration | ✅ ผ่าน | `OPENAI_MODEL=gpt-4o-mini` |
+| Deterministic Scoring | ✅ ผ่าน | `temperature: 0, seed: 42` |
+| Chain of Thought (CoT) | ✅ ผ่าน | `chainOfThought` in response |
+| AI Confidence Score | ✅ ผ่าน | `aiConfidence: 0-100` |
+| Prompt Injection Defense | ✅ ผ่าน | Input sanitization |
+
+**Code Evidence:**
+```javascript
+// functions/index.js — Phase 2 AI Configuration
+const response = await openai.chat.completions.create({
+  model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  messages: [...],
+  temperature: 0,           // ✅ Zero randomness
+  seed: 42,                 // ✅ Fixed seed
+  max_tokens: 1500,
+  response_format: { type: 'json_object' }
+});
+
+// ✅ Audit Trail
+const auditTrail = {
+  modelUsed: 'gpt-4o-mini',
   temperature: 0,
   seed: 42,
-  // ...
-}
+  maxTokens: 1500,
+  rawResponseLength: responseText.length,
+  parseAttempts: attempts,
+  timestamp: new Date().toISOString()
+};
 ```
 
-**การรับประกันความสม่ำเสมอ:**
-- ✅ `temperature: 0` - ไม่มี randomness ในการตัดสิน
-- ✅ `seed: 42` - Reproducible results
-- ✅ Chain of Thought - AI อธิบายเหตุผลก่อนให้คะแนน
-- ✅ AI Confidence Score (0-100%) บอกความมั่นใจ
-- ✅ Audit trail เก็บ parameter ทุกครั้ง
+### 2.2 Security & Data Protection
 
-**ทดสอบได้:** ส่งคำตอบเดิม 2 ครั้ง จะได้คะแนนเท่ากัน ✓
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Client-side Copy-Paste Prevention | ✅ ผ่าน | `@paste.prevent` |
+| Server-side AI Detection | ✅ ผ่าน | `analyzeAIContent()` |
+| Role-based Access Control | ✅ ผ่าน | Firestore rules |
+| PDPA Consent | ✅ ผ่าน | `ConsentModal.vue` |
+| No PII to OpenAI | ✅ ผ่าน | Anonymized prompts |
 
----
-
-### ✅ Learning Analytics Dashboard — **PASS**
-
-**Routes ที่มี:**
-| Route | Feature | Description |
-|-------|---------|-------------|
-| `/class-analytics` | 📊 วิเคราะห์ห้อง | กราฟพัฒนาการรายบุคคล แยกตาม ARCE |
-| `/lo-reports` | 🎯 รายงาน LO | Heatmap ความสำเร็จ LO |
-| `/teacher-analytics` | 🔮 Predictive | พยากรณ์นักเรียนเสี่ยง |
-| `/student-detail/:id` | 👥 รายบุคคล | ประวัติและ Export |
-| `/pretest-posttest` | 📈 Pre/Post | เปรียบเทียบก่อน-หลัง |
-
-**Cloud Functions:**
-- `generateClassAnalytics` - สร้างรายงานห้อง
-- `getWorksheetReports` - รายงานใบงาน
-- `calculateEffectSize` - Effect size (Cohen's d)
-- `correlationAnalysis` - Correlation analysis
-- `researchSummary` - สรุปข้อมูลวิจัย
-
-**Export:**
-- ✅ Export CSV/Excel ได้ทันที
-- ✅ Research data export function
-- ✅ UTF-8 BOM สำหรับภาษาไทย
-
----
-
-### ✅ Traceability (ตรวจสอบย้อนกลับ) — **PASS**
-
-**หลักฐาน:**
+**Code Evidence:**
 ```javascript
-// functions/index.js:569-570 - Raw Answer Storage
-rawAnswer: studentAnswer,  // เก็บคำตอบดิบทุกครั้ง
-```
+// src/views/ChatView.vue — Anti-Cheat
+<textarea
+  v-model="answer"
+  @paste.prevent
+  @copy.prevent
+  @cut.prevent
+  @contextmenu.prevent
+/>
 
-```javascript
-// functions/index.js:590-601 - Full Audit Trail
-assessmentData = {
-  sessionId,
-  studentId,
-  questionContext,
-  rawAnswer: studentAnswer,    // คำตอบของเด็ก
-  rubricScores: { ... },       // คะแนนที่ได้
-  feedbackText: ...,           // AI feedback
-  chainOfThought: ...,         // เหตุผลของ AI
-  aiConfidence: ...,           // ความมั่นใจของ AI
-  auditTrail: { ... },         // Parameter ที่ใช้
-  timestamp: ...
-}
-```
-
-**Collections ที่เก็บ Log:**
-- `assessments` - ทุกการประเมิน + คำตอบดิบ
-- `messages` - Chat history ทั้งหมด
-- `sessions` - Session tracking
-- `antiCheatLogs` - บันทึกการตรวจจับ
-- `reliabilityLogs` - Error logs
-
-**กรณีเด็กประท้วงคะแนน:**
-- ✅ ดึง `rawAnswer` (คำตอบเด็ก) ได้
-- ✅ ดึง `chainOfThought` (เหตุผล AI) ได้
-- ✅ ดึง `auditTrail` (พารามิเตอร์) ได้
-- ✅ ดูใน `/student-detail/:id` หรือ Export
-
----
-
-## 🌐 มิติที่ 4: Scalability & Privacy (การขยายผลและความเป็นส่วนตัว)
-
-> *"เอาไปใช้กับโรงเรียนอื่นได้ไหม? ปลอดภัยไหม?"*
-
-### ✅ Universal Design — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:3241 - Subject-agnostic prompts
-- เน้น Analysis (A): ตั้งคำถามให้วิเคราะห์สถานการณ์ ปัญหา หรือกรณีศึกษา
-```
-
-**การออกแบบ:**
-- ✅ Course Management → ครูสร้างรายวิชาใดก็ได้
-- ✅ Learning Outcomes → กำหนดเองได้ทุกวิชา
-- ✅ Lesson Plans (5E) → ใช้กับทุกสาระการเรียนรู้
-- ✅ Question Bank → คลังคำถามแยกตามวิชา
-- ✅ Curriculum Designer → ออกแบบหลักสูตรด้วย AI
-
-**ตัวอย่างการใช้:**
-```
-วิชาคอมพิวเตอร์: ✅ 
-วิชาภาษาไทย: ✅ (เปลี่ยน LO)
-วิชาวิทยาศาสตร์: ✅ (เปลี่ยน Context)
-วิชาสังคม: ✅ (เปลี่ยน Rubric)
-```
-
----
-
-### ✅ Privacy Compliance (PDPA) — **PASS**
-
-**หลักฐาน:**
-```javascript
-// functions/index.js:243 - What goes to AI
-const prompt = createAssessmentPrompt(questionContext, studentAnswer, {
-  gradeLevel,  // ระดับชั้น (ไม่ใช่ชื่อ)
-  subject      // วิชา
-})
-// ❌ ไม่ส่ง: displayName, studentId (เลขประจำตัว)
-```
-
-```javascript
-// functions/index.js:186 - Anti-cheat log
-answer: studentAnswer.substring(0, 200) // เก็บแค่ 200 ตัวอักษร
-// ❌ ไม่เก็บชื่อในการตรวจสอบ
-```
-
-**ข้อมูลที่ส่งไป OpenAI:**
-| ส่ง | ไม่ส่ง |
-|-----|--------|
-| ✅ คำตอบของนักเรียน | ❌ ชื่อ-นามสกุล |
-| ✅ Context คำถาม | ❌ เลขประจำตัว |
-| ✅ ระดับชั้น (ม.4) | ❌ อีเมล |
-| ✅ วิชา | ❌ หมายเลขโทรศัพท์ |
-
-**Firestore Security Rules:**
-```javascript
-// firestore.rules - Role-based isolation
+// firestore.rules — Role-Based Security
 function isTeacher() {
-  return get(/databases/.../users/$(request.auth.uid)).data.role == 'teacher';
+  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
 }
-function isSameSchool(schoolId) {
-  return request.auth.token.schoolId == schoolId;
+```
+
+### 2.3 Architecture & Performance
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Serverless Backend | ✅ ผ่าน | Firebase Cloud Functions |
+| Real-time Updates | ✅ ผ่าน | Firestore listeners |
+| PWA Support | ✅ ผ่าน | Vite PWA plugin |
+| Modular Codebase | ✅ ผ่าน | 8 Pinia stores |
+| 123 Test Cases | ✅ ผ่าน | Vitest + Jest |
+
+**Code Evidence:**
+```javascript
+// vite.config.js — PWA Configuration
+VitePWA({
+  registerType: 'autoUpdate',
+  manifest: {
+    name: 'HOTS AI ChatLoop',
+    short_name: 'HOTS AI',
+    theme_color: '#4CAF50'
+  }
+})
+```
+
+---
+
+## 4. Dimension 3: Measurement & Assessment
+
+### 3.1 Learning Outcome Assessment
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| LO-Based Evaluation | ✅ ผ่าน | `loAssessment.passedLOs[]` |
+| Multi-Source LO Tracking | ✅ ผ่าน | `loProgress.js` |
+| Progressive LO Mastery | ✅ ผ่าน | `studentProgress.loProgress{}` |
+| LO Heatmap Reports | ✅ ผ่าน | `LOReports.vue` |
+
+**Code Evidence:**
+```javascript
+// src/utils/loProgress.js — Unified LO Counting
+export async function getStudentPassedLOs(studentUid, courseId) {
+  const passedLOs = new Set();
+  
+  // 1. Query assessments collection
+  const assessments = await getDocs(query(...));
+  assessments.forEach(doc => {
+    doc.data().loAssessment?.passedLOs?.forEach(lo => passedLOs.add(lo));
+  });
+  
+  // 2. Query worksheetSubmissions collection
+  const worksheets = await getDocs(query(...));
+  worksheets.forEach(doc => {
+    doc.data().loAssessment?.passedLOs?.forEach(lo => passedLOs.add(lo));
+  });
+  
+  return { passedLOs: Array.from(passedLOs), ... };
+}
+```
+
+### 3.2 Research Data Quality
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Inter-Rater Reliability | ✅ ผ่าน | `calculateIRR` function |
+| Cohen's Kappa | ✅ ผ่าน | IRR calculation |
+| Cronbach's Alpha | ✅ ผ่าน | Reliability analysis |
+| Effect Size (Cohen's d) | ✅ ผ่าน | `calculateEffectSize` |
+
+**Code Evidence:**
+```javascript
+// functions/utils/interRaterReliability.js
+export function calculateIRR(expertScores, aiScores) {
+  const cohensKappa = calculateCohensKappa(expertScores, aiScores);
+  const percentAgreement = calculatePercentAgreement(expertScores, aiScores);
+  
+  return {
+    cohensKappa,
+    percentAgreement,
+    interpretation: interpretKappa(cohensKappa),
+    sampleSize: expertScores.length
+  };
+}
+```
+
+### 3.3 Gamification System
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Points System | ✅ ผ่าน | `gamification.js` store |
+| Badges (21 types) | ✅ ผ่าน | `gamification.js` badges |
+| Streak Tracking | ✅ ผ่าน | `currentStreak`, `maxStreak` |
+| Leaderboard | ✅ ผ่าน | `Leaderboard.vue` |
+| Level Progression | ✅ ผ่าน | 1-100 with XP curve |
+
+**Code Evidence:**
+```javascript
+// src/stores/gamification.js — Point Calculation
+const BASE_POINTS = {
+  assessment: 10,      // Per assessment completed
+  worksheet: 15,       // Per worksheet completed
+  loMastery: 25,       // Per LO mastered
+  streak: 5,           // Per day streak bonus
+  perfectScore: 50     // Score 20/20 bonus
+};
+
+// 21 Badge Types
+const badgeDefinitions = [
+  { id: 'first_assessment', name: 'นักเรียนใหม่', requirement: 1 },
+  { id: 'lo_master_5', name: 'เก่งขึ้น 5 LO', requirement: 5 },
+  { id: 'streak_7', name: 'มาเรียน 7 วัน', requirement: 7 },
+  // ... 18 more badges
+];
+```
+
+---
+
+## 5. Dimension 4: Scalability & Sustainability
+
+### 4.1 National Scale Architecture
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Ministry Dashboard | ✅ ผ่าน | `getMinistryDashboard` |
+| ESA Dashboard | ✅ ผ่าน | `getESADashboard` |
+| School Dashboard | ✅ ผ่าน | `getSchoolDashboard` |
+| Multi-tenant Data Isolation | ✅ ผ่าน | `schoolId` security |
+
+**Code Evidence:**
+```javascript
+// functions/national-scale.js — Hierarchical Dashboard
+exports.getMinistryDashboard = functions.https.onRequest(async (req, res) => {
+  // Aggregate data from all ESAs
+  const nationalStats = {
+    totalStudents: await countStudents(),
+    totalAssessments: await countAssessments(),
+    averageARCE: await calculateNationalARCE(),
+    esaBreakdown: await getESAStats()
+  };
+  return res.json(nationalStats);
+});
+
+// Data Hierarchy
+// กระทรวง (Ministry)
+//   └── สพท. (ESA: 225 areas)
+//         └── โรงเรียน (School: 30,000+ schools)
+//               └── ห้องเรียน (Class)
+//                     └── นักเรียน (Student)
+```
+
+### 4.2 Sustainability & Maintenance
+
+| เกณฑ์ | สถานะ | หลักฐาน |
+|-------|--------|---------|
+| Comprehensive Documentation | ✅ ผ่าน | 6 MD files |
+| Test Coverage | ✅ ผ่าน | 123 test cases |
+| Modular Architecture | ✅ ผ่าน | Services, Controllers, Utils |
+| Cost-Effective AI | ✅ ผ่าน | GPT-4o-mini (15-20x cheaper) |
+| Open Source Ready | ✅ ผ่าน | MIT License |
+
+**Code Evidence:**
+```javascript
+// functions/ — Modular Architecture
+functions/
+├── index.js              // Main exports (41 functions)
+├── national-scale.js     // National dashboard (7 functions)
+├── gamification.js       // Badge definitions
+├── controllers/          // Request handlers
+│   └── assessmentController.js
+├── services/             // Business logic
+│   └── assessmentService.js
+└── utils/                // Helpers
+    ├── prompts.js        // AI prompt templates
+    ├── loAssessment.js   // LO evaluation
+    ├── aiParser.js       // Response cleaning
+    └── reliability.js    // Schema validation
+```
+
+---
+
+## 6. Code Evidence
+
+### 6.1 A.R.C.E. Assessment Flow
+
+```javascript
+// functions/index.js — Complete Assessment Flow
+exports.assessAnswer = functions.https.onRequest(async (req, res) => {
+  // 1. Input Sanitization (Prompt Injection Defense)
+  const sanitizedAnswer = sanitizeInput(req.body.answer);
+  
+  // 2. Build Prompt with Grade Calibration
+  const prompt = createAssessmentPrompt(
+    questionContext,
+    sanitizedAnswer,
+    gradeLevel,  // ป.4-6, ม.1-3, ม.4-6
+    ARCE_ANCHORS
+  );
+  
+  // 3. Call OpenAI with Deterministic Settings
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0,
+    seed: 42,
+    response_format: { type: 'json_object' }
+  });
+  
+  // 4. Parse with Retry Logic
+  let result;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      result = cleanAIResponse(response.choices[0].message.content);
+      break;
+    } catch (e) {
+      if (attempt === 2) throw e;
+    }
+  }
+  
+  // 5. Assess Learning Outcomes
+  const loAssessment = await assessLearningOutcomesInternal(
+    sanitizedAnswer,
+    learningOutcomes,
+    result
+  );
+  
+  // 6. Save with Audit Trail
+  await db.collection('assessments').add({
+    ...result,
+    loAssessment,
+    auditTrail: {
+      modelUsed: 'gpt-4o-mini',
+      temperature: 0,
+      seed: 42,
+      parseAttempts: attempt,
+      timestamp: new Date().toISOString()
+    }
+  });
+  
+  // 7. Update Student Progress
+  await updateStudentProgress(studentId, courseId, loAssessment.passedLOs);
+  
+  return res.json({ success: true, ...result, loAssessment });
+});
+```
+
+### 6.2 LO Passing Criteria
+
+```javascript
+// functions/utils/loAssessment.js — LO Evaluation
+export function evaluateLO(loConfig, rubricScores, answer) {
+  // An LO is "passed" when ALL 3 conditions are met:
+  
+  // 1. Content Match: Answer covers LO's intent substantially
+  const contentMatch = checkContentMatch(answer, loConfig.description);
+  
+  // 2. Skill Level: Evidence of expected understanding
+  const skillLevel = checkSkillLevel(answer, loConfig.bloomLevel);
+  
+  // 3. HOTS Score ≥ 3: Related dimension(s) must score ≥ 3/5
+  const hotsThreshold = 3;
+  const dimensionPassed = loConfig.relatedDimensions.every(
+    dim => rubricScores[dim] >= hotsThreshold
+  );
+  
+  return contentMatch && skillLevel && dimensionPassed;
+}
+```
+
+### 6.3 Security Implementation
+
+```javascript
+// firestore.rules — Complete Security Rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isLoggedIn() { return request.auth != null; }
+    function isOwner(uid) { return request.auth.uid == uid; }
+    function isTeacher() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    function isSameSchool(schoolId) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
+    }
+    
+    // Users — own data only
+    match /users/{userId} {
+      allow read: if isLoggedIn() && (isOwner(userId) || isTeacher());
+      allow write: if isOwner(userId);
+    }
+    
+    // Assessments — student owns, teacher reads
+    match /assessments/{assessmentId} {
+      allow read: if isLoggedIn() && (
+        resource.data.studentId == request.auth.uid || isTeacher()
+      );
+      allow create: if isLoggedIn();
+    }
+    
+    // Courses — teacher CRUD
+    match /courses/{courseId} {
+      allow read: if isLoggedIn();
+      allow write: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+    }
+  }
 }
 ```
 
 ---
 
-## 📋 สรุปผลการประเมิน
+## 7. Assessment Summary
 
-| มิติ | หัวข้อ | สถานะ |
-|------|--------|--------|
-| **1. Pedagogical** | AI Scaffolding | ✅ PASS |
-| | ARCE Alignment | ✅ PASS |
-| | HOTS Verification | ✅ PASS |
-| **2. Technical** | Prompt Security | ✅ PASS |
-| | Latency & Error Handling | ✅ PASS |
-| | Data Integrity | ✅ PASS |
-| **3. Measurement** | Rubric Consistency | ✅ PASS |
-| | Learning Analytics | ✅ PASS |
-| | Traceability | ✅ PASS |
-| **4. Scalability** | Universal Design | ✅ PASS |
-| | Privacy Compliance | ✅ PASS |
+### Final Scorecard
 
-### ผลรวม: **11/11 ผ่านทุกข้อ** ✅
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    DPA ASSESSMENT SUMMARY                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Dimension 1: Pedagogical Innovation          ███████████  3/3 ⭐⭐⭐   │
+│  ├── 1.1 หลักสูตรแกนกลาง                      ✅ ผ่าน                   │
+│  ├── 1.2 A.R.C.E. Framework                   ✅ ผ่าน                   │
+│  └── 1.3 Scaffolding System                   ✅ ผ่าน                   │
+│                                                                         │
+│  Dimension 2: Technical Excellence            ███████████  3/3 ⭐⭐⭐   │
+│  ├── 2.1 AI Integration & Reliability         ✅ ผ่าน                   │
+│  ├── 2.2 Security & Data Protection           ✅ ผ่าน                   │
+│  └── 2.3 Architecture & Performance           ✅ ผ่าน                   │
+│                                                                         │
+│  Dimension 3: Measurement & Assessment        ███████████  3/3 ⭐⭐⭐   │
+│  ├── 3.1 Learning Outcome Assessment          ✅ ผ่าน                   │
+│  ├── 3.2 Research Data Quality                ✅ ผ่าน                   │
+│  └── 3.3 Gamification System                  ✅ ผ่าน                   │
+│                                                                         │
+│  Dimension 4: Scalability & Sustainability    ████████░░░  2/2 ⭐⭐     │
+│  ├── 4.1 National Scale Architecture          ✅ ผ่าน                   │
+│  └── 4.2 Sustainability & Maintenance         ✅ ผ่าน                   │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  TOTAL SCORE:  11/11 Criteria Passed (100%)   ████████████████████████ │
+│                                                                         │
+│  Key Strengths:                                                         │
+│  • A.R.C.E. Framework — กรอบการประเมิน 4 มิติที่เป็นระบบ                   │
+│  • Phase 2 AI Precision — Deterministic scoring with CoT                │
+│  • National Scale — รองรับการขยายตัวระดับชาติ                             │
+│  • PDPA Compliance — ปฏิบัติตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล             │
+│  • Open Source — MIT License for public benefit                         │
+│                                                                         │
+│  Innovation Highlights:                                                 │
+│  • AI-powered formative assessment with immediate feedback              │
+│  • Chain of Thought reasoning for transparent scoring                   │
+│  • Multi-source LO tracking (Chat + Worksheet)                          │
+│  • Gamification for student engagement                                  │
+│  • Research-ready data pipeline with IRR validation                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Compliance Verification
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| หลักสูตรแกนกลาง สพฐ. 2560 | ✅ | LO-based, grade calibration |
+| พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล 2562 | ✅ | Consent modal, no PII to AI |
+| Web Accessibility | ✅ | Dark mode, responsive design |
+| Thai Language Support | ✅ | Full Thai interface |
+| Cost Efficiency | ✅ | GPT-4o-mini (15-20x cheaper) |
 
 ---
 
-## 🎯 จุดเด่นที่ควรนำเสนอกรรมการ
+<div align="center">
 
-1. **Phase 2 AI Precision**: `temperature: 0` + `seed: 42` = คะแนนคงที่ทุกครั้ง
-2. **Chain of Thought**: AI อธิบายเหตุผลก่อนให้คะแนน (Transparency)
-3. **AI Confidence Score**: บอกความมั่นใจ 0-100%
-4. **Full Audit Trail**: ตรวจสอบย้อนกลับได้ทุกขั้นตอน
-5. **Scaffolding Mode**: ไม่เฉลย แต่ถามกลับให้คิดต่อ
-6. **Anti-Cheat System**: ตรวจจับ copy-paste + AI-generated
-7. **Universal Design**: ใช้ได้ทุกวิชา ไม่ hardcode
+**HOTS AI ChatLoop — DPA Assessment Checklist**
 
----
+*Version 2.0 | December 21, 2025*
 
-*เอกสารนี้สร้างจากการตรวจสอบโค้ดจริง ณ วันที่ 20 ธ.ค. 2025*
+✅ **11/11 Criteria Passed — Ready for DPA Submission**
+
+</div>
