@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "functions:serve": "cd functions && npm run serve",
     "functions:deploy": "cd functions && npm run deploy"
   },
@@ -19,7 +22,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.0.11",
     "vite": "^5.1.6",
-    "vite-plugin-pwa": "^1.1.0"
+    "vite-plugin-pwa": "^1.1.0",
+    "vitest": "^4.0.16"
   }
 }

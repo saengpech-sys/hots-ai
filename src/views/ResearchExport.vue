@@ -13,6 +13,21 @@
       </div>
     </div>
 
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button 
+        v-for="tab in tabs" 
+        :key="tab.id" 
+        :class="['tab-btn', { active: activeTab === tab.id }]"
+        @click="activeTab = tab.id"
+      >
+        <span class="tab-icon">{{ tab.icon }}</span>
+        <span class="tab-label">{{ tab.label }}</span>
+      </button>
+    </div>
+
+    <!-- Tab: Data Export (Original) -->
+    <div v-show="activeTab === 'export'" class="tab-content">
     <!-- Export Options -->
     <div class="export-grid">
       <!-- RQ1: Effectiveness Data -->
@@ -214,6 +229,314 @@
         </div>
       </div>
     </div>
+    </div><!-- End Tab: Data Export -->
+
+    <!-- Tab: IRR Analysis -->
+    <div v-show="activeTab === 'irr'" class="tab-content">
+      <div class="card">
+        <h3>📏 Inter-Rater Reliability (IRR)</h3>
+        <p class="section-desc">คำนวณความสอดคล้องระหว่างการให้คะแนนของ AI และ Expert</p>
+        
+        <div class="action-bar">
+          <button class="btn btn-primary" @click="calculateIRR" :disabled="irrLoading">
+            {{ irrLoading ? '⏳ กำลังคำนวณ...' : '🔄 คำนวณ IRR' }}
+          </button>
+          <button class="btn btn-secondary" @click="getIRRReport" :disabled="irrLoading">
+            📊 ดูรายงาน IRR
+          </button>
+        </div>
+
+        <div v-if="irrResult" class="result-card">
+          <h4>ผลการคำนวณ IRR</h4>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-value">{{ irrResult.cohensKappa?.toFixed(3) || 'N/A' }}</span>
+              <span class="metric-label">Cohen's Kappa</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value">{{ irrResult.spearmanRho?.toFixed(3) || 'N/A' }}</span>
+              <span class="metric-label">Spearman's ρ</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value">{{ irrResult.percentAgreement?.toFixed(1) || 'N/A' }}%</span>
+              <span class="metric-label">% Agreement</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value">{{ irrResult.sampleSize || 0 }}</span>
+              <span class="metric-label">Sample Size</span>
+            </div>
+          </div>
+          <p class="interpretation">{{ irrResult.interpretation }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Effect Size -->
+    <div v-show="activeTab === 'effectsize'" class="tab-content">
+      <div class="card">
+        <h3>📈 Effect Size Analysis</h3>
+        <p class="section-desc">วัดขนาดผลกระทบของ HOTS Intervention (Pretest vs Posttest)</p>
+        
+        <div class="form-group">
+          <label>เลือกรายวิชา:</label>
+          <select v-model="effectSizeCourseId" class="form-control">
+            <option value="">-- ทุกรายวิชา --</option>
+            <option v-for="course in courses" :key="course.id" :value="course.id">
+              {{ course.courseCode }} - {{ course.courseName }}
+            </option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" @click="calculateEffectSize" :disabled="effectSizeLoading">
+          {{ effectSizeLoading ? '⏳ กำลังคำนวณ...' : '📊 คำนวณ Effect Size' }}
+        </button>
+
+        <div v-if="effectSizeResult" class="result-card">
+          <h4>ผลการคำนวณ Effect Size</h4>
+          <div class="metrics-grid">
+            <div class="metric-item" v-for="dim in ['analysis', 'reasoning', 'creativity', 'evidence']" :key="dim">
+              <span class="metric-value" :class="getEffectSizeClass(effectSizeResult.dimensions?.[dim]?.cohensD)">
+                {{ effectSizeResult.dimensions?.[dim]?.cohensD?.toFixed(2) || 'N/A' }}
+              </span>
+              <span class="metric-label">{{ getDimensionName(dim) }} (d)</span>
+            </div>
+          </div>
+          <div class="overall-result">
+            <strong>Overall Effect:</strong> {{ effectSizeResult.interpretation }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Correlations -->
+    <div v-show="activeTab === 'correlations'" class="tab-content">
+      <div class="card">
+        <h3>🔗 Correlation Analysis</h3>
+        <p class="section-desc">วิเคราะห์ความสัมพันธ์ระหว่างตัวแปรต่างๆ</p>
+        
+        <button class="btn btn-primary" @click="runCorrelationAnalysis" :disabled="correlationLoading">
+          {{ correlationLoading ? '⏳ กำลังวิเคราะห์...' : '🔄 วิเคราะห์ Correlation' }}
+        </button>
+
+        <div v-if="correlationResult" class="result-card">
+          <h4>Correlation Matrix</h4>
+          <div class="correlation-table-container">
+            <table class="correlation-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th v-for="variable in correlationResult.variables" :key="variable">{{ variable }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowVar) in correlationResult.matrix" :key="rowVar">
+                  <td class="row-header">{{ rowVar }}</td>
+                  <td 
+                    v-for="(value, colVar) in row" 
+                    :key="colVar"
+                    :class="getCorrelationClass(value)"
+                  >
+                    {{ value?.toFixed(2) || '-' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: K-Anonymity -->
+    <div v-show="activeTab === 'kanonymity'" class="tab-content">
+      <div class="card">
+        <h3>🔒 K-Anonymity Export</h3>
+        <p class="section-desc">ส่งออกข้อมูลแบบ Privacy-Preserving ตามมาตรฐาน K-Anonymity</p>
+        
+        <div class="form-group">
+          <label>ค่า K (ขั้นต่ำ):</label>
+          <input type="number" v-model.number="kValue" min="2" max="10" class="form-control" style="width: 100px;">
+          <small>ค่า K หมายถึง แต่ละกลุ่มต้องมีอย่างน้อย K records</small>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-secondary" @click="assessReidentificationRisk" :disabled="kAnonymityLoading">
+            🔍 ประเมินความเสี่ยง Re-identification
+          </button>
+          <button class="btn btn-primary" @click="exportKAnonymous" :disabled="kAnonymityLoading">
+            {{ kAnonymityLoading ? '⏳ กำลังประมวลผล...' : '📦 Export K-Anonymous Data' }}
+          </button>
+        </div>
+
+        <div v-if="reidentificationRisk" class="result-card warning">
+          <h4>⚠️ ผลประเมินความเสี่ยง Re-identification</h4>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-value" :class="getRiskClass(reidentificationRisk.overallRisk)">
+                {{ reidentificationRisk.overallRisk }}
+              </span>
+              <span class="metric-label">Overall Risk Level</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value">{{ reidentificationRisk.uniqueRecords }}</span>
+              <span class="metric-label">Unique Records</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-value">{{ reidentificationRisk.kActual }}</span>
+              <span class="metric-label">Actual K</span>
+            </div>
+          </div>
+          <p v-if="reidentificationRisk.recommendations" class="recommendations">
+            <strong>คำแนะนำ:</strong> {{ reidentificationRisk.recommendations }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Research Readiness -->
+    <div v-show="activeTab === 'readiness'" class="tab-content">
+      <div class="card">
+        <h3>✅ Research Readiness v2</h3>
+        <p class="section-desc">ตรวจสอบความพร้อมของข้อมูลสำหรับการวิจัย</p>
+        
+        <button class="btn btn-primary" @click="checkResearchReadiness" :disabled="readinessLoading">
+          {{ readinessLoading ? '⏳ กำลังตรวจสอบ...' : '🔍 ตรวจสอบความพร้อม' }}
+        </button>
+
+        <div v-if="readinessResult" class="result-card">
+          <h4>ผลการตรวจสอบความพร้อม</h4>
+          
+          <div class="readiness-score" :class="getReadinessClass(readinessResult.overallScore)">
+            <span class="score-value">{{ readinessResult.overallScore }}%</span>
+            <span class="score-label">Research Readiness Score</span>
+          </div>
+
+          <div class="checklist">
+            <div 
+              v-for="check in readinessResult.checks" 
+              :key="check.name"
+              class="check-item"
+              :class="{ passed: check.passed, failed: !check.passed }"
+            >
+              <span class="check-icon">{{ check.passed ? '✅' : '❌' }}</span>
+              <span class="check-name">{{ check.name }}</span>
+              <span class="check-detail">{{ check.detail }}</span>
+            </div>
+          </div>
+
+          <div v-if="readinessResult.powerAnalysis" class="power-analysis">
+            <h5>📊 Statistical Power Analysis</h5>
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <span class="metric-value">{{ readinessResult.powerAnalysis.currentN }}</span>
+                <span class="metric-label">Current N</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-value">{{ readinessResult.powerAnalysis.requiredN }}</span>
+                <span class="metric-label">Required N</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-value">{{ readinessResult.powerAnalysis.power?.toFixed(2) }}</span>
+                <span class="metric-label">Statistical Power</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Learning Sequences -->
+    <div v-show="activeTab === 'sequences'" class="tab-content">
+      <div class="card">
+        <h3>📈 Learning Sequences</h3>
+        <p class="section-desc">วิเคราะห์รูปแบบการเรียนรู้ตามลำดับ (Sequential Pattern Mining)</p>
+        
+        <div class="form-group">
+          <label>เลือกรายวิชา:</label>
+          <select v-model="sequenceCourseId" class="form-control">
+            <option value="">-- ทุกรายวิชา --</option>
+            <option v-for="course in courses" :key="course.id" :value="course.id">
+              {{ course.courseCode }} - {{ course.courseName }}
+            </option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" @click="getLearningSequences" :disabled="sequenceLoading">
+          {{ sequenceLoading ? '⏳ กำลังโหลด...' : '📊 ดู Learning Sequences' }}
+        </button>
+
+        <div v-if="sequenceResult" class="result-card">
+          <h4>Learning Sequence Patterns</h4>
+          <div class="sequence-stats">
+            <span>Total Sequences: {{ sequenceResult.totalSequences }}</span>
+            <span>Avg Length: {{ sequenceResult.avgLength?.toFixed(1) }}</span>
+          </div>
+          
+          <div class="sequence-patterns">
+            <div 
+              v-for="(pattern, idx) in sequenceResult.topPatterns?.slice(0, 10)" 
+              :key="idx"
+              class="pattern-item"
+            >
+              <span class="pattern-rank">#{{ idx + 1 }}</span>
+              <span class="pattern-sequence">{{ pattern.sequence?.join(' → ') }}</span>
+              <span class="pattern-count">{{ pattern.count }} ครั้ง</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Data Quality -->
+    <div v-show="activeTab === 'quality'" class="tab-content">
+      <div class="card">
+        <h3>🔬 Data Quality Assessment</h3>
+        <p class="section-desc">ประเมินคุณภาพและความครบถ้วนของข้อมูล</p>
+        
+        <button class="btn btn-primary" @click="checkDataQuality" :disabled="qualityLoading">
+          {{ qualityLoading ? '⏳ กำลังตรวจสอบ...' : '🔍 ประเมินคุณภาพข้อมูล' }}
+        </button>
+
+        <div v-if="qualityResult" class="result-card">
+          <h4>Data Quality Report</h4>
+          
+          <div class="quality-score" :class="getQualityClass(qualityResult.overallQuality)">
+            <span class="score-value">{{ qualityResult.overallQuality }}%</span>
+            <span class="score-label">Data Quality Score</span>
+          </div>
+
+          <div class="quality-metrics">
+            <div class="quality-item">
+              <span class="quality-label">Completeness:</span>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: qualityResult.completeness + '%' }"></div>
+              </div>
+              <span class="quality-value">{{ qualityResult.completeness }}%</span>
+            </div>
+            <div class="quality-item">
+              <span class="quality-label">Consistency:</span>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: qualityResult.consistency + '%' }"></div>
+              </div>
+              <span class="quality-value">{{ qualityResult.consistency }}%</span>
+            </div>
+            <div class="quality-item">
+              <span class="quality-label">Validity:</span>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: qualityResult.validity + '%' }"></div>
+              </div>
+              <span class="quality-value">{{ qualityResult.validity }}%</span>
+            </div>
+          </div>
+
+          <div v-if="qualityResult.issues?.length > 0" class="quality-issues">
+            <h5>⚠️ Issues Found:</h5>
+            <ul>
+              <li v-for="(issue, idx) in qualityResult.issues" :key="idx">{{ issue }}</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -224,6 +547,20 @@ import { db } from '@/firebase/config'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
+const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
+
+// Tab Navigation
+const tabs = [
+  { id: 'export', icon: '📦', label: 'Data Export' },
+  { id: 'irr', icon: '📏', label: 'IRR Analysis' },
+  { id: 'effectsize', icon: '📈', label: 'Effect Size' },
+  { id: 'correlations', icon: '🔗', label: 'Correlations' },
+  { id: 'kanonymity', icon: '🔒', label: 'K-Anonymity' },
+  { id: 'readiness', icon: '✅', label: 'Readiness' },
+  { id: 'sequences', icon: '📈', label: 'Sequences' },
+  { id: 'quality', icon: '🔬', label: 'Data Quality' }
+]
+const activeTab = ref('export')
 
 // State
 const exporting = ref(false)
@@ -235,6 +572,25 @@ const rq2ValidatedOnly = ref(true)
 const rq3CourseId = ref('')
 const includeDataDict = ref(true)
 const anonymizeData = ref(true)
+
+// Research API States
+const irrLoading = ref(false)
+const irrResult = ref(null)
+const effectSizeLoading = ref(false)
+const effectSizeResult = ref(null)
+const effectSizeCourseId = ref('')
+const correlationLoading = ref(false)
+const correlationResult = ref(null)
+const kAnonymityLoading = ref(false)
+const kValue = ref(5)
+const reidentificationRisk = ref(null)
+const readinessLoading = ref(false)
+const readinessResult = ref(null)
+const sequenceLoading = ref(false)
+const sequenceResult = ref(null)
+const sequenceCourseId = ref('')
+const qualityLoading = ref(false)
+const qualityResult = ref(null)
 
 // Stats
 const totalAssessments = ref(0)
@@ -254,6 +610,214 @@ const rq4RecordCount = ref(0)
 function anonymizeId(id, prefix = 'S') {
   const hash = id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
   return `${prefix}${Math.abs(hash).toString().padStart(5, '0').slice(0, 5)}`
+}
+
+// Helper functions for UI
+function getDimensionName(dim) {
+  const names = { analysis: 'วิเคราะห์', reasoning: 'เหตุผล', creativity: 'สร้างสรรค์', evidence: 'หลักฐาน' }
+  return names[dim] || dim
+}
+
+function getEffectSizeClass(d) {
+  if (!d) return ''
+  if (d >= 0.8) return 'effect-large'
+  if (d >= 0.5) return 'effect-medium'
+  if (d >= 0.2) return 'effect-small'
+  return 'effect-negligible'
+}
+
+function getCorrelationClass(value) {
+  if (!value) return ''
+  const abs = Math.abs(value)
+  if (abs >= 0.7) return 'correlation-strong'
+  if (abs >= 0.4) return 'correlation-moderate'
+  return 'correlation-weak'
+}
+
+function getRiskClass(risk) {
+  if (risk === 'HIGH') return 'risk-high'
+  if (risk === 'MEDIUM') return 'risk-medium'
+  return 'risk-low'
+}
+
+function getReadinessClass(score) {
+  if (score >= 80) return 'readiness-good'
+  if (score >= 60) return 'readiness-moderate'
+  return 'readiness-poor'
+}
+
+function getQualityClass(score) {
+  if (score >= 80) return 'quality-good'
+  if (score >= 60) return 'quality-moderate'
+  return 'quality-poor'
+}
+
+// Research API Functions
+async function calculateIRR() {
+  irrLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/calculateIRR`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const data = await response.json()
+    irrResult.value = data
+  } catch (error) {
+    console.error('IRR calculation error:', error)
+    alert('เกิดข้อผิดพลาดในการคำนวณ IRR')
+  } finally {
+    irrLoading.value = false
+  }
+}
+
+async function getIRRReport() {
+  irrLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/irrReport`)
+    const data = await response.json()
+    irrResult.value = data
+  } catch (error) {
+    console.error('IRR report error:', error)
+    alert('เกิดข้อผิดพลาดในการดึงรายงาน IRR')
+  } finally {
+    irrLoading.value = false
+  }
+}
+
+async function calculateEffectSize() {
+  effectSizeLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/calculateEffectSize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: effectSizeCourseId.value || undefined })
+    })
+    const data = await response.json()
+    effectSizeResult.value = data
+  } catch (error) {
+    console.error('Effect size error:', error)
+    alert('เกิดข้อผิดพลาดในการคำนวณ Effect Size')
+  } finally {
+    effectSizeLoading.value = false
+  }
+}
+
+async function runCorrelationAnalysis() {
+  correlationLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/correlationAnalysis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const data = await response.json()
+    correlationResult.value = data
+  } catch (error) {
+    console.error('Correlation error:', error)
+    alert('เกิดข้อผิดพลาดในการวิเคราะห์ Correlation')
+  } finally {
+    correlationLoading.value = false
+  }
+}
+
+async function assessReidentificationRisk() {
+  kAnonymityLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/assessReidentificationRiskAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ k: kValue.value })
+    })
+    const data = await response.json()
+    reidentificationRisk.value = data
+  } catch (error) {
+    console.error('Reidentification risk error:', error)
+    alert('เกิดข้อผิดพลาดในการประเมินความเสี่ยง')
+  } finally {
+    kAnonymityLoading.value = false
+  }
+}
+
+async function exportKAnonymous() {
+  kAnonymityLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/exportKAnonymousDataAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ k: kValue.value })
+    })
+    const data = await response.json()
+    
+    // Download as CSV
+    if (data.csv) {
+      const BOM = '\uFEFF'
+      const blob = new Blob([BOM + data.csv], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `k${kValue.value}_anonymous_data_${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+    
+    alert(`Export สำเร็จ! Records: ${data.recordCount}`)
+  } catch (error) {
+    console.error('K-Anonymity export error:', error)
+    alert('เกิดข้อผิดพลาดในการ Export')
+  } finally {
+    kAnonymityLoading.value = false
+  }
+}
+
+async function checkResearchReadiness() {
+  readinessLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/researchReadinessV2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const data = await response.json()
+    readinessResult.value = data
+  } catch (error) {
+    console.error('Research readiness error:', error)
+    alert('เกิดข้อผิดพลาดในการตรวจสอบความพร้อม')
+  } finally {
+    readinessLoading.value = false
+  }
+}
+
+async function getLearningSequences() {
+  sequenceLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/getLearningSequences`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: sequenceCourseId.value || undefined })
+    })
+    const data = await response.json()
+    sequenceResult.value = data
+  } catch (error) {
+    console.error('Learning sequences error:', error)
+    alert('เกิดข้อผิดพลาดในการโหลด Learning Sequences')
+  } finally {
+    sequenceLoading.value = false
+  }
+}
+
+async function checkDataQuality() {
+  qualityLoading.value = true
+  try {
+    const response = await fetch(`${functionsUrl}/researchDataQuality`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const data = await response.json()
+    qualityResult.value = data
+  } catch (error) {
+    console.error('Data quality error:', error)
+    alert('เกิดข้อผิดพลาดในการประเมินคุณภาพข้อมูล')
+  } finally {
+    qualityLoading.value = false
+  }
 }
 
 // Load data
@@ -765,5 +1329,364 @@ onMounted(() => {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary, #374151);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover, #4b5563);
+}
+
+/* Tab Navigation */
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.tab-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.tab-icon {
+  font-size: 1rem;
+}
+
+.tab-content {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Section styling */
+.section-desc {
+  color: var(--text-secondary);
+  margin: 0 0 1.5rem;
+  font-size: 0.9rem;
+}
+
+.action-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-group small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Result Cards */
+.result-card {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.result-card h4 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+}
+
+.result-card.warning {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+/* Metrics Grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.metric-item {
+  text-align: center;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.metric-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Effect Size Classes */
+.effect-large { color: #10b981; }
+.effect-medium { color: #3b82f6; }
+.effect-small { color: #f59e0b; }
+.effect-negligible { color: #6b7280; }
+
+/* Correlation Table */
+.correlation-table-container {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+.correlation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.correlation-table th,
+.correlation-table td {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.correlation-table th,
+.correlation-table .row-header {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.correlation-strong { background: rgba(16, 185, 129, 0.2); }
+.correlation-moderate { background: rgba(59, 130, 246, 0.2); }
+.correlation-weak { background: transparent; }
+
+/* Risk Classes */
+.risk-high { color: #ef4444; }
+.risk-medium { color: #f59e0b; }
+.risk-low { color: #10b981; }
+
+/* Readiness Score */
+.readiness-score,
+.quality-score {
+  text-align: center;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-radius: 12px;
+}
+
+.readiness-good,
+.quality-good { background: rgba(16, 185, 129, 0.1); border: 2px solid #10b981; }
+.readiness-moderate,
+.quality-moderate { background: rgba(245, 158, 11, 0.1); border: 2px solid #f59e0b; }
+.readiness-poor,
+.quality-poor { background: rgba(239, 68, 68, 0.1); border: 2px solid #ef4444; }
+
+.score-value {
+  display: block;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.score-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Checklist */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.check-item.passed { border-left: 3px solid #10b981; }
+.check-item.failed { border-left: 3px solid #ef4444; }
+
+.check-icon { font-size: 1.2rem; }
+.check-name { font-weight: 500; flex: 1; }
+.check-detail { color: var(--text-secondary); font-size: 0.8rem; }
+
+/* Power Analysis */
+.power-analysis {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.power-analysis h5 {
+  margin: 0 0 1rem;
+}
+
+/* Quality Metrics */
+.quality-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.quality-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.quality-label {
+  width: 120px;
+  font-weight: 500;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s ease;
+}
+
+.quality-value {
+  width: 50px;
+  text-align: right;
+  font-weight: 600;
+}
+
+.quality-issues {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+}
+
+.quality-issues h5 {
+  margin: 0 0 0.75rem;
+  color: #ef4444;
+}
+
+.quality-issues ul {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.quality-issues li {
+  margin-bottom: 0.5rem;
+}
+
+/* Sequence Patterns */
+.sequence-stats {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.sequence-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pattern-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.pattern-rank {
+  font-weight: 700;
+  color: #3b82f6;
+  width: 30px;
+}
+
+.pattern-sequence {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.pattern-count {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.interpretation {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-style: italic;
+}
+
+.recommendations {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+
+.overall-result {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  text-align: center;
 }
 </style>

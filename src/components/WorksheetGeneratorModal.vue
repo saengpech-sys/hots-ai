@@ -162,6 +162,29 @@
                   <strong>ใบงานด่วน</strong>
                   <small>คำถามสั้น ทำเสร็จเร็ว</small>
                 </div>
+                <div 
+                  class="type-card arce-evaluate-card"
+                  :class="{ selected: options.worksheetType === 'arce_evaluate' }"
+                  @click="options.worksheetType = 'arce_evaluate'"
+                >
+                  <span class="type-icon">🎯</span>
+                  <strong>ใบงานวัดผล ARCE</strong>
+                  <small>ขั้น Evaluate: Situation-Task-Expected</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- ARCE Evaluate Notice -->
+            <div v-if="options.worksheetType === 'arce_evaluate'" class="arce-evaluate-notice">
+              <span class="material-icons">info</span>
+              <div>
+                <strong>📋 รูปแบบใบงานวัดผล ARCE</strong>
+                <p>สร้างจากข้อมูลขั้น Evaluate ในแผนการสอน มีโครงสร้าง:</p>
+                <ul>
+                  <li><strong>Situation:</strong> สถานการณ์ปัญหาที่สอดคล้องกับแผน</li>
+                  <li><strong>Task:</strong> คำสั่งที่ชัดเจนว่าให้นักเรียนทำอะไร</li>
+                  <li><strong>Expected A/R/C/E:</strong> เกณฑ์ที่ AI ใช้ตรวจคำตอบ</li>
+                </ul>
               </div>
             </div>
 
@@ -504,7 +527,8 @@ function getTypeLabel(type) {
     comprehensive: 'ครบทุกมิติ A.R.C.E.',
     analysis: 'เน้นการวิเคราะห์',
     creativity: 'เน้นความคิดสร้างสรรค์',
-    quick: 'ใบงานด่วน'
+    quick: 'ใบงานด่วน',
+    arce_evaluate: 'ใบงานวัดผล ARCE (ขั้น Evaluate)'
   }
   return labels[type] || type
 }
@@ -1035,6 +1059,63 @@ onMounted(async () => {
 .type-card.selected {
   border-color: var(--primary);
   background: rgba(102, 126, 234, 0.1);
+}
+
+.type-card.arce-evaluate-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.type-card.arce-evaluate-card:hover {
+  border-color: #10b981;
+}
+
+.type-card.arce-evaluate-card.selected {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(59, 130, 246, 0.2));
+}
+
+.arce-evaluate-notice {
+  display: flex;
+  gap: 0.75rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.arce-evaluate-notice .material-icons {
+  color: #10b981;
+  font-size: 1.25rem;
+}
+
+.arce-evaluate-notice strong {
+  color: #10b981;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.arce-evaluate-notice p {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.arce-evaluate-notice ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.arce-evaluate-notice li {
+  margin-bottom: 0.25rem;
+}
+
+.arce-evaluate-notice li strong {
+  color: var(--text-primary);
+  display: inline;
 }
 
 .type-icon {

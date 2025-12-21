@@ -64,6 +64,65 @@
         </div>
       </section>
 
+      <!-- 🔄 Retry Settings Section -->
+      <section class="editor-section retry-section">
+        <h2 class="section-title">
+          <span class="material-icons">replay</span>
+          ตั้งค่าการทำซ้ำ
+        </h2>
+        <div class="retry-settings">
+          <div class="form-group toggle-group">
+            <label class="toggle-label">
+              <input type="checkbox" v-model="worksheet.retrySettings.allowRetry" class="toggle-input">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">อนุญาตให้นักเรียนทำซ้ำได้</span>
+            </label>
+          </div>
+
+          <div v-if="worksheet.retrySettings.allowRetry" class="retry-options">
+            <div class="form-row">
+              <div class="form-group third">
+                <label>จำนวนครั้งสูงสุด</label>
+                <div class="input-with-hint">
+                  <input type="number" v-model.number="worksheet.retrySettings.maxAttempts" min="0" max="10" class="form-input">
+                  <span class="hint">(0 = ไม่จำกัด)</span>
+                </div>
+              </div>
+              <div class="form-group third">
+                <label>วิธีคิดคะแนน</label>
+                <select v-model="worksheet.retrySettings.scoreMode" class="form-select">
+                  <option value="best">🏆 ใช้คะแนนที่ดีที่สุด</option>
+                  <option value="latest">🔄 ใช้คะแนนครั้งล่าสุด</option>
+                  <option value="average">📊 ใช้ค่าเฉลี่ยทุกครั้ง</option>
+                  <option value="first">1️⃣ ใช้คะแนนครั้งแรกเท่านั้น</option>
+                </select>
+              </div>
+              <div class="form-group third">
+                <label>รอก่อนทำซ้ำ (นาที)</label>
+                <div class="input-with-hint">
+                  <input type="number" v-model.number="worksheet.retrySettings.cooldownMinutes" min="0" max="1440" class="form-input">
+                  <span class="hint">(0 = ทันที)</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-group toggle-group">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="worksheet.retrySettings.showPreviousScore" class="toggle-input">
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">แสดงคะแนนครั้งก่อนให้นักเรียนเห็น</span>
+              </label>
+            </div>
+            <div class="form-group toggle-group">
+              <label class="toggle-label">
+                <input type="checkbox" v-model="worksheet.retrySettings.showPreviousFeedback" class="toggle-input">
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">แสดง Feedback ครั้งก่อนเพื่อการเรียนรู้</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Instructions Section -->
       <!-- Instructions Section -->
       <section class="editor-section instructions-section">
@@ -599,6 +658,15 @@ async function loadWorksheet() {
         timeLimit: 50,
         allowLateSubmission: false
       },
+      // 🔄 Retry Settings
+      retrySettings: data.retrySettings || {
+        allowRetry: true,
+        maxAttempts: 3,
+        scoreMode: 'best',
+        cooldownMinutes: 0,
+        showPreviousScore: true,
+        showPreviousFeedback: true
+      },
       selfReflection: data.selfReflection || {
         enabled: false,
         prompt: '',
@@ -708,6 +776,100 @@ onMounted(() => {
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   border: 1px solid var(--border-color);
+}
+
+/* 🔄 Retry Settings Section */
+.retry-section {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.1) 100%);
+  border: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.retry-settings {
+  padding: 0.5rem 0;
+}
+
+.retry-options {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+}
+
+.toggle-group {
+  margin-bottom: 0.75rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-input {
+  display: none;
+}
+
+.toggle-slider {
+  width: 48px;
+  height: 26px;
+  background: #94a3b8;
+  border-radius: 13px;
+  position: relative;
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  background: white;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.3s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-input:checked + .toggle-slider {
+  background: #10b981;
+}
+
+.toggle-input:checked + .toggle-slider::after {
+  transform: translateX(22px);
+}
+
+.toggle-text {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.input-with-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.input-with-hint .hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.form-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.form-group.third {
+  flex: 1;
+  min-width: 150px;
 }
 
 /* Instructions Section - Highlighted */

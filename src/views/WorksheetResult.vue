@@ -278,33 +278,109 @@
         
         <div class="questions-list">
           <div v-for="(result, idx) in assessment.questionResults" :key="idx" 
-               class="question-result-card" :class="getQuestionClass(result)">
+               class="question-result-card" :class="[getQuestionClass(result), { 'arce-situation-result': result.type === 'arce_situation' }]">
             <div class="question-header">
               <div class="question-number">ข้อ {{ idx + 1 }}</div>
+              <div class="question-type-badge" v-if="result.type === 'arce_situation'">🎯 ARCE วัดผล</div>
               <div class="question-score" :class="getScoreClass(result)">
-                {{ result.score || 0 }} / {{ result.maxScore || 5 }} คะแนน
-                <span class="score-percent">({{ ((result.score / result.maxScore) * 100).toFixed(0) }}%)</span>
+                {{ result.score || result.totalScore || 0 }} / {{ result.maxScore || 5 }} คะแนน
+                <span class="score-percent">({{ (((result.score || result.totalScore || 0) / result.maxScore) * 100).toFixed(0) }}%)</span>
               </div>
             </div>
             
-            <div class="question-content">
-              <h4 class="question-prompt">{{ result.question }}</h4>
-              <div class="question-meta">
-                <span class="phase-tag">{{ getPhaseLabel(result.phase) }}</span>
-                <span class="bloom-tag">{{ getBloomLabel(result.bloomLevel) }}</span>
-                <span v-for="arce in (Array.isArray(result.arceFocus) ? result.arceFocus : [result.arceFocus])" 
-                      :key="arce" :class="['arce-tag', arce]">
-                  {{ getArceIcon(arce) }} {{ getArceLabel(arce) }}
-                </span>
+            <!-- ARCE Situation Special Display -->
+            <template v-if="result.type === 'arce_situation'">
+              <div class="arce-situation-content">
+                <div v-if="result.situation" class="situation-display">
+                  <label>📋 สถานการณ์:</label>
+                  <p>{{ result.situation }}</p>
+                </div>
+                <div v-if="result.task" class="task-display">
+                  <label>🎯 ภารกิจ:</label>
+                  <p>{{ result.task }}</p>
+                </div>
               </div>
-            </div>
+              
+              <!-- ARCE Breakdown for Situation Type -->
+              <div class="arce-breakdown-detailed" v-if="result.arceBreakdown">
+                <h4>📊 คะแนนแยกตามมิติ ARCE</h4>
+                <div class="arce-breakdown-grid">
+                  <div class="arce-breakdown-item analysis">
+                    <div class="arce-breakdown-header">
+                      <span class="icon">🔍</span>
+                      <span class="label">Analysis</span>
+                      <span class="score">{{ result.arceBreakdown.analysis?.score || 0 }}/5</span>
+                    </div>
+                    <p class="arce-feedback">{{ result.arceBreakdown.analysis?.feedback || '-' }}</p>
+                  </div>
+                  <div class="arce-breakdown-item reasoning">
+                    <div class="arce-breakdown-header">
+                      <span class="icon">🧠</span>
+                      <span class="label">Reasoning</span>
+                      <span class="score">{{ result.arceBreakdown.reasoning?.score || 0 }}/5</span>
+                    </div>
+                    <p class="arce-feedback">{{ result.arceBreakdown.reasoning?.feedback || '-' }}</p>
+                  </div>
+                  <div class="arce-breakdown-item creativity">
+                    <div class="arce-breakdown-header">
+                      <span class="icon">💡</span>
+                      <span class="label">Creativity</span>
+                      <span class="score">{{ result.arceBreakdown.creativity?.score || 0 }}/5</span>
+                    </div>
+                    <p class="arce-feedback">{{ result.arceBreakdown.creativity?.feedback || '-' }}</p>
+                  </div>
+                  <div class="arce-breakdown-item evidence">
+                    <div class="arce-breakdown-header">
+                      <span class="icon">📚</span>
+                      <span class="label">Evidence</span>
+                      <span class="score">{{ result.arceBreakdown.evidence?.score || 0 }}/5</span>
+                    </div>
+                    <p class="arce-feedback">{{ result.arceBreakdown.evidence?.feedback || '-' }}</p>
+                  </div>
+                </div>
+              </div>
+            </template>
+            
+            <!-- Regular Question Display -->
+            <template v-else>
+              <div class="question-content">
+                <h4 class="question-prompt">{{ result.question }}</h4>
+                <div class="question-meta">
+                  <span class="phase-tag">{{ getPhaseLabel(result.phase) }}</span>
+                  <span class="bloom-tag">{{ getBloomLabel(result.bloomLevel) }}</span>
+                  <span v-for="arce in (Array.isArray(result.arceFocus) ? result.arceFocus : [result.arceFocus])" 
+                        :key="arce" :class="['arce-tag', arce]">
+                    {{ getArceIcon(arce) }} {{ getArceLabel(arce) }}
+                  </span>
+                </div>
+              </div>
+            </template>
 
             <div class="answer-comparison">
               <div class="answer-block student-answer">
                 <label>📝 คำตอบของนักเรียน:</label>
                 <div class="answer-content">
                   <template v-if="typeof result.studentAnswer === 'object'">
-                    <pre>{{ JSON.stringify(result.studentAnswer, null, 2) }}</pre>
+                    <!-- Special display for ARCE structured answer -->
+                    <div v-if="result.studentAnswer?.type === 'arce_structured'" class="arce-structured-answer">
+                      <div v-if="result.studentAnswer.analysis" class="arce-answer-section">
+                        <strong>🔍 การวิเคราะห์:</strong>
+                        <p>{{ result.studentAnswer.analysis }}</p>
+                      </div>
+                      <div v-if="result.studentAnswer.reasoning" class="arce-answer-section">
+                        <strong>🧠 การให้เหตุผล:</strong>
+                        <p>{{ result.studentAnswer.reasoning }}</p>
+                      </div>
+                      <div v-if="result.studentAnswer.creativity" class="arce-answer-section">
+                        <strong>💡 ความคิดสร้างสรรค์:</strong>
+                        <p>{{ result.studentAnswer.creativity }}</p>
+                      </div>
+                      <div v-if="result.studentAnswer.evidence" class="arce-answer-section">
+                        <strong>📚 หลักฐาน:</strong>
+                        <p>{{ result.studentAnswer.evidence }}</p>
+                      </div>
+                    </div>
+                    <pre v-else>{{ JSON.stringify(result.studentAnswer, null, 2) }}</pre>
                   </template>
                   <template v-else>
                     {{ result.studentAnswer || '(ไม่ได้ตอบ)' }}
@@ -328,7 +404,7 @@
               </div>
             </div>
 
-            <div class="arce-breakdown" v-if="result.arceScores">
+            <div class="arce-breakdown" v-if="result.arceScores && result.type !== 'arce_situation'">
               <label>คะแนน A.R.C.E. ของข้อนี้:</label>
               <div class="mini-arce-scores">
                 <span v-for="(score, key) in result.arceScores" :key="key" :class="['mini-score', key]">
@@ -365,11 +441,46 @@
         </div>
       </section>
 
+      <!-- Retry Info Banner -->
+      <section v-if="retryInfo.hasRetrySettings" class="retry-info-section">
+        <div class="retry-info-card">
+          <div class="retry-header">
+            <span class="material-icons">history</span>
+            <h3>ข้อมูลการทำซ้ำ</h3>
+          </div>
+          <div class="retry-stats">
+            <div class="retry-stat">
+              <span class="stat-value">{{ retryInfo.attemptNumber || 1 }}</span>
+              <span class="stat-label">ครั้งที่ทำ</span>
+            </div>
+            <div class="retry-stat" v-if="retryInfo.maxAttempts">
+              <span class="stat-value">{{ retryInfo.maxAttempts - (retryInfo.attemptNumber || 1) }}</span>
+              <span class="stat-label">เหลืออีก</span>
+            </div>
+            <div class="retry-stat" v-if="retryInfo.scoreMode">
+              <span class="stat-badge">
+                {{ retryInfo.scoreMode === 'best' ? '🏆 เก็บคะแนนดีที่สุด' : 
+                   retryInfo.scoreMode === 'latest' ? '📝 เก็บคะแนนล่าสุด' :
+                   retryInfo.scoreMode === 'average' ? '📊 เก็บค่าเฉลี่ย' : '1️⃣ เก็บครั้งแรก' }}
+              </span>
+            </div>
+          </div>
+          <router-link :to="`/worksheet-history/${worksheetId}`" class="btn btn-outline btn-sm">
+            <span class="material-icons">timeline</span>
+            ดูประวัติทั้งหมด
+          </router-link>
+        </div>
+      </section>
+
       <!-- Actions -->
       <section class="actions-section">
         <router-link :to="backRoute" class="btn btn-outline">
           <span class="material-icons">arrow_back</span>
           กลับห้องกิจกรรม
+        </router-link>
+        <router-link :to="`/worksheet-history/${worksheetId}`" class="btn btn-outline">
+          <span class="material-icons">timeline</span>
+          ดูประวัติการทำ
         </router-link>
         <button class="btn btn-primary" @click="retryWorksheet" v-if="canRetry">
           <span class="material-icons">refresh</span>
@@ -554,8 +665,38 @@ const radarData = computed(() => {
   }
 })
 
+// Worksheet ID from route
+const worksheetId = computed(() => route.params.id)
+
+// Retry Info
+const retryInfo = computed(() => {
+  const retrySettings = worksheet.value?.retrySettings || submission.value?.retrySettings
+  return {
+    hasRetrySettings: !!retrySettings?.allowRetry,
+    allowRetry: retrySettings?.allowRetry || false,
+    maxAttempts: retrySettings?.maxAttempts || null,
+    scoreMode: retrySettings?.scoreMode || 'best',
+    attemptNumber: submission.value?.attemptNumber || 1,
+    cooldownMinutes: retrySettings?.cooldownMinutes || 0
+  }
+})
+
 const canRetry = computed(() => {
-  return worksheet.value?.allowRetry && (summary.value?.percentage || 0) < 80
+  // Check if retry is allowed in settings
+  const retrySettings = worksheet.value?.retrySettings
+  if (!retrySettings?.allowRetry) {
+    // Fallback to old allowRetry flag
+    return worksheet.value?.allowRetry && (summary.value?.percentage || 0) < 80
+  }
+  
+  // Check max attempts
+  if (retrySettings.maxAttempts) {
+    const currentAttempt = submission.value?.attemptNumber || 1
+    if (currentAttempt >= retrySettings.maxAttempts) return false
+  }
+  
+  // Check cooldown (simplified - actual check is in WorksheetForm)
+  return true
 })
 
 // Methods
@@ -609,7 +750,8 @@ function getBloomLabel(level) {
 }
 
 function getQuestionClass(result) {
-  const pct = (result.score / (result.maxScore || 5)) * 100
+  const score = result.score || result.totalScore || 0
+  const pct = (score / (result.maxScore || 5)) * 100
   if (pct >= 80) return 'excellent'
   if (pct >= 60) return 'good'
   if (pct >= 40) return 'fair'
@@ -617,7 +759,8 @@ function getQuestionClass(result) {
 }
 
 function getScoreClass(result) {
-  const pct = (result.score / (result.maxScore || 5)) * 100
+  const score = result.score || result.totalScore || 0
+  const pct = (score / (result.maxScore || 5)) * 100
   if (pct >= 80) return 'pass'
   if (pct >= 60) return 'good'
   if (pct >= 40) return 'partial'
@@ -1812,11 +1955,75 @@ onMounted(() => {
   line-height: 1.8;
 }
 
+/* Retry Info Section */
+.retry-info-section {
+  margin-bottom: 2rem;
+}
+
+.retry-info-card {
+  background: linear-gradient(135deg, #667eea15, #764ba215);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.retry-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.retry-header .material-icons {
+  color: #667eea;
+  font-size: 1.5rem;
+}
+
+.retry-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.retry-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.retry-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.retry-stat .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.retry-stat .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.retry-stat .stat-badge {
+  background: #f0fdf4;
+  color: #166534;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 /* Actions Section */
 .actions-section {
   display: flex;
   gap: 1rem;
   justify-content: center;
+  flex-wrap: wrap;
   padding-top: 1rem;
 }
 
@@ -1860,6 +2067,148 @@ onMounted(() => {
   color: var(--primary);
 }
 
+/* ===== ARCE Situation Result Styles ===== */
+.question-result-card.arce-situation-result {
+  border-left: 4px solid #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.02), rgba(118, 75, 162, 0.02));
+}
+
+.question-type-badge {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.arce-situation-content {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.arce-situation-content label {
+  font-weight: 600;
+  color: var(--primary);
+  font-size: 0.875rem;
+}
+
+.arce-situation-content p {
+  margin: 0.5rem 0 0 0;
+  line-height: 1.6;
+}
+
+.situation-display {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.task-display label {
+  color: #f59e0b;
+}
+
+/* ARCE Breakdown Detailed Grid */
+.arce-breakdown-detailed {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.arce-breakdown-detailed h4 {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.arce-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.arce-breakdown-item {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 0.75rem;
+  border-left: 3px solid;
+}
+
+.arce-breakdown-item.analysis { border-left-color: #3b82f6; }
+.arce-breakdown-item.reasoning { border-left-color: #8b5cf6; }
+.arce-breakdown-item.creativity { border-left-color: #f59e0b; }
+.arce-breakdown-item.evidence { border-left-color: #10b981; }
+
+.arce-breakdown-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.arce-breakdown-header .icon {
+  font-size: 1rem;
+}
+
+.arce-breakdown-header .label {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.arce-breakdown-header .score {
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.arce-breakdown-item.analysis .arce-breakdown-header .score { color: #3b82f6; }
+.arce-breakdown-item.reasoning .arce-breakdown-header .score { color: #8b5cf6; }
+.arce-breakdown-item.creativity .arce-breakdown-header .score { color: #f59e0b; }
+.arce-breakdown-item.evidence .arce-breakdown-header .score { color: #10b981; }
+
+.arce-feedback {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ARCE Structured Answer Display */
+.arce-structured-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.arce-answer-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--border-color);
+}
+
+.arce-answer-section strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.arce-answer-section p {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+
+/* Color coding for ARCE answer sections */
+.arce-answer-section:nth-child(1) { border-left-color: #3b82f6; }  /* Analysis */
+.arce-answer-section:nth-child(2) { border-left-color: #8b5cf6; }  /* Reasoning */
+.arce-answer-section:nth-child(3) { border-left-color: #f59e0b; }  /* Creativity */
+.arce-answer-section:nth-child(4) { border-left-color: #10b981; }  /* Evidence */
+
 /* Responsive */
 @media (max-width: 768px) {
   .result-container {
@@ -1885,6 +2234,10 @@ onMounted(() => {
   
   .actions-section {
     flex-direction: column;
+  }
+  
+  .arce-breakdown-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -406,11 +406,73 @@ export async function updateAssessmentPassedLOs(assessmentId, passedLOs, modifie
   }
 }
 
+/**
+ * Calculate LO progress percentage
+ * @param {string[]} passedLOs - Array of passed LO IDs
+ * @param {Object[]} totalLOs - Array of all LO objects with id property
+ * @returns {number} Progress percentage (0-100)
+ */
+export function calculateLOProgress(passedLOs, totalLOs) {
+  if (!totalLOs || totalLOs.length === 0) return 0
+  if (!passedLOs || passedLOs.length === 0) return 0
+  
+  const totalCount = totalLOs.length
+  const passedCount = passedLOs.filter(loId => 
+    totalLOs.some(lo => lo.id === loId)
+  ).length
+  
+  return Math.min(100, Math.round((passedCount / totalCount) * 100))
+}
+
+/**
+ * Get status of a specific LO
+ * @param {string} loId - LO ID to check
+ * @param {string[]} passedLOs - Array of passed LO IDs
+ * @returns {'passed' | 'not-passed'}
+ */
+export function getLOStatus(loId, passedLOs) {
+  if (!passedLOs || passedLOs.length === 0) return 'not-passed'
+  return passedLOs.includes(loId) ? 'passed' : 'not-passed'
+}
+
+/**
+ * Format passed LOs for display
+ * @param {string[]} passedLOs - Array of passed LO IDs
+ * @param {number} maxShow - Maximum LOs to show before truncating
+ * @returns {string} Formatted display string
+ */
+export function formatPassedLOsDisplay(passedLOs, maxShow = 5) {
+  if (!passedLOs || passedLOs.length === 0) return '-'
+  
+  if (passedLOs.length <= maxShow) {
+    return passedLOs.join(', ')
+  }
+  
+  const shown = passedLOs.slice(0, maxShow)
+  const remaining = passedLOs.length - maxShow
+  return `${shown.join(', ')}... (+${remaining})`
+}
+
+/**
+ * Merge two LO sets without duplicates
+ * @param {string[]} set1 - First set of LO IDs
+ * @param {string[]} set2 - Second set of LO IDs
+ * @returns {string[]} Merged and sorted LO IDs
+ */
+export function mergeLOSets(set1, set2) {
+  const merged = new Set([...(set1 || []), ...(set2 || [])])
+  return Array.from(merged).sort()
+}
+
 export default {
   getStudentPassedLOs,
   getStudentAllPassedLOs,
   getBatchStudentPassedLOs,
   addLOToAssessment,
   removeLOFromAssessment,
-  updateAssessmentPassedLOs
+  updateAssessmentPassedLOs,
+  calculateLOProgress,
+  getLOStatus,
+  formatPassedLOsDisplay,
+  mergeLOSets
 }

@@ -89,6 +89,33 @@
         </div>
       </div>
 
+      <!-- Quick Actions for Parent -->
+      <div class="quick-actions-section card">
+        <h3>⚡ เมนูด่วน</h3>
+        <div class="quick-action-grid">
+          <button @click="viewStudentPortfolio" class="quick-action-btn">
+            <span class="material-icons">folder_special</span>
+            <span>Portfolio ลูก</span>
+          </button>
+          <button @click="viewStudentProgress" class="quick-action-btn">
+            <span class="material-icons">trending_up</span>
+            <span>ความก้าวหน้า LO</span>
+          </button>
+          <button @click="viewLeaderboard" class="quick-action-btn">
+            <span class="material-icons">leaderboard</span>
+            <span>อันดับในชั้น</span>
+          </button>
+          <button @click="viewFeed" class="quick-action-btn">
+            <span class="material-icons">feed</span>
+            <span>Social Feed</span>
+          </button>
+          <button @click="$router.push('/profile')" class="quick-action-btn">
+            <span class="material-icons">settings</span>
+            <span>ตั้งค่าโปรไฟล์</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Overview Cards -->
       <div class="stats-grid">
         <div class="stat-card border-blue">
@@ -194,6 +221,27 @@ const handleLogout = async () => {
     await authStore.signOut()
     router.push('/login')
   }
+}
+
+// Quick Action Methods
+const viewStudentPortfolio = () => {
+  if (selectedStudentId.value) {
+    router.push(`/portfolio/${selectedStudentId.value}`)
+  }
+}
+
+const viewStudentProgress = () => {
+  if (selectedStudentId.value) {
+    router.push(`/student-detail/${selectedStudentId.value}`)
+  }
+}
+
+const viewLeaderboard = () => {
+  router.push('/leaderboard')
+}
+
+const viewFeed = () => {
+  router.push('/feed')
 }
 
 const loading = ref(false)
@@ -572,6 +620,53 @@ onMounted(() => {
 
 .full-width {
   width: 100%;
+}
+
+/* Quick Actions Section */
+.quick-actions-section {
+  margin-bottom: 2rem;
+}
+
+.quick-actions-section h3 {
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+}
+
+.quick-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.quick-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.25rem 1rem;
+  border: 2px solid var(--border-color, #e2e8f0);
+  border-radius: 0.75rem;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-action-btn:hover {
+  border-color: #4299e1;
+  background: linear-gradient(135deg, rgba(66, 153, 225, 0.1), rgba(99, 102, 241, 0.1));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(66, 153, 225, 0.2);
+}
+
+.quick-action-btn .material-icons {
+  font-size: 2rem;
+  color: #4299e1;
+}
+
+.quick-action-btn span:last-child {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .stats-grid {

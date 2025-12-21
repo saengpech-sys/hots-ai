@@ -1,5 +1,6 @@
 <template>
   <div class="chat-container">
+    <ErrorBoundary context="ChatView">
     <!-- Badge Notification -->
     <BadgeNotification
       :badge="gamificationStore.newBadge"
@@ -36,222 +37,27 @@
           <button @click="viewFullPath" class="btn btn-sm btn-outline">View Path</button>
           <button @click="exitPath" class="btn btn-sm btn-secondary">Exit Path</button>
         </div>
-      </div>
-
-    <!-- ✨ HERO QUESTION SECTION -->
-    <div class="hero-question-section">
-      <!-- Header Bar -->
-      <div class="top-bar">
-        <h1 class="app-title">🧠 HOTS Assessment</h1>
-        <div class="top-actions">
-          <button @click="toggleTheme" class="icon-btn">{{ isDarkMode ? '☀️' : '🌙' }}</button>
-          <button @click="handleEndSession" class="btn-end">จบการสนทนา</button>
-        </div>
-      </div>
-
-      <!-- BIG QUESTION CARD -->
-      <div v-if="chatStore.currentQuestion" class="hero-question-card">
-        <div class="question-label">
-          <span class="pulse-dot"></span>
-          คำถามที่ต้องตอบ
-        </div>
-        <h2 class="hero-question-text">{{ chatStore.currentQuestion.question }}</h2>
-        <div class="question-meta">
-          <span v-if="chatStore.currentQuestion.category" class="meta-tag category">
-            📚 {{ chatStore.currentQuestion.category }}
-          </span>
-          <span v-if="chatStore.currentQuestion.difficulty" class="meta-tag difficulty">
-            ⭐ {{ chatStore.currentQuestion.difficulty }}
-          </span>
-          <button @click="requestNextQuestion" class="skip-btn">
-            ⏭️ ข้าม
+      </div>    <!-- Header -->
+    <div class="chat-header card">
+      <div class="header-content">
+        <h2>💬 HOTS Assessment Chat</h2>
+        <div class="header-actions">
+          <button @click="toggleTheme" class="icon-btn" title="Toggle Theme">
+            {{ isDarkMode ? '☀️' : '🌙' }}
           </button>
-        </div>
-      </div>
-      
-      <!-- No Question State -->
-      <div v-else class="hero-question-card empty">
-        <div class="empty-state">
-          <span class="empty-icon">📝</span>
-          <p>กำลังโหลดคำถาม...</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ✨ ANSWER INPUT SECTION -->
-    <div class="answer-section">
-      <!-- Error Banner -->
-      <div v-if="sendError" class="error-banner">
-        <span>⚠️ {{ sendError }}</span>
-        <button @click="sendError = null">✕</button>
-      </div>
-
-      <!-- Mode Toggle -->
-      <div class="mode-toggle">
-        <button 
-          :class="['mode-btn', { active: !structuredMode }]"
-          @click="structuredMode = false"
-        >
-          ✍️ พิมพ์อิสระ
-        </button>
-        <button 
-          :class="['mode-btn', { active: structuredMode }]"
-          @click="structuredMode = true"
-        >
-          🧩 แยกประเด็น
-        </button>
-      </div>
-
-      <!-- FREE-FORM INPUT -->
-      <div v-if="!structuredMode" class="answer-input-wrapper">
-        <textarea
-          v-model="inputText"
-          @keydown.enter.exact.prevent="handleSend"
-          @keydown="handleKeyDown"
-          @input="handleInputChange"
-          @paste.prevent="handlePaste"
-          @copy.prevent="handleCopy"
-          @cut.prevent="handleCut"
-          @contextmenu.prevent
-          @dragover.prevent
-          @drop.prevent
-          class="answer-textarea"
-          placeholder="พิมพ์คำตอบของคุณที่นี่... ✍️"
-          rows="4"
-          :disabled="loading"
-        ></textarea>
-        
-        <div class="input-footer">
-          <span class="char-count" :class="{ warning: inputText.length < 20 && inputText.length > 0 }">
-            {{ inputText.length }} ตัวอักษร
-            <span v-if="inputText.length < 20 && inputText.length > 0">(ขั้นต่ำ 20)</span>
-          </span>
-          <button 
-            @click="handleSend" 
-            class="send-btn"
-            :disabled="loading || inputText.trim().length < 1"
-          >
-            <span v-if="loading" class="loading-spinner"></span>
-            <span v-else>ส่งคำตอบ 🚀</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- STRUCTURED INPUT -->
-      <div v-else class="structured-input">
-        <!-- Analysis -->
-        <div class="dimension-box analysis">
-          <div class="dim-header">
-            <span class="dim-icon">🔍</span>
-            <span class="dim-title">การวิเคราะห์</span>
-            <span class="dim-count">{{ structuredAnswer.analysis.filter(x => x.trim()).length }}</span>
-          </div>
-          <div class="dim-items">
-            <div v-for="(item, idx) in structuredAnswer.analysis" :key="'a'+idx" class="dim-item">
-              <input 
-                v-model="structuredAnswer.analysis[idx]"
-                type="text"
-                placeholder="เขียนการวิเคราะห์..."
-                @paste.prevent="handlePaste"
-              >
-              <button v-if="structuredAnswer.analysis.length > 1" @click="removeItem('analysis', idx)" class="remove-btn">✕</button>
-            </div>
-            <button @click="addItem('analysis')" class="add-btn">+ เพิ่ม</button>
-          </div>
-        </div>
-
-        <!-- Reasoning -->
-        <div class="dimension-box reasoning">
-          <div class="dim-header">
-            <span class="dim-icon">🧠</span>
-            <span class="dim-title">การให้เหตุผล</span>
-            <span class="dim-count">{{ structuredAnswer.reasoning.filter(x => x.trim()).length }}</span>
-          </div>
-          <div class="dim-items">
-            <div v-for="(item, idx) in structuredAnswer.reasoning" :key="'r'+idx" class="dim-item">
-              <input 
-                v-model="structuredAnswer.reasoning[idx]"
-                type="text"
-                placeholder="เขียนเหตุผล..."
-                @paste.prevent="handlePaste"
-              >
-              <button v-if="structuredAnswer.reasoning.length > 1" @click="removeItem('reasoning', idx)" class="remove-btn">✕</button>
-            </div>
-            <button @click="addItem('reasoning')" class="add-btn">+ เพิ่ม</button>
-          </div>
-        </div>
-
-        <!-- Creativity -->
-        <div class="dimension-box creativity">
-          <div class="dim-header">
-            <span class="dim-icon">💡</span>
-            <span class="dim-title">ความคิดสร้างสรรค์</span>
-            <span class="dim-count">{{ structuredAnswer.creativity.filter(x => x.trim()).length }}</span>
-          </div>
-          <div class="dim-items">
-            <div v-for="(item, idx) in structuredAnswer.creativity" :key="'c'+idx" class="dim-item">
-              <input 
-                v-model="structuredAnswer.creativity[idx]"
-                type="text"
-                placeholder="เขียนไอเดียสร้างสรรค์..."
-                @paste.prevent="handlePaste"
-              >
-              <button v-if="structuredAnswer.creativity.length > 1" @click="removeItem('creativity', idx)" class="remove-btn">✕</button>
-            </div>
-            <button @click="addItem('creativity')" class="add-btn">+ เพิ่ม</button>
-          </div>
-        </div>
-
-        <!-- Evidence -->
-        <div class="dimension-box evidence">
-          <div class="dim-header">
-            <span class="dim-icon">📚</span>
-            <span class="dim-title">หลักฐาน/ตัวอย่าง</span>
-            <span class="dim-count">{{ structuredAnswer.evidence.filter(x => x.trim()).length }}</span>
-          </div>
-          <div class="dim-items">
-            <div v-for="(item, idx) in structuredAnswer.evidence" :key="'e'+idx" class="dim-item">
-              <input 
-                v-model="structuredAnswer.evidence[idx]"
-                type="text"
-                placeholder="เขียนหลักฐาน/ตัวอย่าง..."
-                @paste.prevent="handlePaste"
-              >
-              <button v-if="structuredAnswer.evidence.length > 1" @click="removeItem('evidence', idx)" class="remove-btn">✕</button>
-            </div>
-            <button @click="addItem('evidence')" class="add-btn">+ เพิ่ม</button>
-          </div>
-        </div>
-
-        <!-- Structured Footer -->
-        <div class="structured-footer">
-          <div class="struct-stats">
-            <span>{{ totalStructuredItems }} ประเด็น</span>
-            <span>{{ structuredCharCount }} ตัวอักษร</span>
-          </div>
-          <button 
-            @click="handleSend" 
-            class="send-btn"
-            :disabled="loading || totalStructuredItems === 0"
-          >
-            <span v-if="loading" class="loading-spinner"></span>
-            <span v-else>ส่งคำตอบ 🚀</span>
+          <button @click="handleEndSession" class="btn btn-secondary btn-sm">
+            จบการสนทนา
           </button>
         </div>
       </div>
     </div>
 
-    <!-- ✨ COLLAPSIBLE HISTORY (hidden by default) -->
-    <details class="history-section">
-      <summary class="history-toggle">
-        📜 ดูประวัติการสนทนา ({{ messages.length }} ข้อความ)
-      </summary>
-      <div class="messages-container" ref="messagesContainer">
-        <div 
-          v-for="message in messages" 
-          :key="message.id"
-          :class="['message', `message-${message.from}`]"
-        >
+    <!-- Messages Area -->
+    <div class="messages-container" ref="messagesContainer">
+      <div 
+        v-for="message in messages" 
+        :key="message.id"
+        :class="['message', `message-${message.from}`]"
       >
         <div class="message-bubble">
           <div class="message-header">
@@ -327,8 +133,261 @@
       <div v-if="loading" class="typing-indicator">
         <span></span><span></span><span></span>
       </div>
+    </div>
+
+    <!-- Input Area (with copy-paste prevention) -->
+    <div class="input-container card">
+      <!-- 🆕 Error Banner -->
+      <div v-if="sendError" class="error-banner">
+        <span class="error-icon">⚠️</span>
+        <span class="error-text">{{ sendError }}</span>
+        <button @click="sendError = null" class="error-close">✕</button>
       </div>
-    </details>
+      
+      <!-- 🆕 Input Mode Toggle -->
+      <div class="input-mode-toggle">
+        <button 
+          :class="['mode-btn', { active: !structuredMode }]"
+          @click="structuredMode = false"
+        >
+          📝 พิมพ์อิสระ
+        </button>
+        <button 
+          :class="['mode-btn', { active: structuredMode }]"
+          @click="structuredMode = true"
+        >
+          🧩 ตอบแบบมีโครงสร้าง
+        </button>
+      </div>
+      
+      <!-- Traditional Free-form Input -->
+      <div v-if="!structuredMode" class="freeform-input">
+        <textarea
+          v-model="inputText"
+          @keydown.enter.prevent="handleSend"
+          @keydown="handleKeyDown"
+          @input="handleInputChange"
+          @paste.prevent="handlePaste"
+          @copy.prevent="handleCopy"
+          @cut.prevent="handleCut"
+          @contextmenu.prevent
+          @dragover.prevent
+          @drop.prevent
+          @blur="handleFocusLost"
+          @selectstart.prevent="isMobile ? undefined : $event"
+          class="chat-input no-copy"
+          :class="{ 'mobile-input': isMobile }"
+          :placeholder="isMobile ? 'พิมพ์คำตอบของคุณที่นี่...' : 'พิมพ์คำตอบของคุณที่นี่... (กด Enter เพื่อส่ง)'"
+          :rows="isMobile ? 4 : 3"
+          :disabled="loading"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        ></textarea>
+      </div>
+      
+      <!-- 🆕 Structured Input Mode -->
+      <div v-else class="structured-input">
+        <div class="structured-intro">
+          💡 <strong>เคล็ดลับ:</strong> เพิ่มประเด็นในแต่ละด้านได้หลายข้อ คลิก "➕ เพิ่ม" เพื่อใส่ความคิดเพิ่มเติม
+        </div>
+        
+        <!-- Analysis Section -->
+        <div class="dimension-section analysis-section">
+          <div class="dimension-header">
+            <span class="dimension-icon">🔍</span>
+            <span class="dimension-title">การวิเคราะห์ (Analysis)</span>
+            <span class="dimension-count">{{ structuredAnswer.analysis.length }} ข้อ</span>
+          </div>
+          <div class="dimension-hint">แยกแยะข้อมูล หาความสัมพันธ์ ระบุสาเหตุและผล</div>
+          <div class="dimension-items">
+            <div 
+              v-for="(item, index) in structuredAnswer.analysis" 
+              :key="'analysis-' + index"
+              class="dimension-item"
+            >
+              <span class="item-number">{{ index + 1 }}.</span>
+              <input 
+                v-model="structuredAnswer.analysis[index]"
+                type="text"
+                class="item-input"
+                placeholder="เขียนการวิเคราะห์ของคุณ..."
+                @paste.prevent="handlePaste"
+              >
+              <button 
+                @click="removeItem('analysis', index)" 
+                class="item-remove"
+                title="ลบข้อนี้"
+              >✕</button>
+            </div>
+          </div>
+          <button @click="addItem('analysis')" class="add-item-btn">
+            ➕ เพิ่มการวิเคราะห์
+          </button>
+        </div>
+        
+        <!-- Reasoning Section -->
+        <div class="dimension-section reasoning-section">
+          <div class="dimension-header">
+            <span class="dimension-icon">🧠</span>
+            <span class="dimension-title">การให้เหตุผล (Reasoning)</span>
+            <span class="dimension-count">{{ structuredAnswer.reasoning.length }} ข้อ</span>
+          </div>
+          <div class="dimension-hint">อธิบายเหตุผล ให้ข้อสนับสนุน สร้างข้อโต้แย้ง</div>
+          <div class="dimension-items">
+            <div 
+              v-for="(item, index) in structuredAnswer.reasoning" 
+              :key="'reasoning-' + index"
+              class="dimension-item"
+            >
+              <span class="item-number">{{ index + 1 }}.</span>
+              <input 
+                v-model="structuredAnswer.reasoning[index]"
+                type="text"
+                class="item-input"
+                placeholder="เขียนเหตุผลของคุณ..."
+                @paste.prevent="handlePaste"
+              >
+              <button 
+                @click="removeItem('reasoning', index)" 
+                class="item-remove"
+                title="ลบข้อนี้"
+              >✕</button>
+            </div>
+          </div>
+          <button @click="addItem('reasoning')" class="add-item-btn">
+            ➕ เพิ่มเหตุผล
+          </button>
+        </div>
+        
+        <!-- Creativity Section -->
+        <div class="dimension-section creativity-section">
+          <div class="dimension-header">
+            <span class="dimension-icon">💡</span>
+            <span class="dimension-title">ความคิดสร้างสรรค์ (Creativity)</span>
+            <span class="dimension-count">{{ structuredAnswer.creativity.length }} ข้อ</span>
+          </div>
+          <div class="dimension-hint">เสนอไอเดียใหม่ มุมมองต่าง แนวทางแก้ปัญหาที่แปลกใหม่</div>
+          <div class="dimension-items">
+            <div 
+              v-for="(item, index) in structuredAnswer.creativity" 
+              :key="'creativity-' + index"
+              class="dimension-item"
+            >
+              <span class="item-number">{{ index + 1 }}.</span>
+              <input 
+                v-model="structuredAnswer.creativity[index]"
+                type="text"
+                class="item-input"
+                placeholder="เขียนไอเดียสร้างสรรค์ของคุณ..."
+                @paste.prevent="handlePaste"
+              >
+              <button 
+                @click="removeItem('creativity', index)" 
+                class="item-remove"
+                title="ลบข้อนี้"
+              >✕</button>
+            </div>
+          </div>
+          <button @click="addItem('creativity')" class="add-item-btn">
+            ➕ เพิ่มความคิดสร้างสรรค์
+          </button>
+        </div>
+        
+        <!-- Evidence Section -->
+        <div class="dimension-section evidence-section">
+          <div class="dimension-header">
+            <span class="dimension-icon">📚</span>
+            <span class="dimension-title">หลักฐาน/ตัวอย่าง (Evidence)</span>
+            <span class="dimension-count">{{ structuredAnswer.evidence.length }} ข้อ</span>
+          </div>
+          <div class="dimension-hint">ยกตัวอย่าง อ้างอิงข้อมูล หลักฐานสนับสนุน</div>
+          <div class="dimension-items">
+            <div 
+              v-for="(item, index) in structuredAnswer.evidence" 
+              :key="'evidence-' + index"
+              class="dimension-item"
+            >
+              <span class="item-number">{{ index + 1 }}.</span>
+              <input 
+                v-model="structuredAnswer.evidence[index]"
+                type="text"
+                class="item-input"
+                placeholder="เขียนหลักฐานหรือตัวอย่างของคุณ..."
+                @paste.prevent="handlePaste"
+              >
+              <button 
+                @click="removeItem('evidence', index)" 
+                class="item-remove"
+                title="ลบข้อนี้"
+              >✕</button>
+            </div>
+          </div>
+          <button @click="addItem('evidence')" class="add-item-btn">
+            ➕ เพิ่มหลักฐาน/ตัวอย่าง
+          </button>
+        </div>
+        
+        <!-- Structured Answer Summary -->
+        <div class="structured-summary">
+          <div class="summary-header">📊 สรุปคำตอบของคุณ</div>
+          <div class="summary-stats">
+            <span class="stat-item" :class="{ 'has-content': structuredAnswer.analysis.filter(x => x.trim()).length > 0 }">
+              🔍 วิเคราะห์: {{ structuredAnswer.analysis.filter(x => x.trim()).length }} ข้อ
+            </span>
+            <span class="stat-item" :class="{ 'has-content': structuredAnswer.reasoning.filter(x => x.trim()).length > 0 }">
+              🧠 เหตุผล: {{ structuredAnswer.reasoning.filter(x => x.trim()).length }} ข้อ
+            </span>
+            <span class="stat-item" :class="{ 'has-content': structuredAnswer.creativity.filter(x => x.trim()).length > 0 }">
+              💡 สร้างสรรค์: {{ structuredAnswer.creativity.filter(x => x.trim()).length }} ข้อ
+            </span>
+            <span class="stat-item" :class="{ 'has-content': structuredAnswer.evidence.filter(x => x.trim()).length > 0 }">
+              📚 หลักฐาน: {{ structuredAnswer.evidence.filter(x => x.trim()).length }} ข้อ
+            </span>
+          </div>
+          <div class="summary-total">
+            รวม {{ totalStructuredItems }} ประเด็น ({{ structuredCharCount }} ตัวอักษร)
+          </div>
+        </div>
+      </div>
+      
+      <div class="input-actions">
+        <div v-if="!structuredMode" class="char-count" :class="{ 'warning': inputText.length < 20 && inputText.length > 0 }">
+          {{ inputText.length }} ตัวอักษร
+          <span v-if="inputText.length < 20 && inputText.length > 0">
+            (ต้องการอย่างน้อย 20 ตัวอักษร)
+          </span>
+        </div>
+        <div v-else class="char-count" :class="{ 'warning': structuredCharCount < 20 && structuredCharCount > 0 }">
+          {{ structuredCharCount }} ตัวอักษร
+          <span v-if="structuredCharCount < 20 && structuredCharCount > 0">
+            (ต้องการอย่างน้อย 20 ตัวอักษร)
+          </span>
+        </div>
+        <div class="action-buttons">
+          <button 
+            v-if="structuredMode"
+            @click="clearStructuredAnswer"
+            class="btn btn-outline btn-sm"
+            :disabled="totalStructuredItems === 0"
+          >
+            🗑️ ล้างทั้งหมด
+          </button>
+          <button 
+            @click="handleSend" 
+            :disabled="(!structuredMode && !inputText.trim()) || (structuredMode && totalStructuredItems === 0) || loading || sendingInProgress"
+            class="btn btn-primary send-btn"
+          >
+            <span v-if="sendingInProgress && retryCount > 0">
+              🔄 กำลังลองใหม่ ({{ retryCount }}/{{ MAX_RETRIES }})...
+            </span>
+            <span v-else-if="sendingInProgress">⏳ กำลังส่ง...</span>
+            <span v-else>ส่งคำตอบ 📤</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Confirmation Dialog -->
     <div v-if="showConfirmDialog" class="modal-overlay" @click.self="cancelSend">
@@ -375,6 +434,7 @@
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   </div>
 </template>
 
@@ -390,15 +450,24 @@ import ReflectionJournal from '@/components/ReflectionJournal.vue'
 import { collection, query, where, getDocs, doc, updateDoc, orderBy, limit } from 'firebase/firestore'
 import { db } from '@/firebase/config'
 import { useAuthStore } from '@/stores/auth'
+import { useRateLimiter } from '@/composables/useRateLimiter'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 // 🆕 Anti-Cheat System
 import { TypingTracker, createTypingFingerprint, detectTextPatterns, getDeviceInfo, isMobileDevice } from '@/utils/antiCheat'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
+// 🆕 Rate Limiter
+const { executeWithLimit, isLimited, errorMessage: rateLimitMessage } = useRateLimiter('assessment')
+
 const chatStore = useChatStore()
 const themeStore = useThemeStore()
 const gamificationStore = useGamificationStore()
+
+// 🆕 Sequence Tracking
+const sequenceId = ref(null)
 
 const inputText = ref('')
 const messagesContainer = ref(null)
@@ -419,15 +488,6 @@ const previousTextValue = ref('')
 const antiCheatWarning = ref(null)
 const showAntiCheatDialog = ref(false)
 const antiCheatAnalysis = ref(null)
-
-// 🔬 Research Metrics Tracking
-const questionShownTime = ref(null)  // When question was displayed
-const firstKeystrokeTime = ref(null) // Time of first keystroke
-const revisionCount = ref(0)         // How many times answer was modified significantly
-const lastAnswerSnapshot = ref('')   // For detecting major revisions
-const thinkingPauseCount = ref(0)    // Pauses > 5 seconds
-const lastKeyTime = ref(null)        // For pause detection
-const totalKeystrokes = ref(0)       // Total keystrokes
 
 // 🆕 Device Detection
 const deviceInfo = ref(getDeviceInfo())
@@ -506,6 +566,9 @@ onMounted(async () => {
     await chatStore.startSession(selectedCourseId)
   }
   
+  // 🆕 Start sequence tracking
+  await startSequenceTracking()
+  
   // If adaptive path is active, handle current step
   if (activePath.value && currentStep.value) {
     await handleCurrentPathStep()
@@ -540,6 +603,13 @@ onMounted(async () => {
 onUnmounted(() => {
   // 🆕 Remove visibility change listener
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  
+  // 🆕 Finalize sequence tracking
+  finalizeSequenceTracking()
+  
+  // 🔧 FIX: Cleanup stores to prevent memory leaks
+  chatStore.cleanup()
+  gamificationStore.cleanup()
 })
 
 // 🆕 Auto-save draft to localStorage whenever inputText changes
@@ -559,6 +629,62 @@ watch(messages, () => {
 function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  }
+}
+
+// 🆕 Sequence Tracking Functions
+async function startSequenceTracking() {
+  try {
+    sequenceId.value = `seq_${Date.now()}_${authStore.user?.uid?.slice(-6) || 'anon'}`
+    await logSequenceEvent('session_start', {
+      sessionId: chatStore.currentSession?.id,
+      courseId: chatStore.currentSession?.courseId
+    })
+  } catch (error) {
+    console.warn('Sequence tracking start error:', error)
+  }
+}
+
+async function logSequenceEvent(eventType, metadata = {}) {
+  if (!sequenceId.value || !authStore.user?.uid) return
+  
+  try {
+    await fetch(`${functionsUrl}/logSequenceEventAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sequenceId: sequenceId.value,
+        studentId: authStore.user.uid,
+        eventType,
+        metadata: {
+          ...metadata,
+          timestamp: new Date().toISOString()
+        }
+      })
+    })
+  } catch (error) {
+    console.warn('Sequence log error:', error)
+  }
+}
+
+async function finalizeSequenceTracking() {
+  if (!sequenceId.value) return
+  
+  try {
+    await fetch(`${functionsUrl}/finalizeSequenceAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sequenceId: sequenceId.value,
+        studentId: authStore.user?.uid,
+        outcome: {
+          totalMessages: messages.value.length,
+          assessmentCount: assessments.value.length
+        }
+      })
+    })
+  } catch (error) {
+    console.warn('Sequence finalize error:', error)
   }
 }
 
@@ -602,28 +728,6 @@ function formatMessageText(text) {
     .replace(/^---$/gm, '<hr style="margin: 1rem 0; border-color: var(--border-color);">')
   
   return formatted
-}
-
-// 🆕 Request next question (skip current)
-async function requestNextQuestion() {
-  if (loading.value) return
-  
-  // ส่งคำว่า "ถัดไป" เพื่อขอคำถามใหม่
-  const skipMessage = 'ถัดไป'
-  inputText.value = skipMessage
-  
-  // Reset anti-cheat tracker
-  antiCheatTracker.value = {
-    keystrokes: [],
-    pasteCount: 0,
-    typingPatterns: [],
-    deletionCount: 0,
-    rapidInputCount: 0,
-    lastKeystrokeTime: null
-  }
-  
-  await chatStore.sendMessage(skipMessage)
-  inputText.value = ''
 }
 
 async function handleSend() {
@@ -804,9 +908,6 @@ async function sendMessageConfirmed(text = null, isRequestNewQuestion = false) {
     ? createTypingFingerprint(typingTracker.value) 
     : null
   
-  // 🔬 Collect research metrics before sending
-  const researchMetrics = !isRequestNewQuestion ? collectResearchMetrics(messageText) : null
-  
   // Save to localStorage as backup before sending
   const backupKey = `chat_backup_${Date.now()}`
   localStorage.setItem(backupKey, messageText)
@@ -830,26 +931,33 @@ async function sendMessageConfirmed(text = null, isRequestNewQuestion = false) {
   // 🆕 Retry logic with exponential backoff
   const attemptSend = async (attemptNumber = 1) => {
     try {
-      if (isRequestNewQuestion) {
-        // 🆕 If in adaptive path mode, move to next step
-        if (activePath.value && currentStep.value) {
-          await moveToNextPathStep()
+      // Wrap with rate limiter
+      await executeWithLimit(async () => {
+        if (isRequestNewQuestion) {
+          // 🆕 If in adaptive path mode, move to next step
+          if (activePath.value && currentStep.value) {
+            await moveToNextPathStep()
+          } else {
+            // Normal mode: request new question
+            await chatStore.requestNewQuestion()
+          }
         } else {
-          // Normal mode: request new question
-          await chatStore.requestNewQuestion()
+          // ส่งคำตอบ พร้อม typing fingerprint
+          const assessment = await chatStore.sendMessage(messageText, { typingFingerprint })
+          
+          // 🆕 Log assessment event for sequence tracking
+          logSequenceEvent('assessment_submitted', {
+            assessmentId: assessment?.id,
+            overallScore: assessment?.overallScore,
+            passedLOs: assessment?.loAssessment?.passedLOs
+          })
+          
+          // 🆕 If in adaptive path and answered a question, update path progress
+          if (activePath.value && currentStep.value?.type?.startsWith('question-')) {
+            await updatePathProgress(assessment)
+          }
         }
-      } else {
-        // ส่งคำตอบ พร้อม typing fingerprint และ research metrics
-        const assessment = await chatStore.sendMessage(messageText, { 
-          typingFingerprint,
-          researchMetrics
-        })
-        
-        // 🆕 If in adaptive path and answered a question, update path progress
-        if (activePath.value && currentStep.value?.type?.startsWith('question-')) {
-          await updatePathProgress(assessment)
-        }
-      }
+      })
       
       // Success - clear backup and draft, reset anti-cheat
       localStorage.removeItem(backupKey)
@@ -866,6 +974,21 @@ async function sendMessageConfirmed(text = null, isRequestNewQuestion = false) {
         sendError.value = '🚨 ตรวจพบการทุจริต: ' + error.message
         inputText.value = messageText // Restore text
         throw error // Don't retry for cheating
+      }
+      
+      // 🆕 Handle Rate Limit errors - don't retry
+      if (error.message?.includes('Rate Limit') || error.message?.includes('429') || error.message?.includes('เร็วเกินไป')) {
+        sendError.value = '⏳ คุณส่งคำตอบเร็วเกินไป กรุณารอสักครู่แล้วลองใหม่'
+        inputText.value = messageText // Restore text
+        
+        // Show user-friendly rate limit message
+        alert(
+          '⏳ กรุณารอสักครู่\n\n' +
+          'คุณส่งคำตอบเร็วเกินไป ระบบจำกัดการส่งเพื่อป้องกันปัญหา\n\n' +
+          '💡 เคล็ดลับ: ใช้เวลาคิดคำตอบให้ดีก่อนส่ง\n\n' +
+          'ลองส่งใหม่ได้ใน 1 นาที'
+        )
+        throw error // Don't retry for rate limit
       }
       
       // Retry up to MAX_RETRIES times
@@ -1131,33 +1254,6 @@ function handleKeyDown(e) {
 function handleInputChange(e) {
   const newText = e.target.value
   
-  // 🔬 Research Metrics: Track first keystroke
-  if (!firstKeystrokeTime.value && newText.length > 0) {
-    firstKeystrokeTime.value = Date.now()
-  }
-  
-  // 🔬 Research Metrics: Track thinking pauses (> 5 seconds)
-  if (lastKeyTime.value) {
-    const timeSinceLastKey = Date.now() - lastKeyTime.value
-    if (timeSinceLastKey > 5000) {
-      thinkingPauseCount.value++
-    }
-  }
-  lastKeyTime.value = Date.now()
-  totalKeystrokes.value++
-  
-  // 🔬 Research Metrics: Detect major revisions (> 20% change)
-  if (lastAnswerSnapshot.value && newText.length > 10) {
-    const prevLength = lastAnswerSnapshot.value.length
-    const lengthDiff = Math.abs(newText.length - prevLength)
-    if (prevLength > 0 && lengthDiff / prevLength > 0.2) {
-      revisionCount.value++
-      lastAnswerSnapshot.value = newText
-    }
-  } else if (newText.length > 20 && !lastAnswerSnapshot.value) {
-    lastAnswerSnapshot.value = newText
-  }
-  
   // Mobile: ใช้ recordTouchInput แทน recordKeystroke
   if (isMobile.value && e.inputType) {
     typingTracker.value.recordTouchInput(e, newText.length, previousTextValue.value?.length || 0)
@@ -1198,65 +1294,6 @@ function resetAntiCheat() {
   previousTextValue.value = ''
   antiCheatWarning.value = null
   antiCheatAnalysis.value = null
-  
-  // 🔬 Reset research metrics for new question
-  questionShownTime.value = Date.now()
-  firstKeystrokeTime.value = null
-  revisionCount.value = 0
-  lastAnswerSnapshot.value = ''
-  thinkingPauseCount.value = 0
-  lastKeyTime.value = null
-  totalKeystrokes.value = 0
-}
-
-// 🔬 Research Metrics: Collect all metrics for analysis
-function collectResearchMetrics(text) {
-  const now = Date.now()
-  
-  // Calculate word count (Thai + English)
-  const thaiWords = text.match(/[\u0E00-\u0E7F]+/g) || []
-  const englishWords = text.match(/[a-zA-Z]+/g) || []
-  const wordCount = thaiWords.length + englishWords.length
-  
-  // Calculate sentence count (rough estimate)
-  const sentences = text.split(/[.!?。！？\n]+/).filter(s => s.trim().length > 0)
-  const sentenceCount = sentences.length
-  
-  // Calculate unique word ratio (vocabulary diversity)
-  const allWords = [...thaiWords, ...englishWords].map(w => w.toLowerCase())
-  const uniqueWords = new Set(allWords)
-  const uniqueWordRatio = allWords.length > 0 ? uniqueWords.size / allWords.length : 0
-  
-  // Calculate timing metrics
-  const answerDurationMs = questionShownTime.value ? now - questionShownTime.value : 0
-  const firstKeystrokeMs = (questionShownTime.value && firstKeystrokeTime.value) 
-    ? firstKeystrokeTime.value - questionShownTime.value 
-    : 0
-  
-  // Calculate typing speed (chars per minute)
-  const typingTimeMs = firstKeystrokeTime.value ? now - firstKeystrokeTime.value : answerDurationMs
-  const avgTypingSpeed = typingTimeMs > 0 ? (text.length / typingTimeMs) * 60000 : 0
-  
-  return {
-    answerMetrics: {
-      wordCount,
-      charCount: text.length,
-      sentenceCount,
-      avgWordsPerSentence: sentenceCount > 0 ? wordCount / sentenceCount : 0,
-      uniqueWordRatio: Math.round(uniqueWordRatio * 100) / 100
-    },
-    timingMetrics: {
-      answerDurationMs,
-      firstKeystrokeMs,
-      thinkingPauseCount: thinkingPauseCount.value,
-      avgTypingSpeed: Math.round(avgTypingSpeed)
-    },
-    revisionMetrics: {
-      revisionCount: revisionCount.value,
-      majorRevisions: revisionCount.value, // Currently same as revisionCount
-      totalKeystrokes: totalKeystrokes.value
-    }
-  }
 }
 
 // 🆕 Anti-Cheat: Validate before sending
@@ -1288,537 +1325,16 @@ function validateTypingBehavior(text) {
 </script>
 
 <style scoped>
-/* ========== NEW CLEAN LAYOUT ========== */
 .chat-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  max-width: 900px;
+  height: 100vh;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1rem;
   gap: 1rem;
 }
 
-/* ===== TOP BAR ===== */
-.top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem 0;
-}
-
-.app-title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.top-actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.icon-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-
-.icon-btn:hover {
-  background: var(--bg-secondary);
-}
-
-.btn-end {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-end:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
-/* ===== HERO QUESTION CARD ===== */
-.hero-question-section {
-  flex-shrink: 0;
-}
-
-.hero-question-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 1.5rem;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-question-card::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 100%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.hero-question-card.empty {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  text-align: center;
-  padding: 3rem;
-}
-
-.empty-state .empty-icon {
-  font-size: 3rem;
-  display: block;
-  margin-bottom: 1rem;
-}
-
-.question-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  opacity: 0.9;
-  margin-bottom: 0.75rem;
-}
-
-.pulse-dot {
-  width: 8px;
-  height: 8px;
-  background: #10b981;
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.5); opacity: 0.5; }
-}
-
-.hero-question-text {
-  margin: 0 0 1rem;
-  font-size: 1.35rem;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.question-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.meta-tag {
-  background: rgba(255, 255, 255, 0.2);
-  padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  backdrop-filter: blur(4px);
-}
-
-.skip-btn {
-  margin-left: auto;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  padding: 0.35rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.skip-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* ===== ANSWER SECTION ===== */
-.answer-section {
-  flex: 0 0 auto;
-}
-
-.error-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.75rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  color: #ef4444;
-}
-
-.error-banner button {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 1.1rem;
-}
-
-/* Mode Toggle */
-.mode-toggle {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.mode-btn {
-  flex: 1;
-  padding: 0.6rem 1rem;
-  border: 2px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border-radius: 10px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-btn:hover {
-  border-color: #667eea;
-}
-
-.mode-btn.active {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.1));
-  border-color: #667eea;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-/* Free-form Input */
-.answer-input-wrapper {
-  background: var(--bg-secondary);
-  border: 2px solid var(--border-color);
-  border-radius: 16px;
-  padding: 1rem;
-  transition: border-color 0.2s;
-}
-
-.answer-input-wrapper:focus-within {
-  border-color: #667eea;
-}
-
-.answer-textarea {
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: 1rem;
-  line-height: 1.6;
-  resize: none;
-  outline: none;
-  font-family: inherit;
-}
-
-.answer-textarea::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.7;
-}
-
-.input-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
-}
-
-/* ===== STRUCTURED INPUT ===== */
-.structured-input {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.dimension-box {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 0.75rem;
-  border-left: 4px solid;
-}
-
-.dimension-box.analysis { border-left-color: #3b82f6; }
-.dimension-box.reasoning { border-left-color: #8b5cf6; }
-.dimension-box.creativity { border-left-color: #f59e0b; }
-.dimension-box.evidence { border-left-color: #10b981; }
-
-.dim-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.dim-icon { font-size: 1.1rem; }
-
-.dim-title {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-}
-
-.dim-count {
-  margin-left: auto;
-  background: rgba(102, 126, 234, 0.2);
-  color: #667eea;
-  padding: 0.1rem 0.5rem;
-  border-radius: 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.dim-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.dim-item {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.dim-item input {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 0.9rem;
-}
-
-.dim-item input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.remove-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.remove-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
-.add-btn {
-  padding: 0.4rem 0.75rem;
-  border: 1px dashed var(--border-color);
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  margin-top: 0.25rem;
-  transition: all 0.2s;
-}
-
-.add-btn:hover {
-  border-color: #667eea;
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.05);
-}
-
-.structured-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
-  margin-top: 0.5rem;
-}
-
-.struct-stats {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.char-count {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.char-count.warning {
-  color: #f59e0b;
-}
-
-.send-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 0.6rem 1.5rem;
-  border-radius: 25px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.send-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.loading-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ===== TIPS SECTION ===== */
-.tips-section {
-  margin-top: 0.75rem;
-}
-
-.tips-section summary {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.5rem 0;
-  user-select: none;
-}
-
-.tips-section summary:hover {
-  color: var(--text-primary);
-}
-
-.tips-content {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  margin-top: 0.5rem;
-}
-
-.tip {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  padding: 0.35rem;
-}
-
-@media (max-width: 600px) {
-  .tips-content {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ===== HISTORY SECTION ===== */
-.history-section {
-  margin-top: 0.5rem;
-}
-
-.history-toggle {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.75rem 1rem;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  user-select: none;
-  display: block;
-}
-
-.history-toggle:hover {
-  background: var(--bg-tertiary);
-}
-
-.messages-container {
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  background: var(--bg-tertiary);
-  border-radius: 0 0 8px 8px;
-  margin-top: -8px;
-}
-
-/* ===== ADAPTIVE PATH BANNER ===== */
-.adaptive-path-banner {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.9rem;
-}
-
-.path-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.path-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.path-actions .btn {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  padding: 0.35rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-/* Keep existing message styles */
 .chat-header {
   flex-shrink: 0;
   padding: 1rem 1.5rem;
@@ -1919,7 +1435,6 @@ function validateTypingBehavior(text) {
 
 .messages-container {
   flex: 1;
-  min-height: 200px;
   overflow-y: auto;
   padding: 1rem;
   display: flex;
@@ -2169,8 +1684,6 @@ function validateTypingBehavior(text) {
   flex-shrink: 0;
   padding: 1rem;
   position: relative;
-  max-height: 50vh;
-  overflow-y: auto;
 }
 
 /* 🆕 Error Banner */
@@ -2525,10 +2038,8 @@ function validateTypingBehavior(text) {
   background: var(--bg-secondary);
   border: 2px solid var(--border-color);
   border-radius: 16px;
-  padding: 1rem;
+  padding: 1.25rem;
   animation: fadeIn 0.3s ease;
-  max-height: 45vh;
-  overflow-y: auto;
 }
 
 @keyframes fadeIn {

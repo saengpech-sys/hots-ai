@@ -284,10 +284,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp, arrayRemove } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
@@ -295,6 +295,7 @@ import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
 
 // State
 const loading = ref(true)
@@ -306,6 +307,9 @@ const showCreateWorksheet = ref(false)
 const lessonPlans = ref([])
 const selectedPlan = ref(null)
 const generatingWorksheet = ref(false)
+
+// 🆕 Sequence Tracking
+const sequenceId = ref(null)
 
 // Computed
 const isTeacher = computed(() => authStore.isTeacher)
@@ -381,12 +385,24 @@ function getScoreClass(percentage) {
 }
 
 function startWorksheet(worksheetId) {
+  // 🆕 Log worksheet start event
+  const ws = worksheets.value.find(w => w.id === worksheetId)
+  logSequenceEvent('worksheet_started', {
+    worksheetId,
+    worksheetTitle: ws?.metadata?.title
+  })
+  
   router.push(`/worksheet/${worksheetId}?roomId=${route.params.id}`)
 }
 
 function viewResult(worksheetId) {
   const sub = submissions.value.find(s => s.worksheetId === worksheetId)
   if (sub) {
+    // 🆕 Log result view event
+    logSequenceEvent('result_viewed', {
+      worksheetId,
+      submissionId: sub.id
+    })
     router.push(`/worksheet-result/${sub.id}`)
   }
 }
@@ -426,8 +442,22 @@ async function deleteWorksheet(worksheetId) {
   if (!confirm('ต้องการลบใบงานนี้ใช่ไหม? การลบจะไม่สามารถกู้คืนได้')) return
   
   try {
+    // ลบจาก eWorksheets
     await deleteDoc(doc(db, 'eWorksheets', worksheetId))
+    
+    // อัปเดต worksheetIds ใน room ปัจจุบัน
+    const roomId = route.params.id
+    if (roomId) {
+      await updateDoc(doc(db, 'learningRooms', roomId), {
+        worksheetIds: arrayRemove(worksheetId)
+      })
+    }
+    
+    // อัปเดต UI
     worksheets.value = worksheets.value.filter(ws => ws.id !== worksheetId)
+    if (room.value?.worksheetIds) {
+      room.value.worksheetIds = room.value.worksheetIds.filter(id => id !== worksheetId)
+    }
   } catch (error) {
     console.error('Error deleting worksheet:', error)
     alert('เกิดข้อผิดพลาดในการลบ')
@@ -676,8 +706,71 @@ async function loadSubmissions() {
   }
 }
 
-onMounted(() => {
-  loadRoom()
+// 🆕 Sequence Tracking Functions
+async function startSequenceTracking() {
+  if (!authStore.user?.uid || isTeacher.value) return
+  
+  try {
+    sequenceId.value = `ws_${Date.now()}_${authStore.user.uid.slice(-6)}`
+    await logSequenceEvent('worksheet_room_enter', {
+      roomId: route.params.id,
+      roomName: room.value?.name
+    })
+  } catch (error) {
+    console.warn('Sequence tracking start error:', error)
+  }
+}
+
+async function logSequenceEvent(eventType, metadata = {}) {
+  if (!sequenceId.value || !authStore.user?.uid) return
+  
+  try {
+    await fetch(`${functionsUrl}/logSequenceEventAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sequenceId: sequenceId.value,
+        studentId: authStore.user.uid,
+        eventType,
+        metadata: {
+          ...metadata,
+          timestamp: new Date().toISOString()
+        }
+      })
+    })
+  } catch (error) {
+    console.warn('Sequence log error:', error)
+  }
+}
+
+async function finalizeSequenceTracking() {
+  if (!sequenceId.value) return
+  
+  try {
+    await fetch(`${functionsUrl}/finalizeSequenceAPI`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sequenceId: sequenceId.value,
+        studentId: authStore.user?.uid,
+        outcome: {
+          worksheetsViewed: worksheets.value.length,
+          submissionsCompleted: submissions.value.filter(s => s.status === 'graded').length
+        }
+      })
+    })
+  } catch (error) {
+    console.warn('Sequence finalize error:', error)
+  }
+}
+
+onMounted(async () => {
+  await loadRoom()
+  await startSequenceTracking()
+})
+
+onUnmounted(() => {
+  finalizeSequenceTracking()
 })
 </script>
 

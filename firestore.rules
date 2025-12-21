@@ -194,24 +194,28 @@ service cloud.firestore {
     match /questions/{questionId} {
       allow read: if isSignedIn(); // ให้ทุกคนที่ login แล้วอ่านได้ (จะ filter ที่ client)
       allow create: if isTeacher();
-      allow update: if isTeacher() || isSignedIn(); // ครูแก้ได้ หรือ update usageCount
+      // 🔒 SECURITY FIX: นักเรียนแก้ได้เฉพาะ usageCount เท่านั้น, ครูแก้ได้ทุกอย่าง
+      allow update: if isTeacher() || 
+                      (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usageCount']));
       allow delete: if isTeacher() && isOwner(resource.data.teacherId);
     }
     
     // Class Reports collection (NEW - for analytics dashboard)
+    // 🔒 SECURITY FIX: ใช้ Admin SDK จาก Cloud Functions เท่านั้น
     match /classReports/{reportId} {
       allow read: if isTeacher(); // เฉพาะครูอ่านได้
-      allow create: if isSignedIn(); // Cloud Functions สร้าง
-      allow update: if isSignedIn(); // Cloud Functions อัปเดต
+      allow create: if isTeacher(); // เฉพาะครูหรือ Cloud Functions (via Admin SDK)
+      allow update: if isTeacher(); // เฉพาะครูหรือ Cloud Functions
       allow delete: if isTeacher(); // เฉพาะครูลบได้
     }
     
     // Learning Paths collection (ADAPTIVE LEARNING)
+    // 🔒 SECURITY FIX: จำกัดการ update เฉพาะ owner หรือ teacher
     match /learningPaths/{pathId} {
       allow read: if isSignedIn() && 
                     (isOwner(resource.data.studentId) || isTeacher());
-      allow create: if isSignedIn(); // Cloud Functions generate paths
-      allow update: if isSignedIn(); // Update progress
+      allow create: if isSignedIn() && (isOwner(request.resource.data.studentId) || isTeacher());
+      allow update: if isSignedIn() && (isOwner(resource.data.studentId) || isTeacher());
       allow delete: if isTeacher();
     }
     
@@ -660,6 +664,110 @@ service cloud.firestore {
       allow create: if isSignedIn(); // System creates activities
       allow update: if false; // Immutable
       allow delete: if isAnyAdmin();
+    }
+    
+    // ==================== SOCIAL LEARNING FEED ====================
+    
+    // 🆕 Posts collection (Social feed posts - achievements, discussions, resources)
+    match /posts/{postId} {
+      allow read: if isSignedIn(); // All authenticated users can read posts
+      allow create: if isSignedIn(); // Any user can create posts
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Post Comments subcollection
+    match /posts/{postId}/comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.authorId);
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Post Reactions subcollection (likes, celebrates, etc.)
+    match /posts/{postId}/reactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+    
+    // 🆕 Comments collection (TOP-LEVEL - linked to posts via postId)
+    match /comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.authorId);
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Reactions collection (TOP-LEVEL - linked to posts via postId)
+    match /reactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(resource.data.userId);
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+    
+    // 🆕 Groups collection (Study groups, interest groups)
+    match /groups/{groupId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.creatorId) ||
+        request.auth.uid in resource.data.adminIds ||
+        isTeacher()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.creatorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Group Members subcollection
+    match /groups/{groupId}/members/{memberId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(memberId);
+      allow update: if isSignedIn() && (
+        isOwner(memberId) ||
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(memberId) ||
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.adminIds
+      );
+    }
+    
+    // 🆕 Parent Notifications collection (Weekly reports & alerts to parents)
+    match /parentNotifications/{notifId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.parentId) ||
+        isOwner(resource.data.studentId) ||
+        isTeacher() ||
+        isParent()
+      );
+      allow create: if isSignedIn(); // System creates notifications
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.parentId) ||
+        isParent()
+      ); // Mark as read
+      allow delete: if isTeacher() || isAnyAdmin();
     }
   }
 }

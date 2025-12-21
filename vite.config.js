@@ -43,5 +43,14 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true
+  },
+  test: {
+    globals: true,
+    environment: 'happy-dom',
+    include: ['src/**/*.{test,spec}.{js,ts}'],
+    coverage: {
+      reporter: ['text', 'json', 'html'],
+      exclude: ['node_modules/', 'src/__tests__/']
+    }
   }
 })

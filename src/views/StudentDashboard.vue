@@ -1,4 +1,5 @@
 <template>
+  <ErrorBoundary context="StudentDashboard">
   <div class="dashboard-container">
     <!-- Badge Notification -->
     <BadgeNotification
@@ -225,8 +226,12 @@
 
         <!-- กลุ่ม: สังคม -->
         <div class="action-group">
-          <span class="group-label">👥 ชุมชน</span>
+          <span class="group-label">👥 ชุมชน & Social</span>
           <div class="action-buttons">
+            <button @click="$router.push('/feed')" class="action-btn highlight-social">
+              <span class="action-icon">📰</span>
+              <span class="action-label">Social Feed</span>
+            </button>
             <button @click="$router.push('/community')" class="action-btn highlight-social">
               <span class="action-icon">💬</span>
               <span class="action-label">ชุมชนการเรียนรู้</span>
@@ -235,9 +240,25 @@
               <span class="action-icon">👨‍👩‍👧‍👦</span>
               <span class="action-label">กลุ่มเรียน</span>
             </button>
+            <button @click="$router.push('/community/help')" class="action-btn highlight-social">
+              <span class="action-icon">🆘</span>
+              <span class="action-label">ขอความช่วยเหลือ</span>
+            </button>
+            <button @click="$router.push('/community/mentors')" class="action-btn highlight-social">
+              <span class="action-icon">🤝</span>
+              <span class="action-label">หา Mentor</span>
+            </button>
+            <button @click="$router.push('/community/gallery')" class="action-btn highlight-social">
+              <span class="action-icon">🖼️</span>
+              <span class="action-label">แกลเลอรี่คำตอบ</span>
+            </button>
             <button @click="$router.push('/portfolio')" class="action-btn highlight-portfolio">
               <span class="action-icon">💼</span>
               <span class="action-label">Portfolio</span>
+            </button>
+            <button @click="$router.push('/appeals/my')" class="action-btn highlight-appeal">
+              <span class="action-icon">⚖️</span>
+              <span class="action-label">อุทธรณ์ของฉัน</span>
             </button>
           </div>
         </div>
@@ -499,11 +520,13 @@
       </div>
     </div>
   </div>
+  </ErrorBoundary>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useChatStore } from '@/stores/chat'
@@ -1431,6 +1454,19 @@ function dismissRecommendation(recId) {
   transform: translateY(-4px);
   box-shadow: 0 8px 24px rgba(236, 72, 153, 0.4);
   border-color: #f472b6;
+}
+
+/* Appeal Button */
+.action-btn.highlight-appeal {
+  position: relative;
+  border: 2px solid #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.2));
+}
+
+.action-btn.highlight-appeal:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+  border-color: #fbbf24;
 }
 
 .action-icon {

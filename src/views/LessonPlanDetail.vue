@@ -1,4 +1,5 @@
 <template>
+  <ErrorBoundary context="LessonPlanDetail">
   <div class="lesson-plan-detail">
     <!-- Top Navigation -->
     <nav class="top-navbar">
@@ -838,10 +839,12 @@
       @generated="onKnowledgeSheetGenerated"
     />
   </div>
+  </ErrorBoundary>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
 import { doc, getDoc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'

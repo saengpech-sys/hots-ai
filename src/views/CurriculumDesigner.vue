@@ -1,4 +1,5 @@
 <template>
+  <ErrorBoundary context="CurriculumDesigner">
   <div class="curriculum-designer">
     <!-- Top Navigation -->
     <nav class="top-navbar">
@@ -883,10 +884,12 @@
       </div>
     </div>
   </div>
+  </ErrorBoundary>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { db } from '@/firebase/config'

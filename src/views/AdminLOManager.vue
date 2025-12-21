@@ -18,6 +18,25 @@
             {{ course.courseCode }} - {{ course.courseName }}
           </option>
         </select>
+        
+        <!-- Recalculate Button -->
+        <button 
+          v-if="selectedCourseId"
+          class="btn-recalculate"
+          @click="recalculateAllProgress"
+          :disabled="recalculating"
+        >
+          {{ recalculating ? '⏳ กำลังคำนวณใหม่...' : '🔄 คำนวณ Progress ใหม่ทั้งหมด' }}
+        </button>
+      </div>
+      
+      <!-- Recalculate Result -->
+      <div v-if="recalculateResult" class="recalculate-result" :class="recalculateResult.success ? 'success' : 'error'">
+        <span class="result-icon">{{ recalculateResult.success ? '✅' : '❌' }}</span>
+        <span class="result-message">{{ recalculateResult.message }}</span>
+        <span v-if="recalculateResult.updated" class="result-count">
+          (อัปเดต {{ recalculateResult.updated }} รายการ)
+        </span>
       </div>
     </div>
 
@@ -238,6 +257,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { db } from '@/firebase/config'
 import { useAuthStore } from '@/stores/auth'
 import { 
@@ -247,6 +267,7 @@ import {
 } from '@/utils/loProgress'
 
 const authStore = useAuthStore()
+const functions = getFunctions()
 
 // State
 const courses = ref([])
@@ -256,6 +277,10 @@ const learningOutcomes = ref([])
 const students = ref([])
 const loading = ref(false)
 const saving = ref(false)
+
+// Recalculate State
+const recalculating = ref(false)
+const recalculateResult = ref(null)
 
 // Search & Filter
 const searchQuery = ref('')
@@ -292,16 +317,51 @@ onMounted(async () => {
   }
 })
 
+// Recalculate all student progress
+async function recalculateAllProgress() {
+  if (!selectedCourseId.value) return
+  
+  recalculating.value = true
+  recalculateResult.value = null
+  
+  try {
+    const recalculateStudentProgress = httpsCallable(functions, 'recalculateStudentProgress')
+    const result = await recalculateStudentProgress({ courseId: selectedCourseId.value })
+    
+    recalculateResult.value = {
+      success: true,
+      message: 'คำนวณ Progress ใหม่สำเร็จ!',
+      updated: result.data.updated || 0
+    }
+    
+    // Reload student data
+    await loadStudentData()
+    
+    showToast(`อัปเดตข้อมูลสำเร็จ ${result.data.updated || 0} รายการ`, 'success')
+  } catch (error) {
+    console.error('Recalculate error:', error)
+    recalculateResult.value = {
+      success: false,
+      message: error.message || 'เกิดข้อผิดพลาดในการคำนวณใหม่'
+    }
+    showToast('เกิดข้อผิดพลาดในการคำนวณใหม่', 'error')
+  } finally {
+    recalculating.value = false
+  }
+}
+
 // Course change handler
 async function onCourseChange() {
   if (!selectedCourseId.value) {
     selectedCourse.value = null
     learningOutcomes.value = []
     students.value = []
+    recalculateResult.value = null
     return
   }
 
   loading.value = true
+  recalculateResult.value = null
   try {
     // Load course details
     const courseDoc = await getDoc(doc(db, 'courses', selectedCourseId.value))
@@ -645,6 +705,63 @@ function showToast(message, type = 'success') {
   border-radius: 1rem;
   padding: 1.5rem;
   margin-bottom: 1rem;
+}
+
+.course-selector {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn-recalculate {
+  padding: 0.75rem 1.25rem;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-recalculate:hover {
+  background: #d97706;
+}
+
+.btn-recalculate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.recalculate-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.recalculate-result.success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid #10b981;
+  color: #10b981;
+}
+
+.recalculate-result.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.result-icon {
+  font-size: 1.2rem;
+}
+
+.result-count {
+  opacity: 0.8;
 }
 
 .form-select, .search-input, .filter-select {

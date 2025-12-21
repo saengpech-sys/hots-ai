@@ -1,4 +1,5 @@
 <template>
+  <ErrorBoundary context="WorksheetForm">
   <div class="worksheet-form-view">
     <!-- Top Navigation -->
     <nav class="top-navbar">
@@ -31,6 +32,74 @@
 
     <!-- Worksheet Content -->
     <div v-else-if="worksheet" class="worksheet-container">
+      <!-- Retry Status Banner -->
+      <div v-if="previousSubmissions.length > 0" class="retry-status-banner">
+        <div class="retry-info">
+          <span class="material-icons">history</span>
+          <div class="retry-details">
+            <span class="attempt-count">
+              ครั้งที่ {{ attemptCount + 1 }} / {{ worksheet.retrySettings?.maxAttempts || '∞' }}
+            </span>
+            <span v-if="bestScore !== null" class="best-score">
+              คะแนนดีที่สุด: {{ bestScore.toFixed(1) }} / {{ totalMaxScore }}
+            </span>
+          </div>
+        </div>
+        <div class="retry-actions">
+          <router-link :to="`/worksheet-history/${worksheet.id}`" class="btn btn-sm btn-outline">
+            <span class="material-icons">timeline</span>
+            ดูประวัติ
+          </router-link>
+        </div>
+      </div>
+
+      <!-- Cooldown Warning -->
+      <div v-if="!canRetry && cooldownRemaining > 0" class="cooldown-warning">
+        <span class="material-icons">hourglass_top</span>
+        <div>
+          <strong>กรุณารอก่อนทำใหม่</strong>
+          <p>เหลือเวลา: {{ formatCooldown(cooldownRemaining) }}</p>
+        </div>
+      </div>
+
+      <!-- Max Attempts Warning -->
+      <div v-if="!canRetry && cooldownRemaining === 0 && attemptCount >= (worksheet.retrySettings?.maxAttempts || 999)" class="max-attempts-warning">
+        <span class="material-icons">block</span>
+        <div>
+          <strong>ทำครบจำนวนครั้งแล้ว</strong>
+          <p>คุณใช้สิทธิ์ทำใบงานนี้ครบ {{ attemptCount }} ครั้งแล้ว</p>
+          <router-link :to="`/worksheet-history/${worksheet.id}`" class="btn btn-sm btn-primary mt-2">
+            ดูประวัติการทำ
+          </router-link>
+        </div>
+      </div>
+
+      <!-- Previous Score Display -->
+      <div v-if="previousSubmissions.length > 0 && canRetry && worksheet.retrySettings?.showPreviousScore" class="previous-score-card">
+        <h4>📊 คะแนนครั้งล่าสุด</h4>
+        <div class="score-summary">
+          <div class="score-item">
+            <span class="score-value">{{ previousSubmissions[0]?.assessment?.totalScore?.toFixed(1) || '-' }}</span>
+            <span class="score-label">คะแนน</span>
+          </div>
+          <div class="score-item" v-if="previousSubmissions[0]?.assessment?.percentage">
+            <span class="score-value">{{ previousSubmissions[0].assessment.percentage.toFixed(0) }}%</span>
+            <span class="score-label">เปอร์เซ็นต์</span>
+          </div>
+          <div class="score-item" v-if="worksheet.retrySettings?.scoreMode">
+            <span class="score-mode-badge">
+              {{ worksheet.retrySettings.scoreMode === 'best' ? '🏆 เก็บคะแนนดีที่สุด' : 
+                 worksheet.retrySettings.scoreMode === 'latest' ? '📝 เก็บคะแนนล่าสุด' :
+                 worksheet.retrySettings.scoreMode === 'average' ? '📊 เก็บค่าเฉลี่ย' : '1️⃣ เก็บครั้งแรก' }}
+            </span>
+          </div>
+        </div>
+        <div v-if="worksheet.retrySettings?.showPreviousFeedback && previousSubmissions[0]?.assessment?.feedback" class="previous-feedback">
+          <strong>💡 คำแนะนำจากครั้งก่อน:</strong>
+          <p>{{ previousSubmissions[0].assessment.feedback }}</p>
+        </div>
+      </div>
+
       <!-- Worksheet Header -->
       <header class="worksheet-header">
         <div class="ws-meta">
@@ -57,7 +126,7 @@
       </section>
 
       <!-- Form Sections -->
-      <form @submit.prevent="submitWorksheet" class="worksheet-form">
+      <form v-if="canRetry || previousSubmissions.length === 0" @submit.prevent="submitWorksheet" class="worksheet-form">
         <div v-for="(section, sIdx) in worksheet.sections" :key="section.id || sIdx" class="form-section">
           <div class="section-header">
             <h3>{{ section.title }}</h3>
@@ -85,13 +154,148 @@
             </div>
 
             <div class="question-content">
-              <p class="question-text">{{ question.prompt || question.question }}</p>
+              <!-- ARCE Situation Question Type -->
+              <template v-if="question.type === 'arce_situation'">
+                <div class="arce-situation-container">
+                  <!-- Situation -->
+                  <div class="situation-box">
+                    <div class="situation-header">
+                      <span class="situation-icon">📋</span>
+                      <span class="situation-label">สถานการณ์</span>
+                    </div>
+                    <div class="situation-content">{{ question.situation }}</div>
+                  </div>
+
+                  <!-- Task -->
+                  <div class="task-box">
+                    <div class="task-header">
+                      <span class="task-icon">🎯</span>
+                      <span class="task-label">ภารกิจ</span>
+                    </div>
+                    <div class="task-content">{{ question.task }}</div>
+                  </div>
+
+                  <!-- Answer Guide -->
+                  <div v-if="question.answerGuide" class="answer-guide-box">
+                    <div class="answer-guide-header">
+                      <span class="guide-icon">💡</span>
+                      <span class="guide-label">แนวทางการตอบ</span>
+                    </div>
+                    <div class="answer-guide-content">{{ question.answerGuide }}</div>
+                  </div>
+
+                  <!-- ARCE Response Areas -->
+                  <div class="arce-response-areas">
+                    <h4 class="arce-response-title">✍️ เขียนคำตอบของคุณ (ให้ครบทั้ง 4 ด้าน)</h4>
+                    
+                    <div class="arce-section analysis-section">
+                      <div class="arce-section-header">
+                        <span class="arce-icon">🔍</span>
+                        <span class="arce-label">A - Analysis (การวิเคราะห์)</span>
+                      </div>
+                      <p class="arce-hint">วิเคราะห์สถานการณ์: แยกแยะประเด็น หาความสัมพันธ์ ระบุสิ่งสำคัญ</p>
+                      <textarea 
+                        v-model="arceAnswers[`${section.id}_${question.id}_analysis`]"
+                        placeholder="เขียนการวิเคราะห์ของคุณ..."
+                        rows="3"
+                        @paste.prevent="blockPaste"
+                        @copy.prevent="blockCopy"
+                        @cut.prevent="blockCut"
+                        @drop.prevent="blockDrop"
+                        @dragover.prevent
+                        @contextmenu.prevent
+                        class="arce-textarea no-select"
+                        autocomplete="off"
+                      ></textarea>
+                    </div>
+
+                    <div class="arce-section reasoning-section">
+                      <div class="arce-section-header">
+                        <span class="arce-icon">🧠</span>
+                        <span class="arce-label">R - Reasoning (การให้เหตุผล)</span>
+                      </div>
+                      <p class="arce-hint">อธิบายเหตุผล: อ้างหลักการ ทฤษฎี กฎเกณฑ์ที่เกี่ยวข้อง</p>
+                      <textarea 
+                        v-model="arceAnswers[`${section.id}_${question.id}_reasoning`]"
+                        placeholder="เขียนเหตุผลและหลักการของคุณ..."
+                        rows="3"
+                        @paste.prevent="blockPaste"
+                        @copy.prevent="blockCopy"
+                        @cut.prevent="blockCut"
+                        @drop.prevent="blockDrop"
+                        @dragover.prevent
+                        @contextmenu.prevent
+                        class="arce-textarea no-select"
+                        autocomplete="off"
+                      ></textarea>
+                    </div>
+
+                    <div class="arce-section creativity-section">
+                      <div class="arce-section-header">
+                        <span class="arce-icon">💡</span>
+                        <span class="arce-label">C - Creativity (ความคิดสร้างสรรค์)</span>
+                      </div>
+                      <p class="arce-hint">นำเสนอแนวคิด: เสนอวิธีการ ออกแบบ หรือสร้างสรรค์สิ่งใหม่</p>
+                      <textarea 
+                        v-model="arceAnswers[`${section.id}_${question.id}_creativity`]"
+                        placeholder="เขียนแนวคิดสร้างสรรค์ของคุณ..."
+                        rows="3"
+                        @paste.prevent="blockPaste"
+                        @copy.prevent="blockCopy"
+                        @cut.prevent="blockCut"
+                        @drop.prevent="blockDrop"
+                        @dragover.prevent
+                        @contextmenu.prevent
+                        class="arce-textarea no-select"
+                        autocomplete="off"
+                      ></textarea>
+                    </div>
+
+                    <div class="arce-section evidence-section">
+                      <div class="arce-section-header">
+                        <span class="arce-icon">📚</span>
+                        <span class="arce-label">E - Evidence (หลักฐาน)</span>
+                      </div>
+                      <p class="arce-hint">แสดงหลักฐาน: ยกตัวอย่าง แสดงข้อมูล ผลลัพธ์ที่สนับสนุน</p>
+                      <textarea 
+                        v-model="arceAnswers[`${section.id}_${question.id}_evidence`]"
+                        placeholder="เขียนหลักฐานและตัวอย่างของคุณ..."
+                        rows="3"
+                        @paste.prevent="blockPaste"
+                        @copy.prevent="blockCopy"
+                        @cut.prevent="blockCut"
+                        @drop.prevent="blockDrop"
+                        @dragover.prevent
+                        @contextmenu.prevent
+                        class="arce-textarea no-select"
+                        autocomplete="off"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <!-- ARCE Progress -->
+                  <div class="arce-progress">
+                    <span class="progress-label">ความครบถ้วน:</span>
+                    <div class="progress-items">
+                      <span :class="['progress-item', { filled: arceAnswers[`${section.id}_${question.id}_analysis`]?.length >= 20 }]">A</span>
+                      <span :class="['progress-item', { filled: arceAnswers[`${section.id}_${question.id}_reasoning`]?.length >= 20 }]">R</span>
+                      <span :class="['progress-item', { filled: arceAnswers[`${section.id}_${question.id}_creativity`]?.length >= 20 }]">C</span>
+                      <span :class="['progress-item', { filled: arceAnswers[`${section.id}_${question.id}_evidence`]?.length >= 20 }]">E</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Regular question types -->
+              <template v-else>
+                <p class="question-text">{{ question.prompt || question.question }}</p>
               
-              <!-- Context/Case Study -->
-              <div v-if="question.context" class="question-context">
-                <div class="context-label">📖 กรณีศึกษา / บริบท</div>
-                <div class="context-content">{{ question.context }}</div>
-              </div>
+                <!-- Context/Case Study -->
+                <div v-if="question.context" class="question-context">
+                  <div class="context-label">📖 กรณีศึกษา / บริบท</div>
+                  <div class="context-content">{{ question.context }}</div>
+                </div>
+              </template>
 
               <!-- Media -->
               <div v-if="question.media" class="question-media">
@@ -225,8 +429,8 @@
                 </div>
               </template>
 
-              <!-- Default: Text area -->
-              <template v-else>
+              <!-- Default: Text area (but NOT for arce_situation which has its own inputs) -->
+              <template v-else-if="question.type !== 'arce_situation'">
                 <textarea 
                   v-model="answers[`${section.id}_${question.id}`]"
                   placeholder="พิมพ์คำตอบของคุณ..."
@@ -386,13 +590,15 @@
       </div>
     </div>
   </div>
+  </ErrorBoundary>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, onBeforeUnmount } from 'vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
-import { doc, getDoc, setDoc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, addDoc, serverTimestamp, increment, query, where, orderBy, getDocs, limit } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
@@ -405,6 +611,7 @@ const loading = ref(true)
 const submitting = ref(false)
 const worksheet = ref(null)
 const answers = ref({})
+const arceAnswers = ref({}) // For ARCE Situation question type - separate fields for A/R/C/E
 const tableAnswers = ref({})
 const fileUploads = ref({})
 const selfReflection = ref('')
@@ -420,6 +627,14 @@ const shuffledOptionsCache = ref({}) // Cache shuffled options to prevent re-shu
 const autoSaveInterval = ref(null)
 const lastSavedAt = ref(null)
 
+// Retry feature state
+const previousSubmissions = ref([])
+const attemptCount = ref(0)
+const canRetry = ref(true)
+const cooldownRemaining = ref(0)
+const cooldownTimer = ref(null)
+const bestScore = ref(null)
+
 // Auto-save key for localStorage
 const getStorageKey = () => `worksheet_draft_${route.params.id}_${authStore.user?.uid || 'guest'}`
 
@@ -434,6 +649,16 @@ const totalQuestions = computed(() => {
   if (!worksheet.value?.sections) return 0
   return worksheet.value.sections.reduce((total, section) => {
     return total + (section.questions?.length || 0)
+  }, 0)
+})
+
+// Total max score for all questions
+const totalMaxScore = computed(() => {
+  if (!worksheet.value?.sections) return 0
+  return worksheet.value.sections.reduce((total, section) => {
+    return total + (section.questions || []).reduce((qTotal, q) => {
+      return qTotal + (q.maxScore || q.points || 5)
+    }, 0)
   }, 0)
 })
 
@@ -465,6 +690,18 @@ const answeredCount = computed(() => {
         }
         
         if (hasTableAnswer) count++
+      } else if (question.type === 'arce_situation') {
+        // For ARCE Situation questions, check if at least 2 ARCE fields are filled
+        const analysis = arceAnswers.value[`${sectionId}_${questionId}_analysis`]?.trim() || ''
+        const reasoning = arceAnswers.value[`${sectionId}_${questionId}_reasoning`]?.trim() || ''
+        const creativity = arceAnswers.value[`${sectionId}_${questionId}_creativity`]?.trim() || ''
+        const evidence = arceAnswers.value[`${sectionId}_${questionId}_evidence`]?.trim() || ''
+        
+        // Count filled ARCE sections (min 20 chars each)
+        const filledCount = [analysis, reasoning, creativity, evidence]
+          .filter(a => a.length >= 20).length
+        
+        if (filledCount >= 2) count++
       } else {
         // Regular answer check
         const val = answers.value[`${sectionId}_${questionId}`]
@@ -598,7 +835,8 @@ function getQuestionTypeLabel(type) {
     checkbox: 'เลือกหลายข้อ',
     rating_scale: 'ระดับความคิดเห็น',
     file_upload: 'อัปโหลดไฟล์',
-    table: 'กรอกตาราง'
+    table: 'กรอกตาราง',
+    arce_situation: '🎯 ARCE วัดผล'
   }
   return labels[type] || 'ตอบคำถาม'
 }
@@ -719,6 +957,61 @@ async function loadWorksheet() {
     if (docSnap.exists()) {
       worksheet.value = { id: docSnap.id, ...docSnap.data() }
       
+      // ========== RETRY FEATURE: Check previous submissions ==========
+      await loadPreviousSubmissions(worksheetId)
+      
+      // Check if can retry based on settings
+      const retrySettings = worksheet.value.retrySettings || {
+        allowRetry: true,
+        maxAttempts: 3,
+        scoreMode: 'best',
+        cooldownMinutes: 0,
+        showPreviousScore: true,
+        showPreviousFeedback: true
+      }
+      
+      // Calculate if retry is allowed
+      if (previousSubmissions.value.length > 0) {
+        attemptCount.value = previousSubmissions.value.length
+        
+        // Calculate best score
+        if (previousSubmissions.value.length > 0) {
+          const scores = previousSubmissions.value
+            .filter(s => s.assessment?.totalScore !== undefined)
+            .map(s => s.assessment.totalScore)
+          if (scores.length > 0) {
+            bestScore.value = Math.max(...scores)
+          }
+        }
+        
+        // Check if max attempts reached
+        if (!retrySettings.allowRetry) {
+          canRetry.value = false
+        } else if (retrySettings.maxAttempts && attemptCount.value >= retrySettings.maxAttempts) {
+          canRetry.value = false
+        } else {
+          // Check cooldown
+          const lastSubmission = previousSubmissions.value[0]
+          if (retrySettings.cooldownMinutes && lastSubmission?.submittedAt) {
+            const lastSubmitTime = lastSubmission.submittedAt.toDate ? 
+              lastSubmission.submittedAt.toDate() : new Date(lastSubmission.submittedAt)
+            const cooldownMs = retrySettings.cooldownMinutes * 60 * 1000
+            const timeSinceLastSubmit = Date.now() - lastSubmitTime.getTime()
+            
+            if (timeSinceLastSubmit < cooldownMs) {
+              cooldownRemaining.value = Math.ceil((cooldownMs - timeSinceLastSubmit) / 1000)
+              canRetry.value = false
+              startCooldownTimer()
+            } else {
+              canRetry.value = true
+            }
+          } else {
+            canRetry.value = true
+          }
+        }
+      }
+      // ========== END RETRY FEATURE ==========
+      
       // Initialize answers object
       if (worksheet.value.sections) {
         worksheet.value.sections.forEach((section, sIdx) => {
@@ -762,6 +1055,54 @@ async function loadWorksheet() {
     loading.value = false
   }
 }
+
+// ========== RETRY FEATURE FUNCTIONS ==========
+async function loadPreviousSubmissions(worksheetId) {
+  try {
+    const userId = authStore.user?.uid
+    if (!userId) return
+    
+    const submissionsRef = collection(db, 'worksheetSubmissions')
+    const q = query(
+      submissionsRef,
+      where('worksheetId', '==', worksheetId),
+      where('studentId', '==', userId),
+      orderBy('submittedAt', 'desc')
+    )
+    
+    const snapshot = await getDocs(q)
+    previousSubmissions.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+  } catch (error) {
+    console.error('Error loading previous submissions:', error)
+    previousSubmissions.value = []
+  }
+}
+
+function startCooldownTimer() {
+  if (cooldownTimer.value) clearInterval(cooldownTimer.value)
+  
+  cooldownTimer.value = setInterval(() => {
+    cooldownRemaining.value--
+    if (cooldownRemaining.value <= 0) {
+      clearInterval(cooldownTimer.value)
+      canRetry.value = true
+      cooldownRemaining.value = 0
+    }
+  }, 1000)
+}
+
+function formatCooldown(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  if (mins > 0) {
+    return `${mins} นาที ${secs} วินาที`
+  }
+  return `${secs} วินาที`
+}
+// ========== END RETRY FEATURE FUNCTIONS ==========
 
 // Auto-save functions
 function restoreSavedAnswers() {
@@ -904,7 +1245,40 @@ async function submitWorksheet() {
   try {
     const timeSpent = Math.floor((Date.now() - startTime.value) / 1000)
     
+    // Combine ARCE answers into the main answers object
+    const combinedAnswers = { ...answers.value }
+    
+    // For ARCE Situation questions, combine the 4 ARCE fields into a structured answer
+    if (worksheet.value?.sections) {
+      for (const section of worksheet.value.sections) {
+        for (const question of section.questions || []) {
+          if (question.type === 'arce_situation') {
+            const sectionId = section.id
+            const questionId = question.id
+            const key = `${sectionId}_${questionId}`
+            
+            // Build structured ARCE answer
+            combinedAnswers[key] = {
+              type: 'arce_structured',
+              analysis: arceAnswers.value[`${key}_analysis`] || '',
+              reasoning: arceAnswers.value[`${key}_reasoning`] || '',
+              creativity: arceAnswers.value[`${key}_creativity`] || '',
+              evidence: arceAnswers.value[`${key}_evidence`] || '',
+              // Also include as text for AI assessment
+              fullText: [
+                `[การวิเคราะห์] ${arceAnswers.value[`${key}_analysis`] || ''}`,
+                `[การให้เหตุผล] ${arceAnswers.value[`${key}_reasoning`] || ''}`,
+                `[ความคิดสร้างสรรค์] ${arceAnswers.value[`${key}_creativity`] || ''}`,
+                `[หลักฐาน] ${arceAnswers.value[`${key}_evidence`] || ''}`
+              ].join('\n\n')
+            }
+          }
+        }
+      }
+    }
+    
     // Prepare submission data
+    const currentAttempt = attemptCount.value + 1
     const submissionData = {
       worksheetId: worksheet.value.id,
       courseId: worksheet.value.courseId,
@@ -919,12 +1293,17 @@ async function submitWorksheet() {
         number: authStore.userProfile?.number || '', // เลขที่
         section: authStore.userProfile?.section || '' // ตอน
       },
-      answers: answers.value,
+      answers: combinedAnswers, // Use combined answers
+      arceAnswers: arceAnswers.value, // Also store raw ARCE answers separately
       tableAnswers: tableAnswers.value,
       selfReflection: selfReflection.value,
       typingFingerprint: typingFingerprint.value,
       timeSpent: timeSpent,
       status: 'submitted',
+      // Retry tracking
+      attemptNumber: currentAttempt,
+      previousBestScore: bestScore.value,
+      retrySettings: worksheet.value.retrySettings || null,
       submittedAt: serverTimestamp(),
       createdAt: serverTimestamp()
     }
@@ -940,8 +1319,11 @@ async function submitWorksheet() {
       body: JSON.stringify({
         submissionId: submissionRef.id,
         worksheetId: worksheet.value.id,
-        answers: answers.value,
-        worksheetStructure: worksheet.value
+        answers: combinedAnswers, // Use combined answers
+        worksheetStructure: worksheet.value,
+        attemptNumber: currentAttempt,
+        previousBestScore: bestScore.value,
+        retrySettings: worksheet.value.retrySettings
       })
     })
     
@@ -1014,6 +1396,11 @@ onUnmounted(() => {
   
   if (autoSaveInterval.value) {
     clearInterval(autoSaveInterval.value)
+  }
+  
+  // Clear cooldown timer
+  if (cooldownTimer.value) {
+    clearInterval(cooldownTimer.value)
   }
   
   // Remove global clipboard listeners
@@ -1136,6 +1523,218 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 2rem;
 }
+
+/* ========== RETRY FEATURE STYLES ========== */
+.retry-status-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea15, #764ba215);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.retry-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.retry-info .material-icons {
+  font-size: 2rem;
+  color: #667eea;
+}
+
+.retry-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.attempt-count {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.best-score {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.retry-actions .btn-sm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.retry-actions .btn-sm .material-icons {
+  font-size: 1rem;
+}
+
+.cooldown-warning, .max-attempts-warning {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.cooldown-warning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
+.cooldown-warning .material-icons {
+  font-size: 2.5rem;
+  color: #f59e0b;
+}
+
+.cooldown-warning strong {
+  color: #92400e;
+}
+
+.cooldown-warning p {
+  color: #b45309;
+  margin: 0;
+}
+
+.max-attempts-warning {
+  background: #fef2f2;
+  border: 1px solid #ef4444;
+}
+
+.max-attempts-warning .material-icons {
+  font-size: 2.5rem;
+  color: #ef4444;
+}
+
+.max-attempts-warning strong {
+  color: #991b1b;
+}
+
+.max-attempts-warning p {
+  color: #b91c1c;
+  margin: 0;
+}
+
+.previous-score-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.previous-score-card h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.score-summary {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.score-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.score-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.score-mode-badge {
+  background: #f0fdf4;
+  color: #166534;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.previous-feedback {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.previous-feedback strong {
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.previous-feedback p {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.html.dark-mode .cooldown-warning {
+  background: #78350f33;
+  border-color: #f59e0b66;
+}
+
+.html.dark-mode .cooldown-warning strong,
+.html.dark-mode .cooldown-warning p {
+  color: #fbbf24;
+}
+
+.html.dark-mode .max-attempts-warning {
+  background: #7f1d1d33;
+  border-color: #ef444466;
+}
+
+.html.dark-mode .max-attempts-warning strong,
+.html.dark-mode .max-attempts-warning p {
+  color: #f87171;
+}
+
+.html.dark-mode .score-mode-badge {
+  background: #16653433;
+  color: #4ade80;
+}
+
+@media (max-width: 600px) {
+  .retry-status-banner {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+  
+  .retry-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .score-summary {
+    justify-content: center;
+    gap: 1rem;
+  }
+}
+/* ========== END RETRY FEATURE STYLES ========== */
 
 /* Header */
 .worksheet-header {
@@ -1505,6 +2104,8 @@ onUnmounted(() => {
   box-shadow: 0 4px 15px rgba(59, 130, 246, 0.15);
   position: relative;
   overflow: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 .reflection-section::before {
@@ -1537,6 +2138,9 @@ onUnmounted(() => {
   padding: 1rem;
   font-size: 1rem;
   transition: all 0.3s ease;
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
 }
 
 .reflection-section textarea:focus {
@@ -1853,6 +2457,249 @@ onUnmounted(() => {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ======================================
+   ARCE Situation Question Type Styles
+   ====================================== */
+
+.arce-situation-container {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.situation-box {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05));
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.situation-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.situation-icon {
+  font-size: 1.25rem;
+}
+
+.situation-label {
+  font-weight: 600;
+  color: #3b82f6;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.situation-content {
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.task-box {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(109, 40, 217, 0.05));
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.task-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.task-icon {
+  font-size: 1.25rem;
+}
+
+.task-label {
+  font-weight: 600;
+  color: #8b5cf6;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.task-content {
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.answer-guide-box {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(217, 119, 6, 0.05));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.answer-guide-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.guide-icon {
+  font-size: 1.25rem;
+}
+
+.guide-label {
+  font-weight: 600;
+  color: #f59e0b;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.answer-guide-content {
+  line-height: 1.6;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.arce-response-areas {
+  margin-top: 1.5rem;
+}
+
+.arce-response-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.arce-section {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.arce-section.analysis-section {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(220, 38, 38, 0.03));
+  border-left: 4px solid #ef4444;
+}
+
+.arce-section.reasoning-section {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(37, 99, 235, 0.03));
+  border-left: 4px solid #3b82f6;
+}
+
+.arce-section.creativity-section {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.03));
+  border-left: 4px solid #10b981;
+}
+
+.arce-section.evidence-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(109, 40, 217, 0.03));
+  border-left: 4px solid #8b5cf6;
+}
+
+.arce-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.arce-icon {
+  font-size: 1.1rem;
+}
+
+.arce-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.arce-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  font-style: italic;
+}
+
+.arce-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  resize: vertical;
+  transition: border-color 0.2s;
+  min-height: 80px;
+}
+
+.arce-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.arce-progress {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.progress-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.progress-items {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.progress-item {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: var(--border-color);
+  color: var(--text-secondary);
+  transition: all 0.3s;
+}
+
+.progress-item.filled {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+}
+
+/* ARCE question type badge */
+.question-type-badge.arce_situation {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+/* ====================================== */
 
 /* Responsive */
 @media (max-width: 768px) {

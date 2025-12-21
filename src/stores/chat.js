@@ -812,6 +812,23 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     }
   }
 
+  // 🔧 FIX: Cleanup function to prevent memory leaks
+  function cleanup() {
+    if (unsubscribeMessages) {
+      unsubscribeMessages()
+      unsubscribeMessages = null
+    }
+    if (unsubscribeAssessments) {
+      unsubscribeAssessments()
+      unsubscribeAssessments = null
+    }
+    currentSession.value = null
+    messages.value = []
+    assessments.value = []
+    currentQuestion.value = null
+    error.value = null
+  }
+
   return {
     currentSession,
     messages,
@@ -825,6 +842,7 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     requestNewQuestion,
     endSession,
     loadSession,
-    subscribeToAssessments
+    subscribeToAssessments,
+    cleanup  // 🔧 Export cleanup function
   }
 })

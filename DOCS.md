@@ -1,8 +1,10 @@
 # 📚 HOTS AI ChatLoop - Complete Documentation
 
-**Last Updated:** December 9, 2025 | **Version:** 4.2
+**Last Updated:** December 20, 2025 | **Version:** 5.0
 
 > Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (A.R.C.E. Framework). Built with Vue 3 + Firebase + Cloud Functions.
+
+**🏆 DPA Assessment:** 11/11 criteria passed (see [DPA_ASSESSMENT_CHECKLIST.md](DPA_ASSESSMENT_CHECKLIST.md))
 
 ---
 
@@ -37,9 +39,10 @@
 **Project Stats:**
 - 45+ Vue Views
 - 45+ Routes
-- 25+ Cloud Functions
+- 41 Cloud Functions
 - 8 Pinia Stores
-- 15+ Firestore Collections
+- 25+ Firestore Collections
+- 123 Tests (48 Backend + 75 Frontend)
 
 ### A.R.C.E. Framework (HOTS Assessment)
 | Dimension | Thai | Description | Score Range |
@@ -93,6 +96,46 @@ const authStore = useAuthStore()
 const isTeacher = computed(() => authStore.userProfile?.role === 'teacher')
 ```
 
+### 🔬 Phase 2: AI Precision & Integrity (NEW)
+```javascript
+// Deterministic AI Scoring
+temperature: 0,        // No randomness
+seed: 42,              // Reproducible results
+
+// Chain of Thought (CoT) Reasoning
+chainOfThought: {
+  step1_summary: "สรุปประเด็นหลัก",
+  step2_evidence: { analysis: "...", reasoning: "..." },
+  step3_anchor_match: "ตรงกับ Anchor ระดับ 4",
+  step4_decision: "เหตุผลการตัดสินใจ"
+}
+
+// AI Confidence Score
+aiConfidence: 85,               // 0-100%
+aiConfidenceReason: "คำตอบชัดเจน มีตัวอย่าง"
+
+// Prompt Injection Defense
+const sanitizedAnswer = answer
+  .replace(/```/g, "'''")
+  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')  // Remove XML tags
+  .replace(/\{\{[^}]*\}\}/g, '')         // Remove templates
+  .substring(0, 3000)                   // Limit length
+
+// XML Tag Isolation
+<system_instruction>...</system_instruction>
+<student_answer>${sanitizedAnswer}</student_answer>
+
+// Full Audit Trail
+auditTrail: {
+  modelUsed: 'gpt-4o-mini',
+  temperature: 0,
+  seed: 42,
+  rawResponseLength: 1234,
+  parseAttempts: 1,
+  timestamp: '2024-...'
+}
+```
+
 ---
 
 ## 2. Architecture
@@ -124,7 +167,7 @@ HOTS-AI-CHATLOOP/
 │   ├── firebase/           # Firebase config
 │   └── router/             # Vue Router with guards
 ├── functions/              # Cloud Functions
-│   ├── index.js            # Main functions (6900+ lines)
+│   ├── index.js            # Main functions (9200+ lines)
 │   │   ├── assessAnswer           # Chat assessment
 │   │   ├── assessWorksheetSubmission  # Worksheet assessment
 │   │   ├── generateElectronicWorksheet
@@ -342,13 +385,33 @@ npm run build
 
 ---
 
-## 6. Testing Checklist
+## 6. Testing
+
+### Automated Tests
+```bash
+# Frontend tests (Vitest)
+npm test                    # Run 75 tests
+npm run test:ui             # Interactive UI
+npm run coverage            # Coverage report
+
+# Backend tests (Jest)
+cd functions && npm test    # Run 48 tests
+```
+
+**Test Coverage:**
+| Category | Tests | Files |
+|----------|-------|-------|
+| Frontend | 75 | auth.test.js, gamification.test.js, errorHandler.test.js |
+| Backend | 48 | assessment.test.js, prompts.test.js, reliability.test.js |
+| **Total** | **123** | |
+
+### Manual Testing Checklist
 
 ### Authentication
 - [ ] Login ด้วย Google สำเร็จ
 - [ ] Redirect ตาม role (student/teacher)
 - [ ] Route guard ทำงานถูกต้อง
-- [ ] Profile Setup แสดงครั้งแรก
+- [ ] Profile Setup แสดงครั้งแรก (มี ม.4-6)
 
 ### Student Features
 - [ ] Dashboard แสดงข้อมูลถูกต้อง
@@ -399,6 +462,26 @@ function isTeacher() {
 - Data anonymization for research export
 - User can request data deletion
 - Minimal data collection policy
+- **No PII sent to AI**: ไม่ส่งชื่อ/รหัสนักเรียนไป OpenAI
+
+### 🔬 Phase 2: AI Security
+```javascript
+// Prompt Injection Defense (functions/index.js:758-766)
+const sanitizedAnswer = answer
+  .replace(/```/g, "'''")
+  .replace(/<\/?[a-zA-Z_][^>]*>/g, '')
+  .replace(/\{\{[^}]*\}\}/g, '')
+  .substring(0, 3000)
+
+// XML Tag Isolation
+<system_instruction>...</system_instruction>
+<student_answer>${sanitizedAnswer}</student_answer>
+```
+
+### Deterministic Scoring
+- `temperature: 0` → ไม่มี randomness
+- `seed: 42` → Reproducible results
+- Same answer = Same score (ทุกครั้ง)
 
 ---
 
@@ -933,15 +1016,17 @@ function isStudent() {
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `functions/index.js` | All Cloud Functions, AI prompts | ~6900 |
+| `functions/index.js` | All Cloud Functions, AI prompts | ~9200 |
+| `functions/utils/prompts.js` | **NEW:** Modular prompt templates | ~200 |
+| `functions/utils/loAssessment.js` | **NEW:** LO assessment logic | ~150 |
+| `functions/services/assessmentService.js` | **NEW:** Assessment orchestration | ~100 |
 | `src/stores/chat.js` | Question selection, session management | ~600 |
 | `src/utils/loProgress.js` | **Standard LO counting** (assessments + worksheets) | ~420 |
 | `src/views/ChatView.vue` | Main chat interface, copy-paste blocking | ~800 |
+| `src/views/TeacherWorksheets.vue` | Worksheet management + ARCE normalization | ~1500 |
 | `src/views/WorksheetResult.vue` | Worksheet results with LO section | ~1900 |
 | `src/views/WorksheetReports.vue` | Teacher worksheet reports with LO | ~2700 |
 | `src/views/AdminLOManager.vue` | Admin tool for LO editing | ~800 |
-| `src/views/MyProgress.vue` | Student progress view | ~500 |
-| `src/views/LOReports.vue` | Teacher LO heatmap | ~900 |
 | `firestore.rules` | Security rules | ~150 |
 
 ---
@@ -952,6 +1037,7 @@ function isStudent() {
 - **Production**: https://hots-ai-d028b.web.app
 - **Console**: https://console.firebase.google.com/project/hots-ai-d028b
 - **Functions Region**: us-central1
+- **Repository**: https://github.com/saengpech-sys/hots-ai
 
 ### Commands
 ```bash
@@ -985,5 +1071,20 @@ OPENAI_MODEL=gpt-4o-mini
 
 ---
 
-*Document last updated: December 9, 2025 | Version 4.2*
-*Total lines: ~700 | Covers: Architecture, Navigation, User Manual, Deployment, Security, LO System, Cloud Functions, Firestore Schema*
+## 🏆 DPA Competition Compliance
+
+ระบบผ่านการประเมินตามเกณฑ์ DPA 4 มิติ:
+
+| มิติ | หัวข้อ | สถานะ |
+|------|--------|--------|
+| **Pedagogical** | AI Scaffolding, ARCE Alignment, HOTS Verification | ✅ 3/3 |
+| **Technical** | Prompt Security, Error Handling, Data Integrity | ✅ 3/3 |
+| **Measurement** | Rubric Consistency, Analytics, Traceability | ✅ 3/3 |
+| **Scalability** | Universal Design, PDPA Compliance | ✅ 2/2 |
+
+**รายละเอียด:** [DPA_ASSESSMENT_CHECKLIST.md](DPA_ASSESSMENT_CHECKLIST.md)
+
+---
+
+*Document last updated: December 20, 2025 | Version 5.0*
+*Total lines: ~1100 | Covers: Architecture, Phase 2 AI, Navigation, Testing, Deployment, Security, LO System, Cloud Functions, Firestore Schema, DPA Compliance*

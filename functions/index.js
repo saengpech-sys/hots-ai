@@ -5,6 +5,98 @@ const cors = require('cors')({ origin: true })
 const { calculatePoints, checkBadges, calculateStreak, BADGES } = require('./gamification')
 const { defineSecret } = require('firebase-functions/params')
 
+// 🛡️ Reliability Module - เพิ่มความน่าเชื่อถือ 95%+
+const {
+  validateAssessmentSchema,
+  executeWithRetry,
+  getFallbackAssessment,
+  parseAIResponseSafely,
+  logReliabilityEvent,
+  calculateReliabilityScore,
+  RETRY_CONFIG
+} = require('./utils/reliability')
+
+// 🔒 Data Consistency Module
+const {
+  saveAssessmentWithTransaction,
+  syncStudentProgress,
+  verifyDataConsistency,
+  generateIdempotencyKey,
+  checkDuplicateSubmission
+} = require('./utils/dataConsistency')
+
+// 📊 Research Data Module - ข้อมูลเพื่อการวิจัย
+const {
+  EVENT_TYPES,
+  SEQUENCE_EVENT_TYPES,
+  logLearningEvent,
+  updateGrowthHistory,
+  logIntervention,
+  calculateScoreCorrelation,
+  exportResearchCSV,
+  generateResearchSummary,
+  calculateScaffoldingSummary,
+  // 🔴 NEW: Sequential Pattern Mining
+  logSequenceEvent,
+  finalizeSequence,
+  // 🔴 NEW: K-Anonymity
+  exportKAnonymousData,
+  assessReidentificationRisk,
+  // 🔴 NEW: Research Readiness v2
+  calculateResearchReadiness
+} = require('./utils/researchData')
+
+// 📐 Inter-Rater Reliability Module - IRR for Research Publication
+const {
+  calculateCohensKappa,
+  calculateWeightedKappa,
+  calculateICC,
+  calculatePercentAgreement,
+  calculateMAE,
+  calculateCohensD,
+  calculatePearsonCorrelation,
+  comprehensiveIRRAnalysis,
+  meetsPublicationStandard,
+  generateReportText
+} = require('./utils/interRaterReliability')
+
+// 🔍 AI Detection Module - ตรวจจับคำตอบที่อาจสร้างโดย AI
+const {
+  analyzeForAISignals,
+  analyzeTypingBehavior,
+  comprehensiveAIDetection,
+  quickAICheck
+} = require('./utils/aiDetection')
+
+// 🚦 Rate Limiter Module - ป้องกัน spam และค่าใช้จ่ายบานปลาย
+const {
+  checkUserRateLimit,
+  checkIPRateLimit,
+  cleanupRateLimits,
+  RATE_LIMIT_CONFIG
+} = require('./utils/rateLimiter')
+
+// 📝 NEW: Modular Prompt System
+const {
+  sanitizeStudentInput,
+  createAssessmentPrompt: createAssessmentPromptNew,
+  createLOAssessmentPrompt,
+  LO_ASSESSMENT_SYSTEM_MESSAGE
+} = require('./utils/prompts')
+
+// 🎓 NEW: LO Assessment Module  
+const {
+  assessLearningOutcomes,
+  updateStudentLOProgress
+} = require('./utils/loAssessment')
+
+// 📊 NEW: Assessment Service
+const {
+  AI_CONFIG,
+  performHOTSAssessment,
+  performCompleteAssessment
+} = require('./services/assessmentService')
+
 admin.initializeApp()
 const db = admin.firestore()
 
@@ -47,13 +139,39 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         assessmentType,      // "pretest" | "posttest" | "formative"
         experimentGroup,     // "control" | "treatment" | null
         sessionNumber,       // nth session for this student
-        weekOfTerm           // Week 1-20
+        weekOfTerm,          // Week 1-20
+        // 🔬 PHASE 2: Grade-level calibration
+        gradeLevel,          // e.g., "ม.3", "ป.6" - for grade-appropriate scoring
+        subject              // e.g., "วิทยาศาสตร์", "ภาษาไทย"
       } = req.body
 
       // Validate input
       if (!studentId || !sessionId || !studentAnswer) {
         return res.status(400).send({ 
           error: 'Missing required fields: studentId, sessionId, studentAnswer' 
+        })
+      }
+
+      // 🚦 RATE LIMITING: ป้องกัน spam API calls
+      const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip
+      const ipRateResult = checkIPRateLimit(ip, 'assessment')
+      if (!ipRateResult.allowed) {
+        console.warn(`🚨 IP rate limit exceeded: ${ip}`)
+        return res.status(429).send({
+          error: 'Too Many Requests',
+          message: 'คุณส่งคำขอเร็วเกินไป กรุณารอสักครู่',
+          retryAfter: 60
+        })
+      }
+
+      const userRateResult = await checkUserRateLimit(db, studentId, 'assessment')
+      if (!userRateResult.allowed) {
+        console.warn(`🚨 User rate limit exceeded: ${studentId}`)
+        return res.status(429).send({
+          error: 'Rate Limit Exceeded',
+          message: userRateResult.error || 'คุณส่งคำตอบเร็วเกินไป กรุณารอ 5 นาที',
+          remaining: userRateResult.remaining,
+          resetAt: userRateResult.resetAt
         })
       }
 
@@ -112,53 +230,146 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       const previousAnswer = sessionData.previousAnswer || null
       const isScaffolding = sessionData.isScaffolding || false
 
+      // 🔬 PHASE 2: Fetch student data early for grade-level calibration
+      let studentData = null
+      try {
+        const studentDoc = await db.collection('users').doc(studentId).get()
+        if (studentDoc.exists) {
+          const data = studentDoc.data()
+          studentData = {
+            displayName: data.displayName || 'Unknown Student',
+            studentId: data.studentId || null,
+            grade: data.grade || null,
+            room: data.room || null,
+            section: data.section || null,
+            schoolId: data.schoolId || null
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching student data for grade context:', error)
+      }
+
       // Create assessment prompt for OpenAI
       const prompt = createAssessmentPrompt(questionContext, studentAnswer, {
         isScaffolding,
         scaffoldingAttempts,
-        previousAnswer
+        previousAnswer,
+        gradeLevel: gradeLevel || studentData?.grade || null,  // 🔬 PHASE 2: Pass grade level
+        subject: subject || null  // 🔬 PHASE 2: Pass subject for context
       })
 
       // Get model from config or env
       const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o'
 
-      // Call OpenAI API
-      const completion = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert educational assessor specializing in Higher-Order Thinking Skills (HOTS) evaluation. You provide accurate, constructive feedback in Thai language. Always respond with valid JSON format.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 1000
-      })
+      // 🛡️ RELIABILITY: Execute OpenAI call with retry mechanism
+      let responseText, completion
+      const aiCallResult = await executeWithRetry(async () => {
+        const result = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert educational assessor specializing in Higher-Order Thinking Skills (HOTS) evaluation. You provide accurate, constructive feedback in Thai language. Always respond with valid JSON format. CRITICAL: You MUST output valid JSON only, no markdown formatting.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0,        // Phase 2: Zero temperature for consistent scoring
+          seed: 42,              // Phase 2: Fixed seed for reproducibility
+          max_tokens: 1500       // Increased for CoT reasoning
+        })
+        return result
+      }, { maxRetries: 3 })
 
-      const responseText = completion.choices[0].message.content
-      let assessmentResult
-
-      try {
-        // Clean markdown wrapper if present
-        let cleanedText = responseText.trim()
-        if (cleanedText.startsWith('```')) {
-          cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-          cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+      // 🛡️ RELIABILITY: Handle AI call failure with fallback
+      if (!aiCallResult.success) {
+        console.error('OpenAI call failed after retries:', aiCallResult.errors)
+        
+        // Log reliability event
+        await logReliabilityEvent(db, {
+          type: 'AI_CALL_FAILED',
+          studentId,
+          sessionId,
+          errors: aiCallResult.errors,
+          attempts: aiCallResult.attempts
+        })
+        
+        // Use fallback assessment
+        const fallbackResult = getFallbackAssessment(studentAnswer, 'AI service unavailable after retries')
+        
+        // Save fallback assessment
+        const fallbackData = {
+          sessionId,
+          studentId,
+          courseId: courseId || null,
+          questionId: questionId || null,
+          questionContext: questionContext || 'General HOTS Assessment',
+          rawAnswer: studentAnswer,
+          rubricScores: fallbackResult.rubricScores,
+          overallScore: Object.values(fallbackResult.rubricScores).reduce((a, b) => a + b, 0),
+          feedbackText: fallbackResult.feedback,
+          isFallback: true,
+          fallbackReason: 'AI service unavailable',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          reliabilityScore: 20 // Very low reliability for fallback
         }
-        assessmentResult = JSON.parse(cleanedText)
-      } catch (parseError) {
-        console.error('Failed to parse OpenAI response:', responseText)
-        throw new Error('Invalid response format from AI')
+        
+        const fallbackRef = await db.collection('assessments').add(fallbackData)
+        
+        return res.status(200).json({
+          success: true,
+          id: fallbackRef.id,
+          result: fallbackData,
+          warning: 'Used fallback scoring due to AI service issue'
+        })
       }
 
-      // Validate assessment result structure
-      if (!validateAssessmentResult(assessmentResult)) {
-        throw new Error('Assessment result missing required fields')
+      completion = aiCallResult.result
+      responseText = completion.choices[0].message.content
+      
+      // 🔬 PHASE 2: Store raw response for audit trail
+      const rawAIResponse = responseText
+
+      // 🛡️ RELIABILITY: Use safe parser with schema validation
+      const parseResult = parseAIResponseSafely(responseText)
+      let assessmentResult
+      
+      if (parseResult.success) {
+        assessmentResult = parseResult.data
+        
+        // Log any warnings
+        if (parseResult.warnings.length > 0) {
+          console.warn('Parse warnings:', parseResult.warnings)
+        }
+      } else {
+        console.error('Parse failed:', parseResult.errors)
+        
+        // Log failed parse
+        await db.collection('aiParseLogs').add({
+          studentId,
+          sessionId,
+          rawResponse: responseText.substring(0, 2000),
+          errors: parseResult.errors,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+        
+        // Use fallback if parse completely failed
+        if (!parseResult.data) {
+          const fallbackResult = getFallbackAssessment(studentAnswer, 'Failed to parse AI response')
+          assessmentResult = fallbackResult
+        } else {
+          assessmentResult = parseResult.data
+        }
       }
+
+      // Calculate reliability score
+      const reliabilityScore = calculateReliabilityScore(
+        assessmentResult,
+        parseResult,
+        aiCallResult.attempts
+      )
 
       // Calculate overall score
       const rubricScores = assessmentResult.rubricScores
@@ -356,24 +567,7 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         }
       }
 
-      // 🆕 PERFORMANCE: Fetch student data for denormalization (prevent N+1 queries in reports)
-      let studentData = null
-      try {
-        const studentDoc = await db.collection('users').doc(studentId).get()
-        if (studentDoc.exists) {
-          const data = studentDoc.data()
-          studentData = {
-            displayName: data.displayName || 'Unknown Student',
-            studentId: data.studentId || null,
-            grade: data.grade || null,
-            room: data.room || null,
-            section: data.section || null,
-            schoolId: data.schoolId || null
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching student data:', error)
-      }
+      // Note: studentData already fetched earlier for grade-level calibration
 
       // Save assessment to Firestore
       const assessmentData = {
@@ -402,8 +596,41 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         aiModel: process.env.OPENAI_MODEL || 'gpt-4o',
         
-        // 🔬 NEW: Research metadata for AIED studies
-        promptVersion: 'v2.1-arce-thai',  // Track prompt changes
+        // 🔬 PHASE 2: Full Audit Trail for AI Assessment
+        promptVersion: 'v3.0-cot-confidence',  // Phase 2 prompt with CoT
+        
+        // 🔬 PHASE 2: AI Confidence & Chain of Thought
+        aiConfidence: assessmentResult.confidence || null,
+        aiConfidenceReason: assessmentResult.confidenceReason || null,
+        chainOfThought: assessmentResult.chainOfThought || null,
+        
+        // 🔬 PHASE 2: Audit Trail - store for reproducibility research
+        auditTrail: {
+          modelUsed: model,
+          temperature: 0,
+          seed: 42,
+          maxTokens: 1500,
+          rawResponseLength: rawAIResponse?.length || 0,
+          // Note: Full rawResponse stored separately in aiAuditLogs for privacy
+          parseAttempts: parseResult?.errors?.length > 0 ? 2 : 1,
+          apiCallAttempts: aiCallResult?.attempts || 1,
+          timestamp: new Date().toISOString()
+        },
+        
+        // 🛡️ Reliability Score (0-100)
+        reliabilityScore: reliabilityScore,
+        isFallback: assessmentResult.isFallback || false,
+        
+        // 🔍 AI Detection - ตรวจจับคำตอบที่อาจสร้างโดย AI
+        aiDetection: (() => {
+          const detection = quickAICheck(studentAnswer)
+          return {
+            score: detection.score,
+            riskLevel: detection.riskLevel,
+            flagged: detection.shouldFlag,
+            topSignal: detection.topSignal
+          }
+        })(),
         
         // Answer metrics (RQ3: Learning Analytics)
         answerMetrics: answerMetrics ? {
@@ -468,6 +695,36 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         })
       }
 
+      // 📊 RESEARCH: Log Learning Event (non-blocking)
+      logLearningEvent(db, {
+        eventType: assessmentType === 'pretest' ? EVENT_TYPES.PRETEST 
+                 : assessmentType === 'posttest' ? EVENT_TYPES.POSTTEST 
+                 : EVENT_TYPES.CHAT_ASSESSMENT,
+        studentId,
+        courseId: courseId || null,
+        assessmentId: assessmentRef.id,
+        questionId: questionId || null,
+        sessionId,
+        rubricScores: assessmentData.rubricScores,
+        overallScore: assessmentData.overallScore,
+        aiConfidence: assessmentData.aiConfidence,
+        reliabilityScore: assessmentData.reliabilityScore,
+        targetLOs: learningOutcomes || [],
+        passedLOs: loAssessment?.passedLOs || [],
+        timingMetrics,
+        answerMetrics,
+        isFallback: assessmentData.isFallback || false,
+        scaffoldingLevel: scaffoldingAttempts,
+        experimentGroup,
+        weekOfTerm
+      }).catch(err => console.error('Learning event log failed:', err))
+
+      // 📈 RESEARCH: Update Growth History (non-blocking)
+      if (courseId) {
+        updateGrowthHistory(db, studentId, courseId, assessmentData.rubricScores, 'chat')
+          .catch(err => console.error('Growth history update failed:', err))
+      }
+
       // Return result
       return res.status(200).json({
         success: true,
@@ -487,50 +744,108 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
 
 /**
  * Create assessment prompt for OpenAI with optional scaffolding support
+ * 
+ * 🔬 PHASE 2 IMPROVEMENTS:
+ * - Chain of Thought (CoT): AI reasons step-by-step before scoring
+ * - AI Confidence Score: Self-reported confidence with reasoning
+ * - Language Bias Prevention: Grade language separately, don't penalize
+ * - Prompt Injection Defense: XML tags isolate student input
+ * - Grade-Level Calibration: Context about expected student level
+ * 
+ * @param {string} context - Question context
+ * @param {string} answer - Student's answer (will be sanitized)
+ * @param {object} options - Configuration options
  */
 function createAssessmentPrompt(context, answer, options = {}) {
-  const { isScaffolding, scaffoldingAttempts, previousAnswer } = options
+  const { 
+    isScaffolding, 
+    scaffoldingAttempts, 
+    previousAnswer,
+    gradeLevel,
+    subject
+  } = options
+  
+  // 🛡️ PHASE 2: Sanitize student input to prevent prompt injection
+  const sanitizedAnswer = answer
+    .replace(/```/g, "'''")  // Escape code blocks
+    .replace(/<\/?[a-zA-Z_][^>]*>/g, '')  // Remove XML-like tags
+    .replace(/\{\{[^}]*\}\}/g, '')  // Remove template expressions
+    .substring(0, 3000)  // Limit length
   
   let scaffoldingInstructions = ''
   if (isScaffolding && previousAnswer) {
+    const sanitizedPreviousAnswer = previousAnswer
+      .replace(/```/g, "'''")
+      .replace(/<\/?[a-zA-Z_][^>]*>/g, '')
+      .substring(0, 1500)
+    
     scaffoldingInstructions = `
 
 🔄 SCAFFOLDING MODE (ครั้งที่ ${scaffoldingAttempts + 1}/2):
 นี่คือคำตอบครั้งที่ ${scaffoldingAttempts + 1} หลังจากถูกถามคำถามชี้แนะ
-คำตอบครั้งก่อน: """${previousAnswer}"""
+<previous_answer>${sanitizedPreviousAnswer}</previous_answer>
 ให้ประเมินว่านักเรียนพัฒนาขึ้นหรือไม่ และให้คะแนนตามคำตอบปัจจุบัน`
   }
 
+  // 🎓 PHASE 2: Grade-level calibration context
+  let gradeContext = ''
+  if (gradeLevel) {
+    gradeContext = `
+📚 ระดับชั้น: ${gradeLevel}${subject ? ` | วิชา: ${subject}` : ''}
+⚖️ การปรับระดับ: ปรับความคาดหวังตามวุฒิภาวะของนักเรียนระดับ ${gradeLevel}
+- สำหรับ ป.4-6: คาดหวังการคิดพื้นฐาน ตัวอย่างง่ายๆ
+- สำหรับ ม.1-3: คาดหวังความเชื่อมโยงที่ซับซ้อนขึ้น
+- สำหรับ ม.4-6: คาดหวังการวิเคราะห์เชิงลึก เชื่อมโยงข้ามศาสตร์
+`
+  }
+
   const needsProbingQuestion = !isScaffolding && scaffoldingAttempts === 0
+  
+  // 🔬 PHASE 2: Enhanced prompt with CoT, Confidence, and Bias Prevention
   return `
-ประเมินคำตอบปลายเปิดของนักเรียนอย่างเป็นกลางและตรวจสอบได้
+<system_instruction>
+ประเมินคำตอบปลายเปิดของนักเรียนอย่างเป็นกลาง ตรวจสอบได้ และเป็นระบบ
+ใช้ Chain-of-Thought reasoning ก่อนให้คะแนน
+</system_instruction>
 
-วัตถุประสงค์
-- ให้คะแนนคำตอบของนักเรียนตามทักษะการคิดขั้นสูง (HOTS) 4 ด้าน พร้อมข้อเสนอแนะที่สั้น กระชับ และนำไปใช้พัฒนาต่อได้จริง
-- ส่งคืน “JSON เท่านั้น” ตามสคีมาที่กำหนด ห้ามมีข้อความอื่นปะปน
+<objective>
+- ให้คะแนนคำตอบของนักเรียนตามทักษะการคิดขั้นสูง (HOTS) 4 ด้าน
+- คิดทีละขั้นตอน (Chain of Thought) ก่อนสรุปคะแนน
+- รายงานระดับความมั่นใจในการประเมิน (0-100%)
+- ส่งคืน "JSON เท่านั้น" ตามสคีมาที่กำหนด
+</objective>
 
-อินพุต
-บริบท (context): ${context || 'การประเมินทักษะการคิดทั่วไป'}
-คำตอบของนักเรียน (answer): """${answer}"""
+<input>
+<context>${context || 'การประเมินทักษะการคิดทั่วไป'}</context>
+${gradeContext}
+<student_answer>${sanitizedAnswer}</student_answer>
+</input>
+${scaffoldingInstructions}
 
-ขอบเขตข้อมูลและอคติ
-- ใช้เฉพาะข้อมูลจาก “บริบท” และ “คำตอบนักเรียน” เท่านั้น ห้ามอ้างความรู้/ข้อเท็จจริงภายนอก
-- เป็นกลาง ไม่ให้คุณค่าตามความยาวภาษา/สำนวน เว้นแต่ส่งผลต่อ “ความชัดเจนของเหตุผล/หลักฐาน”
-- หากคำตอบว่าง เปะปะ หรือไม่เกี่ยวข้อง ให้ 0 ทุกด้าน พร้อม feedback สั้น ๆ อธิบายเหตุผล
+<bias_prevention>
+⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
+1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
+   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
+   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
+2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
+3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
+4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
+</bias_prevention>
 
+<scoring_rubric>
 หลักการให้คะแนน (0–5 เป็นจำนวนเต็ม)
-ให้คะแนนทีละด้านตาม “สมอคะแนน (Anchors)” ด้านล่างนี้ และเลือกคะแนนที่ “ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน” (minimum mastery)
+ให้คะแนนตาม "สมอคะแนน (Anchors)" และเลือกคะแนนที่ "ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน"
 
 1) การวิเคราะห์ (Analysis)
-- 5: แยกประเด็น/องค์ประกอบสำคัญครบ โครงสร้างชัด เชื่อมความสัมพันธ์สาเหตุ-ผลและเงื่อนไขอย่างเป็นระบบ
+- 5: แยกประเด็น/องค์ประกอบสำคัญครบ โครงสร้างชัด เชื่อมความสัมพันธ์สาเหตุ-ผลอย่างเป็นระบบ
 - 4: แยกประเด็นหลักชัด มีโครงสร้างและความเชื่อมโยงส่วนใหญ่ถูกต้อง
-- 3: แยกบางส่วนได้ เห็นโครงร่างการวิเคราะห์ แต่ขาดบางประเด็นหรือความเชื่อมโยงสำคัญ
+- 3: แยกบางส่วนได้ เห็นโครงร่างการวิเคราะห์ แต่ขาดบางประเด็นสำคัญ
 - 2: วิเคราะห์ตื้น อธิบายแบบเล่าเรื่องมากกว่าแยกส่วน
 - 1: ระบุข้อเท็จจริงกระจัดกระจาย ไร้โครงสร้าง
 - 0: ไม่วิเคราะห์/นอกเรื่อง
 
 2) การให้เหตุผล (Reasoning)
-- 5: เหตุผลเป็นลำดับ มีตรรกะ/การอนุมานถูกต้อง รองรับด้วยข้อเท็จจริงภายในคำตอบ สรุปสอดคล้องกับเหตุผล
+- 5: เหตุผลเป็นลำดับ มีตรรกะ/การอนุมานถูกต้อง สรุปสอดคล้องกับเหตุผล
 - 4: ลำดับคิดดี มีการอนุมานส่วนใหญ่ถูกต้อง มีจุดสะดุดเล็กน้อย
 - 3: มีเหตุผลพื้นฐาน แต่ยังมีช่องโหว่/สรุปก้าวกระโดดบางช่วง
 - 2: เหตุผลคลุมเครือ พิงความเชื่อมากกว่าตรรกะ
@@ -538,7 +853,7 @@ function createAssessmentPrompt(context, answer, options = {}) {
 - 0: ไม่มีเหตุผลที่ตรวจสอบได้
 
 3) ความคิดสร้างสรรค์ (Creativity)
-- 5: เสนอกรอบคิด/วิธีมองใหม่ ชี้มุมไม่ชัดเจนเดิม มีตัวอย่าง/เปรียบเทียบสร้างสรรค์ที่เกี่ยวข้อง
+- 5: เสนอกรอบคิด/วิธีมองใหม่ ชี้มุมไม่ชัดเจนเดิม มีตัวอย่างสร้างสรรค์ที่เกี่ยวข้อง
 - 4: มีมุมใหม่ชัดเจนอย่างน้อยหนึ่งจุด
 - 3: ปรับ/ต่อยอดไอเดียเดิมได้บ้าง
 - 2: ความคิดทั่วไป ซ้ำแพทเทิร์นคุ้นเคย
@@ -546,55 +861,86 @@ function createAssessmentPrompt(context, answer, options = {}) {
 - 0: ไม่แสดงความคิดริเริ่ม
 
 4) การใช้หลักฐาน (Evidence)
-- 5: ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจง ตรงประเด็น อธิบายความเชื่อมโยงกับข้อสรุปอย่างชัด
+- 5: ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจง ตรงประเด็น อธิบายความเชื่อมโยงกับข้อสรุปชัด
 - 4: มีหลักฐานที่เกี่ยวข้องและอธิบายความเชื่อมโยงพอควร
 - 3: มีตัวอย่างแต่ยังทั่วไป/เชื่อมโยงหลวม
 - 2: อ้างกว้าง ๆ ไม่ชัดเจนหรือไม่สัมพันธ์กับข้อสรุป
 - 1: กล่าวอ้างลอย ๆ ไร้ตัวอย่างตรวจสอบได้
 - 0: ไม่มีหลักฐาน
+</scoring_rubric>
 
-ข้อกำหนดการให้ข้อเสนอแนะ
-- ภาษาไทย สุภาพ กระชับ (2–3 ประโยค)
-- “strengths/weaknesses” เป็นวลีสั้น ๆ ชี้จุดที่สังเกตได้จริง
-- “suggestions” เป็นคำแนะนำเชิงปฏิบัติ ทำได้ทันที/นำไปใช้พัฒนาคำตอบรอบถัดไป
+<chain_of_thought_instructions>
+🧠 ขั้นตอนการคิด (Chain of Thought) - ต้องทำก่อนให้คะแนน:
 
-ข้อควรระวังในการตัดสิน
-- ไม่ลงโทษเพียงเพราะคำตอบสั้น หากครบเกณฑ์ให้คะแนนตามคุณภาพ
-- หากมีตรรกะผิด/สรุปก้าวกระโดด ให้หักที่ Reasoning ชัดเจน
-- หากตัวอย่างคลุมเครือ/ไม่สอดคล้อง ให้หักที่ Evidence
-- หากเล่าเรื่องยาวแต่ไม่แยกส่วน ให้หักที่ Analysis
+Step 1: อ่านคำตอบทั้งหมดและสรุปประเด็นหลัก (1-2 ประโยค)
+Step 2: ระบุหลักฐานที่เห็นในแต่ละมิติ HOTS
+Step 3: เปรียบเทียบหลักฐานกับ Anchor descriptions
+Step 4: ตัดสินใจให้คะแนนพร้อมเหตุผลสั้นๆ
+Step 5: ประเมินความมั่นใจโดยรวม
 
-รูปแบบผลลัพธ์ (บังคับ: JSON เท่านั้น, ไม่มีข้อความอื่น)
-- ใช้ตัวเลขจำนวนเต็ม 0–5 เท่านั้น
-- ห้ามใส่คอมเมนต์/ตัวอธิบายนอก JSON
+บันทึกการคิดทั้งหมดใน "chainOfThought" object ในผลลัพธ์
+</chain_of_thought_instructions>
+
+<confidence_instructions>
+📊 ระดับความมั่นใจในการประเมิน (Confidence Score):
+- 90-100%: คำตอบชัดเจน หลักฐานมาก ตรงกับ Anchors พอดี
+- 70-89%: คำตอบค่อนข้างชัด มีบางจุดคลุมเครือเล็กน้อย
+- 50-69%: คำตอบคลุมเครือ ต้องตีความมาก หรือ borderline ระหว่างคะแนน
+- ต่ำกว่า 50%: คำตอบไม่ชัดเจน/สั้นมาก/ยากต่อการประเมิน
+
+ต้องระบุเหตุผลใน "confidenceReason" เสมอ
+</confidence_instructions>
 
 ${needsProbingQuestion ? `
-**โหมด Scaffolding Mode (คะแนนรวมต่ำกว่า 10/20)**
-เมื่อคำนวณคะแนนรวมได้น้อยกว่า 10 คะแนน ให้เพิ่มฟิลด์ "probingQuestion" ในผลลัพธ์:
-- "probingQuestion": คำถามชี้ทางภาษาไทย (1-2 ประโยค) ที่ช่วยให้นักเรียนคิดลึกและปรับปรุงคำตอบ
-- คำถามต้องเฉพาะเจาะจงกับจุดอ่อนในคำตอบ (ดูจาก weaknesses)
-- ใช้ภาษาให้กำลังใจ เปิดโอกาสคิดต่อ ไม่ใช่แค่บอกว่าผิด
-- ตัวอย่าง: "คุณลองขยายความว่า 'เหตุผลที่สำคัญ' คืออะไร และทำไมถึงมีผลต่อประเด็นนี้ได้ไหม?"
-- หรือ: "ลองยกตัวอย่างเฉพาะเจาะจงมาประกอบคำอธิบายของคุณดูนะ จะช่วยทำให้คำตอบชัดเจนขึ้น"
+<scaffolding_mode>
+**โหมด Scaffolding (คะแนนรวมต่ำกว่า 10/20)**
+เมื่อคำนวณคะแนนรวมได้น้อยกว่า 10 คะแนน:
+- เพิ่มฟิลด์ "probingQuestion": คำถามชี้ทางภาษาไทย (1-2 ประโยค)
+- คำถามต้องเฉพาะเจาะจงกับจุดอ่อนในคำตอบ
+- ใช้ภาษาให้กำลังใจ เปิดโอกาสคิดต่อ
+</scaffolding_mode>
 ` : ''}
 
-สคีมาที่ต้องส่งคืน:
+<feedback_guidelines>
+ข้อกำหนดการให้ข้อเสนอแนะ:
+- ภาษาไทย สุภาพ กระชับ (2–3 ประโยค)
+- "strengths/weaknesses" เป็นวลีสั้น ๆ ชี้จุดที่สังเกตได้จริง
+- "suggestions" เป็นคำแนะนำเชิงปฏิบัติที่นำไปใช้พัฒนาได้ทันที
+</feedback_guidelines>
+
+<output_schema>
+ส่งคืน JSON เท่านั้น ห้ามมี markdown wrapper (ไม่ต้องใส่ \`\`\`json):
 {
+  "chainOfThought": {
+    "step1_summary": "สรุปประเด็นหลักของคำตอบ 1-2 ประโยค",
+    "step2_evidence": {
+      "analysis": "หลักฐานที่เห็นสำหรับมิตินี้",
+      "reasoning": "หลักฐานที่เห็นสำหรับมิตินี้",
+      "creativity": "หลักฐานที่เห็นสำหรับมิตินี้",
+      "evidence": "หลักฐานที่เห็นสำหรับมิตินี้"
+    },
+    "step3_anchor_match": "อธิบายว่าหลักฐานตรงกับ Anchor ระดับไหน",
+    "step4_decision": "เหตุผลการตัดสินใจให้คะแนน"
+  },
   "rubricScores": {
     "analysis": 0-5,
     "reasoning": 0-5,
     "creativity": 0-5,
     "evidence": 0-5
   },
+  "confidence": 0-100,
+  "confidenceReason": "เหตุผลที่มั่นใจระดับนี้",
   "feedback": "ข้อเสนอแนะโดยรวมภาษาไทย 2-3 ประโยค",
   "strengths": ["จุดเด่น 1", "จุดเด่น 2"],
   "weaknesses": ["จุดที่ควรพัฒนา 1", "จุดที่ควรพัฒนา 2"],
-  "suggestions": ["คำแนะนำเชิงสร้างสรรค์ 1", "คำแนะนำ 2"]${needsProbingQuestion ? ',\n  "probingQuestion": "คำถามชี้ทางภาษาไทย (ถ้าคะแนนรวม < 10)"' : ''}
+  "suggestions": ["คำแนะนำ 1", "คำแนะนำ 2"]${needsProbingQuestion ? ',\n  "probingQuestion": "คำถามชี้ทาง (ถ้าคะแนนรวม < 10)"' : ''}
 }
+</output_schema>
 
-ให้ทำงานตอนนี้กับอินพุตที่ให้ และส่งคืนเฉพาะ JSON ตามสคีมา  
-
-**สำคัญ**: ให้คะแนนและข้อเสนอแนะที่เป็นประโยชน์ เป็นกลาง และช่วยพัฒนาทักษะจริงๆ
+<execution>
+ทำงานตอนนี้กับอินพุตที่ให้ ส่งคืนเฉพาะ JSON ตามสคีมา
+สำคัญ: ไม่ต้องใส่ \`\`\`json หรือ \`\`\` ครอบ JSON
+</execution>
 `
 }
 
@@ -687,14 +1033,15 @@ ${studentAnswer}
       messages: [
         {
           role: 'system',
-          content: 'You are an expert in learning outcome assessment. You provide accurate, evidence-based evaluations. Always respond with valid JSON.'
+          content: 'You are an expert in learning outcome assessment. You provide accurate, evidence-based evaluations. Always respond with valid JSON only, no markdown.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      temperature: 0.2,
+      temperature: 0,         // Phase 2: Zero temperature for consistent LO scoring
+      seed: 42,               // Phase 2: Fixed seed for reproducibility
       max_tokens: 500
     })
 
@@ -2545,7 +2892,23 @@ exports.dailyConsistencyCheck = functions.pubsub
       // Send alert if critical issues found
       if (issues.orphanedAssessments.length > 10 || issues.invalidScores.length > 0) {
         console.warn('⚠️ CRITICAL: Major consistency issues detected!')
-        // TODO: Send email to admin
+        
+        // 🔧 FIX: Log to critical alerts collection for admin notification
+        await db.collection('criticalAlerts').add({
+          type: 'DATA_CONSISTENCY_ISSUE',
+          severity: 'critical',
+          message: `ตรวจพบปัญหา Data Consistency: ${issues.orphanedAssessments.length} orphaned assessments, ${issues.invalidScores.length} invalid scores`,
+          details: {
+            orphanedCount: issues.orphanedAssessments.length,
+            invalidScoresCount: issues.invalidScores.length,
+            mismatchedCount: issues.mismatchedLOProgress.length
+          },
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          resolved: false,
+          notifiedAdmins: false
+        })
+        
+        console.log('📧 Critical alert logged to criticalAlerts collection')
       }
 
       return { success: true, issues }
@@ -4424,7 +4787,8 @@ exports.generateElectronicWorksheet = functions.runWith({
         comprehensive: 'ครอบคลุมทุกมิติ A.R.C.E. อย่างสมดุล',
         analysis: 'เน้นการวิเคราะห์ (Analysis) เป็นหลัก มีคำถามเชิงวิเคราะห์มาก',
         creativity: 'เน้นความคิดสร้างสรรค์ (Creativity) มีคำถามให้ออกแบบ/สร้างสรรค์',
-        quick: 'คำถามสั้นกระชับ ทำได้เร็ว เน้นความเข้าใจพื้นฐาน'
+        quick: 'คำถามสั้นกระชับ ทำได้เร็ว เน้นความเข้าใจพื้นฐาน',
+        arce_evaluate: 'ใบงานวัดผล ARCE (ขั้น Evaluate) - ใช้โครงสร้าง Situation-Task-Expected_ARCE'
       }
 
       // Build question types instructions
@@ -4437,7 +4801,171 @@ exports.generateElectronicWorksheet = functions.runWith({
       }
       const allowedTypes = qTypes.map(t => questionTypeLabels[t] || t).join(', ')
 
-      const prompt = `คุณเป็นผู้เชี่ยวชาญด้านการออกแบบใบงานอิเล็กทรอนิกส์สำหรับการเรียนการสอน
+      // Check if this is ARCE Evaluate worksheet type
+      const isArceEvaluate = worksheetType === 'arce_evaluate'
+      
+      // Extract Evaluate phase content from activities5E for ARCE Evaluate worksheets
+      let evaluateContent = ''
+      if (isArceEvaluate && activities5E) {
+        evaluateContent = activities5E.evaluation || activities5E.evaluate || ''
+        if (typeof evaluateContent === 'object') {
+          evaluateContent = JSON.stringify(evaluateContent, null, 2)
+        }
+      }
+
+      // Build prompt based on worksheet type
+      let prompt
+      
+      if (isArceEvaluate) {
+        // 🎯 Special prompt for ARCE Evaluate worksheet (Situation-Task-Expected format)
+        prompt = `คุณเป็นผู้เชี่ยวชาญด้านการออกแบบ "ใบงานวัดผล ARCE" สำหรับขั้น Evaluate ในแผนการสอน 5E
+
+📚 ข้อมูลแผนการสอน:
+- รายวิชา: ${courseCode || ''} ${courseName || ''}
+- ระดับชั้น: ${gradeLevel || 'ม.4'}
+- หน่วยที่ ${unitNumber || 1}: ${unitName || ''}
+- แผนที่ ${planNumber || 1}: ${topic || planData.topic || ''}
+- ระยะเวลา: ${duration || 50} นาที
+
+🎯 จุดประสงค์การเรียนรู้:
+${objectivesContext}
+
+📖 Learning Outcomes:
+${planLOs.map(lo => `- ${lo}`).join('\n') || 'ตามจุดประสงค์ที่กำหนด'}
+
+🔄 กิจกรรมขั้น Evaluate จากแผนการสอน:
+${evaluateContent || activitiesContext}
+
+✨ A.R.C.E. Framework ที่ต้องประเมิน:
+${arceContext}
+
+📋 โครงสร้างใบงานวัดผล ARCE (Situation-Task-Expected):
+ใบงานนี้ใช้โครงสร้างพิเศษที่ช่วยให้นักเรียนเข้าใจชัดเจนว่าต้องตอบอะไร และช่วยให้ AI ประเมินได้แม่นยำ:
+
+1. **Situation (สถานการณ์)**: บริบท/ปัญหาที่สอดคล้องกับแผนการสอน ต้องน่าสนใจและเกี่ยวข้องกับชีวิตจริง
+2. **Task (ภารกิจ)**: คำสั่งที่ชัดเจนว่านักเรียนต้องทำอะไร ใช้ภาษาที่เข้าใจง่าย
+3. **Expected_A (การวิเคราะห์ที่คาดหวัง)**: แนวทางการวิเคราะห์ที่ถูกต้อง - ใช้สำหรับ AI ประเมิน
+4. **Expected_R (เหตุผลที่คาดหวัง)**: หลักการ/ทฤษฎีที่นักเรียนควรอ้างถึง - ใช้สำหรับ AI ประเมิน
+5. **Expected_C (ผลงานที่คาดหวัง)**: ลักษณะชิ้นงาน/โค้ด/การออกแบบที่ควรได้ - ใช้สำหรับ AI ประเมิน
+6. **Expected_E (หลักฐานที่คาดหวัง)**: ผลลัพธ์/ตัวอย่าง/หลักฐานที่ยืนยันความถูกต้อง - ใช้สำหรับ AI ประเมิน
+
+กรุณาสร้างใบงานวัดผล ARCE ที่มี ${questionCount || 3} สถานการณ์ ตอบเป็น JSON (ห้าม markdown wrapper):
+{
+  "metadata": {
+    "title": "ใบงานวัดผล ARCE: ${topic || 'หัวข้อ'}",
+    "description": "ใบงานประเมินทักษะการคิดขั้นสูงตาม A.R.C.E. Framework",
+    "worksheetType": "arce_evaluate",
+    "lessonPlanId": "${lessonPlanId || ''}",
+    "courseId": "${courseId || ''}",
+    "courseName": "${courseName || ''}",
+    "gradeLevel": "${gradeLevel || 'ม.4'}",
+    "unitNumber": ${unitNumber || 1},
+    "unitName": "${unitName || ''}",
+    "planNumber": ${planNumber || 1},
+    "topic": "${topic || ''}",
+    "duration": ${duration || 50},
+    "totalQuestions": ${questionCount || 3},
+    "maxScore": 0,
+    "arceFocus": ["analysis", "reasoning", "creativity", "evidence"],
+    "arceWeights": {
+      "analysis": 25,
+      "reasoning": 25,
+      "creativity": 25,
+      "evidence": 25
+    }
+  },
+  "instructions": "อ่านสถานการณ์แต่ละข้ออย่างละเอียด แล้วทำภารกิจตามที่กำหนด โดยใช้ทักษะการคิดวิเคราะห์ การให้เหตุผล ความคิดสร้างสรรค์ และการใช้หลักฐาน",
+  "settings": {
+    "shuffleQuestions": false,
+    "shuffleOptions": false,
+    "showHints": true,
+    "blockCopyPaste": true,
+    "timeLimit": ${duration || 50},
+    "allowLateSubmission": false
+  },
+  "sections": [
+    {
+      "id": "arce_situations",
+      "title": "📋 สถานการณ์วัดผล ARCE",
+      "description": "ทำภารกิจตามสถานการณ์ที่กำหนด แสดงทักษะการคิดขั้นสูงทั้ง 4 ด้าน",
+      "phase": "evaluation",
+      "arceFocus": ["analysis", "reasoning", "creativity", "evidence"],
+      "questions": [
+        // สร้าง ${questionCount || 3} สถานการณ์ โดยแต่ละสถานการณ์มีโครงสร้าง:
+        {
+          "id": "arce_1",
+          "number": 1,
+          "type": "arce_situation",
+          "situation": "สถานการณ์/ปัญหาที่น่าสนใจ เกี่ยวข้องกับเนื้อหาที่เรียน (3-5 ประโยค)",
+          "task": "ภารกิจที่ชัดเจน: ให้นักเรียนทำอะไร อธิบายให้ละเอียด (2-3 ประโยค)",
+          "answerGuide": "แนวทางการตอบสำหรับนักเรียน: อธิบายว่าคำตอบที่ดีควรมีอะไรบ้าง",
+          "expected": {
+            "analysis": "แนวทางการวิเคราะห์ที่ถูกต้อง: ควรแยกแยะประเด็นอะไรบ้าง หาความสัมพันธ์อะไร",
+            "reasoning": "หลักการ/เหตุผลที่ควรอ้างถึง: ทฤษฎี กฎ หลักการอะไรที่เกี่ยวข้อง",
+            "creativity": "ลักษณะผลงานที่คาดหวัง: ควรนำเสนออย่างไร มีความคิดสร้างสรรค์อย่างไร",
+            "evidence": "หลักฐาน/ตัวอย่างที่ยืนยันความถูกต้อง: ข้อมูล ตัวเลข ผลลัพธ์ที่ควรแสดง"
+          },
+          "rubric": {
+            "5": "ตอบครบทุกด้าน (A-R-C-E) อย่างลึกซึ้ง มีตัวอย่างชัดเจน สร้างสรรค์",
+            "4": "ตอบครบทุกด้าน มีเหตุผลดี อาจขาดตัวอย่างบ้าง",
+            "3": "ตอบได้ 2-3 ด้าน มีเหตุผลพอสมควร",
+            "2": "ตอบได้ 1-2 ด้าน เหตุผลยังไม่ชัดเจน",
+            "1": "พยายามตอบแต่ยังไม่ตรงประเด็น",
+            "0": "ไม่ตอบหรือไม่เกี่ยวข้อง"
+          },
+          "maxScore": 20,
+          "minCharacters": 100,
+          "required": true,
+          "hints": [
+            "อ่านสถานการณ์ให้เข้าใจก่อนตอบ",
+            "ตอบให้ครบทั้ง 4 ด้าน: วิเคราะห์ เหตุผล สร้างสรรค์ หลักฐาน"
+          ]
+        }
+        // ... สร้างเพิ่มตามจำนวนที่กำหนด
+      ]
+    }
+  ],
+  "selfReflection": {
+    "enabled": ${includeReflection !== false},
+    "prompt": "สะท้อนความคิดจากการทำใบงานวัดผล",
+    "questions": [
+      "ข้อใดที่ท้าทายที่สุด และคุณแก้ปัญหาอย่างไร?",
+      "ทักษะ ARCE ด้านใดที่คุณทำได้ดี และด้านใดที่ต้องพัฒนา?"
+    ]
+  },
+  "scoring": {
+    "totalPoints": 0,
+    "passingScore": 60,
+    "arceDistribution": {
+      "analysis": 25,
+      "reasoning": 25,
+      "creativity": 25,
+      "evidence": 25
+    }
+  },
+  "assessmentCriteria": {
+    "paStandard": {
+      "level1": "ระดับ 1: ต้องปรับปรุง (0-39%)",
+      "level2": "ระดับ 2: พอใช้ (40-59%)",
+      "level3": "ระดับ 3: ดี (60-79%)",
+      "level4": "ระดับ 4: ดีมาก (80-100%)"
+    }
+  }
+}
+
+⚠️ ข้อกำหนดสำคัญ (ต้องปฏิบัติตามอย่างเคร่งครัด):
+1. สร้างสถานการณ์ตามจำนวนที่กำหนด: ${questionCount || 3} สถานการณ์
+2. แต่ละสถานการณ์ต้องมี: situation, task, answerGuide, expected (ครบ 4 ด้าน A-R-C-E)
+3. สถานการณ์ต้องสอดคล้องกับเนื้อหาจากแผนการสอน โดยเฉพาะขั้น Evaluate
+4. task ต้องชัดเจน ไม่กว้างเกินไป นักเรียนต้องรู้ว่าต้องทำอะไร
+5. answerGuide ช่วยบอกนักเรียนว่าคำตอบที่ดีควรมีอะไรบ้าง
+6. expected แต่ละด้านต้องเฉพาะเจาะจง ใช้ประเมินคำตอบได้
+7. maxScore ของแต่ละข้อ = 20 คะแนน (5 คะแนนต่อด้าน ARCE)
+8. question type ต้องเป็น "arce_situation"
+9. เหมาะสมกับระดับชั้น ${gradeLevel || 'ม.4'}`
+      } else {
+        // Regular worksheet prompt (original)
+        prompt = `คุณเป็นผู้เชี่ยวชาญด้านการออกแบบใบงานอิเล็กทรอนิกส์สำหรับการเรียนการสอน
 
 📚 ข้อมูลแผนการสอน:
 - รายวิชา: ${courseCode || ''} ${courseName || ''}
@@ -4594,19 +5122,31 @@ ${includeRubric !== false ? '- แสดงเกณฑ์การให้ค�
 5. ทุกคำถาม open_ended ต้องมี rubric และ hints
 6. metadata.totalQuestions = ${questionCount || 8} (ต้องตรงกับจำนวนที่ระบุ)
 7. ทุก question ต้องมี id ที่ไม่ซ้ำกัน (q1, q2, q3...)`
+      } // End of else block for regular worksheet
 
-      const completion = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: `คุณเป็นผู้เชี่ยวชาญออกแบบใบงานอิเล็กทรอนิกส์ที่:
+      // Build system message based on worksheet type
+      const systemMessage = isArceEvaluate 
+        ? `คุณเป็นผู้เชี่ยวชาญออกแบบ "ใบงานวัดผล ARCE" ที่:
+1. เข้าใจ A.R.C.E. Framework อย่างลึกซึ้ง (Analysis, Reasoning, Creativity, Evidence)
+2. สร้างสถานการณ์ปัญหาที่น่าสนใจและเกี่ยวข้องกับชีวิตจริง
+3. ออกแบบภารกิจที่ชัดเจน นักเรียนเข้าใจว่าต้องทำอะไร
+4. กำหนด Expected_ARCE ที่เฉพาะเจาะจง ใช้ตรวจคำตอบได้
+5. ⚠️ ปฏิบัติตามจำนวนสถานการณ์ที่ระบุอย่างเคร่งครัด
+ตอบเป็นภาษาไทยและ JSON เท่านั้น`
+        : `คุณเป็นผู้เชี่ยวชาญออกแบบใบงานอิเล็กทรอนิกส์ที่:
 1. เข้าใจ 5E Model และ A.R.C.E. Framework อย่างลึกซึ้ง
 2. สร้างคำถามที่กระตุ้นทักษะคิดขั้นสูง (HOTS)
 3. ออกแบบ form ที่ใช้งานง่าย หลากหลายรูปแบบ
 4. สร้าง rubric ที่ชัดเจนสำหรับการประเมิน
 5. ⚠️ ปฏิบัติตามจำนวนคำถามที่ระบุอย่างเคร่งครัด ห้ามสร้างเกินหรือน้อยกว่า
 ตอบเป็นภาษาไทยและ JSON เท่านั้น`
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemMessage
           },
           { role: 'user', content: prompt }
         ],
@@ -4873,7 +5413,10 @@ exports.assessWorksheetSubmission = functions.runWith({
         submissionId,
         worksheetId,
         answers,
-        worksheetStructure
+        worksheetStructure,
+        attemptNumber,
+        previousBestScore,
+        retrySettings
       } = req.body
 
       if (!worksheetId || !answers) {
@@ -4905,18 +5448,43 @@ exports.assessWorksheetSubmission = functions.runWith({
           const answerKey = `${section.id}_${q.id}`
           const studentAnswer = answers[answerKey]
           if (studentAnswer !== undefined && studentAnswer !== '') {
-            questionsForAssessment.push({
-              questionId: q.id,
-              sectionId: section.id,
-              phase: section.phase,
-              type: q.type,
-              prompt: q.prompt,
-              context: q.context || '',
-              arceFocus: q.arceFocus,
-              maxScore: q.maxScore || 5,
-              rubric: q.rubric || null,
-              studentAnswer: studentAnswer
-            })
+            // Handle ARCE Situation question type specially
+            if (q.type === 'arce_situation') {
+              let formattedAnswer = studentAnswer
+              // If it's a structured ARCE answer object
+              if (typeof studentAnswer === 'object' && studentAnswer.type === 'arce_structured') {
+                formattedAnswer = studentAnswer.fullText || JSON.stringify(studentAnswer)
+              }
+              
+              questionsForAssessment.push({
+                questionId: q.id,
+                sectionId: section.id,
+                phase: section.phase,
+                type: q.type,
+                situation: q.situation || '',
+                task: q.task || '',
+                expectedArce: q.expected || null, // Expected answers for each ARCE dimension
+                prompt: q.task || q.prompt || '', // Use task as prompt for ARCE questions
+                context: q.situation || q.context || '',
+                arceFocus: ['analysis', 'reasoning', 'creativity', 'evidence'], // All 4 for ARCE Situation
+                maxScore: q.maxScore || 20,
+                rubric: q.rubric || null,
+                studentAnswer: formattedAnswer
+              })
+            } else {
+              questionsForAssessment.push({
+                questionId: q.id,
+                sectionId: section.id,
+                phase: section.phase,
+                type: q.type,
+                prompt: q.prompt,
+                context: q.context || '',
+                arceFocus: q.arceFocus,
+                maxScore: q.maxScore || 5,
+                rubric: q.rubric || null,
+                studentAnswer: studentAnswer
+              })
+            }
           }
         })
       })
@@ -4925,7 +5493,189 @@ exports.assessWorksheetSubmission = functions.runWith({
         return res.status(400).send({ error: 'No answers to assess' })
       }
 
-      const prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS) ตามเกณฑ์ A.R.C.E., Bloom's Taxonomy และมาตรฐาน PA/DPA
+      // Check if this is an ARCE Evaluate worksheet
+      const isArceEvaluateWorksheet = worksheet.metadata?.worksheetType === 'arce_evaluate'
+      const hasArceSituations = questionsForAssessment.some(q => q.type === 'arce_situation')
+
+      // Build the appropriate prompt based on worksheet type
+      let prompt
+      
+      if (isArceEvaluateWorksheet || hasArceSituations) {
+        // Special assessment prompt for ARCE Evaluate worksheets
+        prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินใบงานวัดผล ARCE (Analysis, Reasoning, Creativity, Evidence)
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงานวัดผล ARCE'}
+- รายวิชา: ${worksheet.metadata?.courseName || ''}
+- หัวข้อ: ${worksheet.metadata?.topic || ''}
+- ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+
+📋 คำตอบของนักเรียนที่ต้องประเมิน:
+${questionsForAssessment.map((q, i) => {
+  if (q.type === 'arce_situation') {
+    return `
+[สถานการณ์ที่ ${i + 1}]
+📌 สถานการณ์: ${q.situation || q.context || ''}
+🎯 ภารกิจ: ${q.task || q.prompt || ''}
+📊 คะแนนเต็ม: ${q.maxScore} คะแนน (5 คะแนนต่อด้าน ARCE)
+${q.expectedArce ? `
+✅ เกณฑ์การประเมิน (Expected_ARCE):
+- Expected_A (การวิเคราะห์ที่คาดหวัง): ${q.expectedArce.analysis || 'ไม่ระบุ'}
+- Expected_R (เหตุผลที่คาดหวัง): ${q.expectedArce.reasoning || 'ไม่ระบุ'}
+- Expected_C (ความสร้างสรรค์ที่คาดหวัง): ${q.expectedArce.creativity || 'ไม่ระบุ'}
+- Expected_E (หลักฐานที่คาดหวัง): ${q.expectedArce.evidence || 'ไม่ระบุ'}` : ''}
+
+📝 คำตอบของนักเรียน:
+"""${q.studentAnswer}"""`
+  } else {
+    return `
+[คำถามที่ ${i + 1}]
+- คำถาม: ${q.prompt}
+${q.context ? `- บริบท: ${q.context}` : ''}
+- ประเภท: ${q.type}
+- คะแนนเต็ม: ${q.maxScore}
+- คำตอบนักเรียน: """${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}"""`
+  }
+}).join('\n---\n')}
+
+🎯 วิธีการประเมิน ARCE (แต่ละด้าน 0-5 คะแนน):
+สำหรับคำถามประเภท ARCE Situation ให้ประเมินแยกแต่ละด้าน:
+
+**A - Analysis (การวิเคราะห์):** 
+- 5 = วิเคราะห์ได้ลึกซึ้ง ครอบคลุม แยกแยะประเด็นได้ครบถ้วน
+- 4 = วิเคราะห์ได้ดี มีประเด็นสำคัญครบ
+- 3 = วิเคราะห์ได้พอสมควร ยังขาดบางประเด็น
+- 2 = วิเคราะห์ได้บางส่วน ไม่ครบถ้วน
+- 1 = พยายามวิเคราะห์แต่ยังไม่ตรงประเด็น
+- 0 = ไม่ได้วิเคราะห์
+
+**R - Reasoning (การให้เหตุผล):**
+- 5 = อ้างเหตุผล/หลักการได้ชัดเจน ถูกต้อง มีตรรกะดีเยี่ยม
+- 4 = อ้างเหตุผลได้ดี มีหลักการสนับสนุน
+- 3 = มีเหตุผลพอสมควร แต่ยังไม่ชัดเจนบางส่วน
+- 2 = มีเหตุผลบ้าง แต่ยังไม่เพียงพอ
+- 1 = พยายามให้เหตุผลแต่ยังไม่ถูกต้อง
+- 0 = ไม่ได้ให้เหตุผล
+
+**C - Creativity (ความคิดสร้างสรรค์):**
+- 5 = มีความคิดริเริ่มโดดเด่น นำเสนอแนวทางใหม่ที่น่าสนใจมาก
+- 4 = มีความคิดสร้างสรรค์ดี นำเสนอได้น่าสนใจ
+- 3 = มีความคิดสร้างสรรค์พอสมควร
+- 2 = มีความคิดบ้าง แต่ยังไม่โดดเด่น
+- 1 = พยายามนำเสนอแต่ยังไม่ชัดเจน
+- 0 = ไม่แสดงความคิดสร้างสรรค์
+
+**E - Evidence (หลักฐาน):**
+- 5 = ยกตัวอย่าง/หลักฐานได้ครบถ้วน ชัดเจน น่าเชื่อถือมาก
+- 4 = มีหลักฐานดี ยกตัวอย่างได้เหมาะสม
+- 3 = มีหลักฐานบางส่วน ยกตัวอย่างได้พอสมควร
+- 2 = มีหลักฐานบ้าง แต่ยังไม่เพียงพอ
+- 1 = พยายามยกตัวอย่างแต่ยังไม่ตรงประเด็น
+- 0 = ไม่มีหลักฐานหรือตัวอย่าง
+
+📊 มาตรฐาน PA/DPA:
+- ระดับ 4 (ดีมาก): 80-100%
+- ระดับ 3 (ดี): 60-79%
+- ระดับ 2 (พอใช้): 40-59%
+- ระดับ 1 (ต้องปรับปรุง): 0-39%
+
+📝 ตอบเป็น JSON (ห้าม markdown wrapper):
+{
+  "summary": {
+    "totalScore": 0,
+    "maxScore": ${worksheet.scoring?.totalPoints || (questionsForAssessment.length * 20)},
+    "percentage": 0,
+    "paLevel": 1,
+    "paLevelText": "ระดับ X: คำอธิบาย",
+    "overallFeedback": "สรุปภาพรวมผลงาน กล่าวถึงจุดเด่นและสิ่งที่ควรพัฒนา",
+    "recommendation": "ข้อเสนอแนะเชิงปฏิบัติสำหรับการพัฒนาต่อ"
+  },
+  "arceScores": {
+    "analysis": {
+      "raw": 0,
+      "max": 5,
+      "percentage": 0,
+      "feedback": "อธิบายทักษะการวิเคราะห์ที่แสดงออก พร้อมยกตัวอย่างจากคำตอบ"
+    },
+    "reasoning": {
+      "raw": 0,
+      "max": 5,
+      "percentage": 0,
+      "feedback": "อธิบายทักษะการให้เหตุผลที่แสดงออก พร้อมยกตัวอย่าง"
+    },
+    "creativity": {
+      "raw": 0,
+      "max": 5,
+      "percentage": 0,
+      "feedback": "อธิบายความคิดสร้างสรรค์ที่แสดงออก พร้อมยกตัวอย่าง"
+    },
+    "evidence": {
+      "raw": 0,
+      "max": 5,
+      "percentage": 0,
+      "feedback": "อธิบายการใช้หลักฐานที่แสดงออก พร้อมยกตัวอย่าง"
+    }
+  },
+  "questionResults": [
+    {
+      "questionId": "arce_1",
+      "sectionId": "section_id",
+      "type": "arce_situation",
+      "situation": "สถานการณ์ที่กำหนด",
+      "task": "ภารกิจที่กำหนด",
+      "studentAnswer": "คำตอบของนักเรียน",
+      "arceBreakdown": {
+        "analysis": {
+          "score": 0,
+          "feedback": "ประเมินการวิเคราะห์เทียบกับ Expected_A",
+          "matchLevel": "เปรียบเทียบกับ Expected_A ได้มาก/น้อยแค่ไหน"
+        },
+        "reasoning": {
+          "score": 0,
+          "feedback": "ประเมินการให้เหตุผลเทียบกับ Expected_R",
+          "matchLevel": "เปรียบเทียบกับ Expected_R ได้มาก/น้อยแค่ไหน"
+        },
+        "creativity": {
+          "score": 0,
+          "feedback": "ประเมินความคิดสร้างสรรค์เทียบกับ Expected_C",
+          "matchLevel": "เปรียบเทียบกับ Expected_C ได้มาก/น้อยแค่ไหน"
+        },
+        "evidence": {
+          "score": 0,
+          "feedback": "ประเมินหลักฐานเทียบกับ Expected_E",
+          "matchLevel": "เปรียบเทียบกับ Expected_E ได้มาก/น้อยแค่ไหน"
+        }
+      },
+      "totalScore": 0,
+      "maxScore": 20,
+      "passed": false,
+      "feedback": "สรุปภาพรวมคำตอบ จุดเด่น-จุดที่ต้องพัฒนา",
+      "suggestion": "คำแนะนำเพื่อพัฒนาแต่ละด้าน ARCE"
+    }
+  ],
+  "strengths": [
+    "จุดแข็ง 1: อธิบายพร้อมยกตัวอย่างจากคำตอบ",
+    "จุดแข็ง 2: ..."
+  ],
+  "weaknesses": [
+    "จุดที่ควรพัฒนา 1: อธิบายพร้อมแนะนำวิธีปรับปรุง",
+    "จุดที่ควรพัฒนา 2: ..."
+  ],
+  "nextSteps": [
+    "ขั้นตอนต่อไป 1: คำแนะนำเชิงปฏิบัติที่ทำได้ทันที",
+    "ขั้นตอนต่อไป 2: ..."
+  ],
+  "teacherNotes": "บันทึกสำหรับครู"
+}
+
+⚠️ ข้อกำหนดสำคัญ:
+1. สำหรับ arce_situation ให้ประเมินแยกทุกด้าน A-R-C-E และรวมคะแนน
+2. เปรียบเทียบคำตอบนักเรียนกับ Expected_ARCE ที่กำหนดไว้
+3. feedback ต้องเฉพาะเจาะจง อ้างอิงจากคำตอบจริง
+4. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ`
+      } else {
+        // Original assessment prompt for regular worksheets
+        prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS) ตามเกณฑ์ A.R.C.E., Bloom's Taxonomy และมาตรฐาน PA/DPA
 
 📚 ข้อมูลใบงาน:
 - ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
@@ -5056,19 +5806,31 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
 5. nextSteps ต้องเป็นสิ่งที่นักเรียนทำได้จริงเพื่อพัฒนาตัวเอง
 6. teacherNotes สำหรับครูใช้วางแผนช่วยเหลือนักเรียน
 7. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ`
+      } // End of else block for regular worksheets
 
-      const completion = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: `คุณเป็นผู้เชี่ยวชาญประเมินทักษะ HOTS ที่:
+      // Use appropriate system message based on worksheet type
+      const systemMessage = (isArceEvaluateWorksheet || hasArceSituations)
+        ? `คุณเป็นผู้เชี่ยวชาญประเมินใบงานวัดผล ARCE ที่:
+1. ประเมินแยกทุกด้าน A-R-C-E อย่างละเอียด
+2. เปรียบเทียบคำตอบกับ Expected_ARCE ที่กำหนดไว้
+3. ให้ feedback ที่สร้างสรรค์ เป็นกำลังใจ
+4. ระบุจุดแข็ง/จุดอ่อนอย่างเฉพาะเจาะจงในแต่ละด้าน
+5. แนะนำวิธีพัฒนาแต่ละด้าน ARCE อย่างเป็นรูปธรรม
+ตอบเป็น JSON ภาษาไทยเท่านั้น`
+        : `คุณเป็นผู้เชี่ยวชาญประเมินทักษะ HOTS ที่:
 1. ประเมินอย่างยุติธรรม ตามหลักฐานในคำตอบ
 2. ให้ feedback ที่สร้างสรรค์ เป็นกำลังใจ
 3. ระบุจุดแข็ง/จุดอ่อนอย่างเฉพาะเจาะจง
 4. แนะนำอย่างเป็นรูปธรรม ทำได้จริง
 5. เข้าใจมาตรฐาน PA/DPA ของไทย
 ตอบเป็น JSON ภาษาไทยเท่านั้น`
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemMessage
           },
           { role: 'user', content: prompt }
         ],
@@ -5143,6 +5905,11 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
         if (submissionData?.studentId && submissionData?.courseId) {
           const progressRef = db.collection('studentProgress').doc(`${submissionData.studentId}_${submissionData.courseId}`)
           const progressDoc = await progressRef.get()
+          
+          // Determine score mode from retrySettings
+          const scoreMode = retrySettings?.scoreMode || worksheet.retrySettings?.scoreMode || 'best'
+          const currentAttempt = attemptNumber || 1
+          const currentScore = assessmentResult.summary.totalScore
 
           const worksheetAssessment = {
             worksheetId,
@@ -5160,6 +5927,9 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
             // 🎯 Store LO assessment with worksheet assessment
             passedLOs: loAssessment.passedLOs || [],
             loAnalysis: loAssessment.analysis || '',
+            // 🔄 Retry tracking
+            attemptNumber: currentAttempt,
+            scoreMode: scoreMode,
             assessedAt: new Date().toISOString()
           }
 
@@ -5170,21 +5940,117 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
             const newPassedLOs = loAssessment.passedLOs || []
             const updatedPassedLOs = [...new Set([...currentPassedLOs, ...newPassedLOs])]
             
+            // 🔄 Calculate recorded score based on score mode
+            const worksheetScores = currentData.worksheetScores || {}
+            const existingScoreData = worksheetScores[worksheetId] || { 
+              bestScore: 0, 
+              latestScore: 0, 
+              firstScore: currentScore,
+              attemptCount: 0,
+              totalScore: 0 
+            }
+            
+            const newBestScore = Math.max(existingScoreData.bestScore || 0, currentScore)
+            const newAttemptCount = (existingScoreData.attemptCount || 0) + 1
+            const newTotalScore = (existingScoreData.totalScore || 0) + currentScore
+            const avgScore = newTotalScore / newAttemptCount
+            
+            // Determine which score to record based on mode
+            let recordedScore
+            switch (scoreMode) {
+              case 'best':
+                recordedScore = newBestScore
+                break
+              case 'latest':
+                recordedScore = currentScore
+                break
+              case 'average':
+                recordedScore = avgScore
+                break
+              case 'first':
+                recordedScore = existingScoreData.firstScore || currentScore
+                break
+              default:
+                recordedScore = newBestScore
+            }
+            
+            // Update worksheet scores tracking
+            worksheetScores[worksheetId] = {
+              bestScore: newBestScore,
+              latestScore: currentScore,
+              firstScore: existingScoreData.firstScore || currentScore,
+              attemptCount: newAttemptCount,
+              totalScore: newTotalScore,
+              avgScore: avgScore,
+              recordedScore: recordedScore,
+              scoreMode: scoreMode,
+              lastAttemptAt: new Date().toISOString()
+            }
+            
             await progressRef.update({
               worksheetAssessments: admin.firestore.FieldValue.arrayUnion(worksheetAssessment),
+              worksheetScores: worksheetScores,
               passedLOs: updatedPassedLOs,
               lastAssessedAt: admin.firestore.FieldValue.serverTimestamp()
             })
           } else {
+            // First submission - initialize everything
+            const worksheetScores = {}
+            worksheetScores[worksheetId] = {
+              bestScore: currentScore,
+              latestScore: currentScore,
+              firstScore: currentScore,
+              attemptCount: 1,
+              totalScore: currentScore,
+              avgScore: currentScore,
+              recordedScore: currentScore,
+              scoreMode: scoreMode,
+              lastAttemptAt: new Date().toISOString()
+            }
+            
             await progressRef.set({
               studentId: submissionData.studentId,
               courseId: submissionData.courseId,
               worksheetAssessments: [worksheetAssessment],
+              worksheetScores: worksheetScores,
               passedLOs: loAssessment.passedLOs || [],
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
               lastAssessedAt: admin.firestore.FieldValue.serverTimestamp()
             })
           }
+
+          // 📊 Log Learning Event for research data (non-blocking)
+          logLearningEvent(db, {
+            studentId: submissionData.studentId,
+            courseId: submissionData.courseId,
+            eventType: EVENT_TYPES.WORKSHEET_SUBMISSION,
+            rubricScores: worksheetAssessment.arceScores,
+            passedLOs: loAssessment.passedLOs || [],
+            metadata: {
+              worksheetId,
+              submissionId,
+              score: assessmentResult.summary.totalScore,
+              maxScore: assessmentResult.summary.maxScore,
+              percentage: assessmentResult.summary.percentage,
+              paLevel: assessmentResult.summary.paLevel,
+              attemptNumber: currentAttempt,
+              scoreMode: scoreMode
+            }
+          }).catch(err => console.error('Failed to log worksheet learning event:', err))
+          
+          // 📈 Update Growth History (non-blocking)
+          updateGrowthHistory(db, {
+            studentId: submissionData.studentId,
+            courseId: submissionData.courseId,
+            rubricScores: worksheetAssessment.arceScores,
+            source: 'worksheet',
+            metadata: { 
+              worksheetId, 
+              submissionId, 
+              attemptNumber: currentAttempt,
+              scoreMode: scoreMode
+            }
+          }).catch(err => console.error('Failed to update worksheet growth history:', err))
         }
 
         // Update worksheet stats
@@ -6959,6 +7825,1716 @@ ${otherPlansContext}
         error: 'Failed to batch generate knowledge sheets',
         details: error.message 
       })
+    }
+  })
+})
+
+// ==========================================
+// 🛡️ RELIABILITY & HEALTH CHECK ENDPOINTS
+// ==========================================
+
+/**
+ * 🏥 System Health Check
+ * ตรวจสอบสถานะของ AI service และ database
+ */
+exports.healthCheck = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const health = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        components: {}
+      }
+      
+      // Check Firestore
+      try {
+        const testRef = db.collection('_healthCheck').doc('ping')
+        await testRef.set({ timestamp: new Date(), source: 'healthCheck' })
+        health.components.firestore = { status: 'healthy' }
+      } catch (error) {
+        health.components.firestore = { status: 'unhealthy', error: error.message }
+        health.status = 'degraded'
+      }
+      
+      // Check OpenAI (if configured)
+      if (openai) {
+        try {
+          await openai.models.list({ limit: 1 })
+          health.components.openai = { status: 'healthy' }
+        } catch (error) {
+          health.components.openai = { status: 'unhealthy', error: error.message }
+          health.status = 'degraded'
+        }
+      } else {
+        health.components.openai = { status: 'not_configured' }
+      }
+      
+      // Get recent reliability stats
+      try {
+        const oneDayAgo = new Date()
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1)
+        
+        const recentAssessments = await db.collection('assessments')
+          .where('createdAt', '>=', oneDayAgo)
+          .limit(100)
+          .get()
+        
+        let totalReliability = 0
+        let fallbackCount = 0
+        let count = 0
+        
+        recentAssessments.forEach(doc => {
+          const data = doc.data()
+          if (data.reliabilityScore !== undefined) {
+            totalReliability += data.reliabilityScore
+            count++
+          }
+          if (data.isFallback) fallbackCount++
+        })
+        
+        health.metrics = {
+          assessmentsLast24h: recentAssessments.size,
+          averageReliability: count > 0 ? Math.round(totalReliability / count) : null,
+          fallbackRate: recentAssessments.size > 0 
+            ? Math.round((fallbackCount / recentAssessments.size) * 100) 
+            : 0
+        }
+      } catch (error) {
+        health.metrics = { error: error.message }
+      }
+      
+      return res.status(health.status === 'healthy' ? 200 : 503).json(health)
+      
+    } catch (error) {
+      return res.status(500).json({
+        status: 'unhealthy',
+        error: error.message
+      })
+    }
+  })
+})
+
+/**
+ * 🔄 Sync Student Progress
+ * Manual trigger เพื่อ sync LO data จาก assessments + worksheets
+ */
+exports.syncProgress = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+      
+      const { studentId, courseId, verifyOnly } = req.body
+      
+      if (!studentId || !courseId) {
+        return res.status(400).send({ error: 'studentId and courseId required' })
+      }
+      
+      if (verifyOnly) {
+        // Just verify consistency
+        const verification = await verifyDataConsistency(db, studentId, courseId)
+        return res.status(200).json({
+          action: 'verify',
+          ...verification
+        })
+      }
+      
+      // Full sync
+      const result = await syncStudentProgress(db, studentId, courseId)
+      return res.status(200).json({
+        action: 'sync',
+        ...result
+      })
+      
+    } catch (error) {
+      console.error('Sync error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 Get Reliability Report
+ * รายงานความน่าเชื่อถือของระบบ
+ */
+exports.reliabilityReport = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const days = parseInt(req.query.days) || 7
+      const cutoffDate = new Date()
+      cutoffDate.setDate(cutoffDate.getDate() - days)
+      
+      // Get assessments in date range
+      const assessmentsSnap = await db.collection('assessments')
+        .where('createdAt', '>=', cutoffDate)
+        .orderBy('createdAt', 'desc')
+        .limit(1000)
+        .get()
+      
+      // Analyze reliability
+      const stats = {
+        totalAssessments: assessmentsSnap.size,
+        period: `${days} days`,
+        reliability: {
+          scores: [],
+          average: 0,
+          min: 100,
+          max: 0,
+          below95: 0
+        },
+        fallbacks: {
+          count: 0,
+          rate: 0,
+          reasons: {}
+        },
+        parseErrors: {
+          count: 0,
+          rate: 0
+        },
+        aiConfidence: {
+          scores: [],
+          average: 0,
+          lowConfidenceCount: 0
+        }
+      }
+      
+      assessmentsSnap.forEach(doc => {
+        const data = doc.data()
+        
+        // Reliability score
+        if (data.reliabilityScore !== undefined) {
+          stats.reliability.scores.push(data.reliabilityScore)
+          stats.reliability.min = Math.min(stats.reliability.min, data.reliabilityScore)
+          stats.reliability.max = Math.max(stats.reliability.max, data.reliabilityScore)
+          if (data.reliabilityScore < 95) stats.reliability.below95++
+        }
+        
+        // Fallbacks
+        if (data.isFallback) {
+          stats.fallbacks.count++
+          const reason = data.fallbackReason || 'unknown'
+          stats.fallbacks.reasons[reason] = (stats.fallbacks.reasons[reason] || 0) + 1
+        }
+        
+        // Parse errors
+        if (data.auditTrail?.parseAttempts > 1) {
+          stats.parseErrors.count++
+        }
+        
+        // AI Confidence
+        if (data.aiConfidence !== undefined && data.aiConfidence !== null) {
+          stats.aiConfidence.scores.push(data.aiConfidence)
+          if (data.aiConfidence < 50) stats.aiConfidence.lowConfidenceCount++
+        }
+      })
+      
+      // Calculate averages
+      if (stats.reliability.scores.length > 0) {
+        stats.reliability.average = Math.round(
+          stats.reliability.scores.reduce((a, b) => a + b, 0) / stats.reliability.scores.length
+        )
+      }
+      
+      if (stats.aiConfidence.scores.length > 0) {
+        stats.aiConfidence.average = Math.round(
+          stats.aiConfidence.scores.reduce((a, b) => a + b, 0) / stats.aiConfidence.scores.length
+        )
+      }
+      
+      // Calculate rates
+      if (stats.totalAssessments > 0) {
+        stats.fallbacks.rate = Math.round((stats.fallbacks.count / stats.totalAssessments) * 100)
+        stats.parseErrors.rate = Math.round((stats.parseErrors.count / stats.totalAssessments) * 100)
+      }
+      
+      // Overall reliability grade
+      let grade = 'A'
+      if (stats.reliability.average < 95) grade = 'B'
+      if (stats.reliability.average < 85) grade = 'C'
+      if (stats.reliability.average < 70) grade = 'D'
+      if (stats.reliability.average < 50) grade = 'F'
+      
+      // Remove raw scores arrays
+      delete stats.reliability.scores
+      delete stats.aiConfidence.scores
+      
+      return res.status(200).json({
+        success: true,
+        grade,
+        meetsTarget: stats.reliability.average >= 95,
+        targetReliability: 95,
+        ...stats,
+        recommendations: generateRecommendations(stats)
+      })
+      
+    } catch (error) {
+      console.error('Reliability report error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📋 Generate Recommendations based on stats
+ */
+function generateRecommendations(stats) {
+  const recommendations = []
+  
+  if (stats.reliability.average < 95) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Reliability below 95% target',
+      action: 'Review AI response parsing and add more fallback handlers'
+    })
+  }
+  
+  if (stats.fallbacks.rate > 5) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: `High fallback rate (${stats.fallbacks.rate}%)`,
+      action: 'Check OpenAI API status and error logs'
+    })
+  }
+  
+  if (stats.parseErrors.rate > 10) {
+    recommendations.push({
+      priority: 'MEDIUM',
+      issue: `High parse error rate (${stats.parseErrors.rate}%)`,
+      action: 'Review AI prompt and response format requirements'
+    })
+  }
+  
+  if (stats.aiConfidence.average < 70) {
+    recommendations.push({
+      priority: 'MEDIUM',
+      issue: `Low AI confidence average (${stats.aiConfidence.average}%)`,
+      action: 'Review question quality and student answer patterns'
+    })
+  }
+  
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: 'INFO',
+      issue: 'System performing well',
+      action: 'Continue monitoring'
+    })
+  }
+  
+  return recommendations
+}
+
+// ==========================================
+// 🔍 AI DETECTION API
+// ==========================================
+
+/**
+ * 🔍 Analyze Text for AI Generation
+ * ตรวจจับว่าข้อความอาจสร้างโดย AI
+ */
+exports.analyzeAIContent = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const { text, typingMetrics, studentId, courseId } = req.body
+      
+      if (!text) {
+        return res.status(400).json({ error: 'text is required' })
+      }
+      
+      // Get student history if available
+      let studentHistory = null
+      if (studentId && courseId) {
+        const assessmentsSnap = await db.collection('assessments')
+          .where('studentId', '==', studentId)
+          .where('courseId', '==', courseId)
+          .orderBy('createdAt', 'desc')
+          .limit(10)
+          .get()
+        
+        if (!assessmentsSnap.empty) {
+          const lengths = []
+          assessmentsSnap.forEach(doc => {
+            const data = doc.data()
+            if (data.answerMetrics?.charCount) {
+              lengths.push(data.answerMetrics.charCount)
+            }
+          })
+          
+          if (lengths.length > 0) {
+            studentHistory = {
+              avgAnswerLength: lengths.reduce((a, b) => a + b, 0) / lengths.length,
+              assessmentCount: lengths.length
+            }
+          }
+        }
+      }
+      
+      // Run comprehensive detection
+      const result = comprehensiveAIDetection(text, typingMetrics, studentHistory)
+      
+      return res.status(200).json({
+        success: true,
+        ...result
+      })
+      
+    } catch (error) {
+      console.error('AI detection error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 🔍 Get Flagged Assessments
+ * ดึงรายการ assessments ที่ถูก flag ว่าอาจเป็น AI
+ */
+exports.getFlaggedAssessments = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, minScore = 60, limit: queryLimit = 50 } = req.query
+      
+      let query = db.collection('assessments')
+        .where('aiDetection.flagged', '==', true)
+        .orderBy('createdAt', 'desc')
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+      
+      const snapshot = await query.limit(parseInt(queryLimit)).get()
+      
+      const flaggedAssessments = []
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        flaggedAssessments.push({
+          id: doc.id,
+          studentId: data.studentId,
+          studentData: data.studentData,
+          courseId: data.courseId,
+          createdAt: data.createdAt?.toDate?.() || data.createdAt,
+          
+          // AI Detection info
+          aiDetection: data.aiDetection,
+          
+          // Answer preview
+          answerPreview: (data.studentAnswer || '').substring(0, 200) + '...',
+          
+          // Scores
+          rubricScores: data.rubricScores,
+          overallScore: data.overallScore,
+          
+          // Context
+          questionData: data.questionData
+        })
+      })
+      
+      // Group by risk level
+      const byRiskLevel = {
+        CRITICAL: flaggedAssessments.filter(a => a.aiDetection?.riskLevel === 'CRITICAL'),
+        HIGH: flaggedAssessments.filter(a => a.aiDetection?.riskLevel === 'HIGH'),
+        MEDIUM: flaggedAssessments.filter(a => a.aiDetection?.riskLevel === 'MEDIUM')
+      }
+      
+      return res.status(200).json({
+        success: true,
+        totalFlagged: flaggedAssessments.length,
+        byRiskLevel: {
+          critical: byRiskLevel.CRITICAL.length,
+          high: byRiskLevel.HIGH.length,
+          medium: byRiskLevel.MEDIUM.length
+        },
+        assessments: flaggedAssessments
+      })
+      
+    } catch (error) {
+      console.error('Get flagged assessments error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 🔍 AI Detection Statistics
+ * สถิติการตรวจจับ AI ทั้งหมด
+ */
+exports.aiDetectionStats = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, days = 30 } = req.query
+      
+      const cutoffDate = new Date()
+      cutoffDate.setDate(cutoffDate.getDate() - parseInt(days))
+      
+      let query = db.collection('assessments')
+        .where('createdAt', '>=', cutoffDate)
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+      
+      const snapshot = await query.get()
+      
+      let total = 0
+      let withDetection = 0
+      let flagged = 0
+      const riskLevels = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+      const scores = []
+      const signalCounts = {}
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        total++
+        
+        if (data.aiDetection) {
+          withDetection++
+          
+          if (data.aiDetection.score) {
+            scores.push(data.aiDetection.score)
+          }
+          
+          if (data.aiDetection.riskLevel) {
+            riskLevels[data.aiDetection.riskLevel] = (riskLevels[data.aiDetection.riskLevel] || 0) + 1
+          }
+          
+          if (data.aiDetection.flagged) {
+            flagged++
+          }
+          
+          if (data.aiDetection.topSignal) {
+            signalCounts[data.aiDetection.topSignal] = (signalCounts[data.aiDetection.topSignal] || 0) + 1
+          }
+        }
+      })
+      
+      // Calculate statistics
+      const avgScore = scores.length > 0 
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) 
+        : 0
+      
+      // Top signals
+      const topSignals = Object.entries(signalCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([signal, count]) => ({ signal, count }))
+      
+      return res.status(200).json({
+        success: true,
+        period: `${days} days`,
+        courseId: courseId || 'all',
+        
+        // Overview
+        totalAssessments: total,
+        withDetection,
+        detectionRate: total > 0 ? Math.round((withDetection / total) * 100) : 0,
+        
+        // Flagging
+        flaggedCount: flagged,
+        flagRate: total > 0 ? Math.round((flagged / total) * 100) : 0,
+        
+        // Risk distribution
+        riskDistribution: riskLevels,
+        
+        // Score statistics
+        scoreStats: {
+          average: avgScore,
+          min: scores.length > 0 ? Math.min(...scores) : 0,
+          max: scores.length > 0 ? Math.max(...scores) : 0
+        },
+        
+        // Top signals
+        topSignals,
+        
+        // Insights
+        insights: generateAIDetectionInsights(total, flagged, riskLevels, avgScore)
+      })
+      
+    } catch (error) {
+      console.error('AI detection stats error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * Generate insights from AI detection data
+ */
+function generateAIDetectionInsights(total, flagged, riskLevels, avgScore) {
+  const insights = []
+  
+  const flagRate = total > 0 ? (flagged / total) * 100 : 0
+  
+  if (flagRate < 5) {
+    insights.push({
+      type: 'positive',
+      message: 'อัตราการ flag ต่ำ (< 5%) - นักเรียนส่วนใหญ่ตอบด้วยตัวเอง'
+    })
+  } else if (flagRate < 15) {
+    insights.push({
+      type: 'warning',
+      message: `อัตราการ flag ปานกลาง (${flagRate.toFixed(1)}%) - ควรตรวจสอบเป็นระยะ`
+    })
+  } else {
+    insights.push({
+      type: 'critical',
+      message: `อัตราการ flag สูง (${flagRate.toFixed(1)}%) - ควรดำเนินการป้องกัน`
+    })
+  }
+  
+  if (riskLevels.CRITICAL > 0) {
+    insights.push({
+      type: 'action',
+      message: `พบ ${riskLevels.CRITICAL} รายการที่ต้องตรวจสอบเร่งด่วน (CRITICAL)`
+    })
+  }
+  
+  if (avgScore > 50) {
+    insights.push({
+      type: 'info',
+      message: `คะแนน AI Detection เฉลี่ย ${avgScore} - สูงกว่าปกติ`
+    })
+  }
+  
+  return insights
+}
+// ==========================================
+// 📐 INTER-RATER RELIABILITY (IRR) API
+// ==========================================
+
+/**
+ * 📊 Calculate Inter-Rater Reliability
+ * คำนวณความเที่ยงตรงระหว่าง AI และ Expert
+ * สำหรับ Research Publication
+ */
+exports.calculateIRR = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, dimension = 'total', minValidations = 5 } = req.query
+      
+      // Get validated assessments
+      let query = db.collection('assessments')
+        .where('expertValidation.isValidated', '==', true)
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+      
+      const snapshot = await query.get()
+      
+      if (snapshot.empty) {
+        return res.status(200).json({
+          success: false,
+          error: 'No validated assessments found',
+          validatedCount: 0
+        })
+      }
+      
+      // Extract validation data
+      const validations = []
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        const expert = data.expertValidation
+        
+        if (expert && data.rubricScores) {
+          validations.push({
+            assessmentId: doc.id,
+            aiScores: {
+              analysis: data.rubricScores.analysis || 0,
+              reasoning: data.rubricScores.reasoning || 0,
+              creativity: data.rubricScores.creativity || 0,
+              evidence: data.rubricScores.evidence || 0
+            },
+            expertScores: {
+              analysis: expert.expertScores?.analysis || 0,
+              reasoning: expert.expertScores?.reasoning || 0,
+              creativity: expert.expertScores?.creativity || 0,
+              evidence: expert.expertScores?.evidence || 0
+            }
+          })
+        }
+      })
+      
+      if (validations.length < minValidations) {
+        return res.status(200).json({
+          success: false,
+          error: `Insufficient validated assessments. Need at least ${minValidations}, got ${validations.length}`,
+          validatedCount: validations.length
+        })
+      }
+      
+      // Calculate comprehensive IRR
+      const irrResults = comprehensiveIRRAnalysis(validations, dimension)
+      
+      // Also calculate per-dimension if total requested
+      let dimensionBreakdown = null
+      if (dimension === 'total') {
+        dimensionBreakdown = {
+          analysis: comprehensiveIRRAnalysis(validations, 'analysis'),
+          reasoning: comprehensiveIRRAnalysis(validations, 'reasoning'),
+          creativity: comprehensiveIRRAnalysis(validations, 'creativity'),
+          evidence: comprehensiveIRRAnalysis(validations, 'evidence')
+        }
+      }
+      
+      return res.status(200).json({
+        success: true,
+        courseId: courseId || 'all',
+        dimension,
+        validatedCount: validations.length,
+        
+        // Main results
+        results: irrResults,
+        
+        // Per-dimension breakdown
+        dimensionBreakdown,
+        
+        // Publication readiness
+        publicationReady: irrResults.summary?.meetsPublicationStandard || false,
+        
+        // Generated at
+        generatedAt: new Date().toISOString()
+      })
+      
+    } catch (error) {
+      console.error('Calculate IRR error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 IRR Report for Publication
+ * สร้างรายงาน IRR พร้อมตีพิมพ์
+ */
+exports.irrReport = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, format = 'json' } = req.query
+      
+      // Get validated assessments
+      let query = db.collection('assessments')
+        .where('expertValidation.isValidated', '==', true)
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+      
+      const snapshot = await query.get()
+      
+      // Extract data
+      const validations = []
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        const expert = data.expertValidation
+        
+        if (expert && data.rubricScores) {
+          validations.push({
+            aiScores: {
+              analysis: data.rubricScores.analysis || 0,
+              reasoning: data.rubricScores.reasoning || 0,
+              creativity: data.rubricScores.creativity || 0,
+              evidence: data.rubricScores.evidence || 0
+            },
+            expertScores: {
+              analysis: expert.expertScores?.analysis || 0,
+              reasoning: expert.expertScores?.reasoning || 0,
+              creativity: expert.expertScores?.creativity || 0,
+              evidence: expert.expertScores?.evidence || 0
+            }
+          })
+        }
+      })
+      
+      const n = validations.length
+      
+      if (n < 5) {
+        return res.status(200).json({
+          success: false,
+          error: `Need at least 5 validated assessments for IRR report, got ${n}`,
+          n
+        })
+      }
+      
+      // Calculate IRR for each dimension
+      const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence', 'total']
+      const results = {}
+      
+      for (const dim of dimensions) {
+        results[dim] = comprehensiveIRRAnalysis(validations, dim)
+      }
+      
+      // Generate publication-ready report
+      const report = {
+        title: 'Inter-Rater Reliability Analysis: AI vs Expert HOTS Assessment',
+        generatedAt: new Date().toISOString(),
+        sampleSize: n,
+        courseId: courseId || 'All Courses',
+        
+        // Summary table
+        summaryTable: {
+          headers: ['Dimension', 'N', 'Weighted κ', 'ICC(2,1)', 'r', 'MAE', 'Interpretation'],
+          rows: dimensions.map(dim => ({
+            dimension: dim.charAt(0).toUpperCase() + dim.slice(1),
+            n: results[dim].n,
+            weightedKappa: results[dim].weightedKappa?.weightedKappa,
+            icc: results[dim].icc?.icc,
+            pearsonR: results[dim].pearsonR?.r,
+            mae: results[dim].mae?.mae,
+            interpretation: results[dim].summary?.overallReliability
+          }))
+        },
+        
+        // Detailed results
+        detailedResults: results,
+        
+        // Publication metrics
+        publicationMetrics: {
+          meetsKappaThreshold: results.total.weightedKappa?.weightedKappa >= 0.60,
+          meetsICCThreshold: results.total.icc?.icc >= 0.70,
+          meetsSampleSize: n >= 30,
+          overallReady: (results.total.weightedKappa?.weightedKappa >= 0.60) && 
+                        (results.total.icc?.icc >= 0.70) && (n >= 30)
+        },
+        
+        // Citation text
+        citationText: results.total.reportText,
+        
+        // Recommendations
+        recommendations: results.total.summary?.recommendations || []
+      }
+      
+      if (format === 'csv') {
+        // Generate CSV
+        const BOM = '\uFEFF'
+        let csv = 'Dimension,N,Weighted_Kappa,Kappa_Interpretation,ICC,ICC_CI_Lower,ICC_CI_Upper,ICC_Interpretation,Pearson_r,MAE,RMSE,Percent_Agreement\n'
+        
+        dimensions.forEach(dim => {
+          const r = results[dim]
+          csv += `${dim},${r.n},${r.weightedKappa?.weightedKappa || ''},${r.weightedKappa?.interpretation || ''},`
+          csv += `${r.icc?.icc || ''},${r.icc?.ci95?.lower || ''},${r.icc?.ci95?.upper || ''},${r.icc?.interpretation || ''},`
+          csv += `${r.pearsonR?.r || ''},${r.mae?.mae || ''},${r.mae?.rmse || ''},${r.percentAgreement?.percentage || ''}%\n`
+        })
+        
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename=IRR_Report_${new Date().toISOString().split('T')[0]}.csv`)
+        return res.send(BOM + csv)
+      }
+      
+      return res.status(200).json({
+        success: true,
+        report
+      })
+      
+    } catch (error) {
+      console.error('IRR Report error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 Effect Size Calculation (Pre-Post)
+ * คำนวณขนาดผลกระทบสำหรับ RQ1
+ */
+exports.calculateEffectSize = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, experimentGroup } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      // Get pretest and posttest data
+      const eventsQuery = db.collection('learningEvents')
+        .where('courseId', '==', courseId)
+        .where('eventType', 'in', ['PRETEST', 'POSTTEST'])
+      
+      const snapshot = await eventsQuery.get()
+      
+      const studentData = {}
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        const studentId = data.studentId
+        
+        if (!studentData[studentId]) {
+          studentData[studentId] = { pretest: null, posttest: null }
+        }
+        
+        const avgScore = data.score_average || 
+          ((data.score_analysis || 0) + (data.score_reasoning || 0) + 
+           (data.score_creativity || 0) + (data.score_evidence || 0)) / 4
+        
+        if (data.eventType === 'PRETEST') {
+          studentData[studentId].pretest = avgScore
+        } else if (data.eventType === 'POSTTEST') {
+          studentData[studentId].posttest = avgScore
+        }
+      })
+      
+      // Filter students with both pre and post
+      const preScores = []
+      const postScores = []
+      
+      Object.values(studentData).forEach(s => {
+        if (s.pretest !== null && s.posttest !== null) {
+          preScores.push(s.pretest)
+          postScores.push(s.posttest)
+        }
+      })
+      
+      if (preScores.length < 5) {
+        return res.status(200).json({
+          success: false,
+          error: `Insufficient paired data. Need at least 5 pairs, got ${preScores.length}`,
+          n: preScores.length
+        })
+      }
+      
+      // Calculate effect size
+      const effectSize = calculateCohensD(preScores, postScores)
+      
+      // Calculate paired t-test (simplified)
+      const differences = preScores.map((pre, i) => postScores[i] - pre)
+      const meanDiff = differences.reduce((a, b) => a + b, 0) / differences.length
+      const sdDiff = Math.sqrt(differences.reduce((sum, d) => sum + Math.pow(d - meanDiff, 2), 0) / (differences.length - 1))
+      const tValue = meanDiff / (sdDiff / Math.sqrt(differences.length))
+      const df = differences.length - 1
+      // Simplified p-value approximation
+      const pValue = Math.exp(-0.717 * Math.abs(tValue) - 0.416 * tValue * tValue / df)
+      
+      return res.status(200).json({
+        success: true,
+        courseId,
+        n: preScores.length,
+        
+        // Descriptives
+        pretest: {
+          mean: effectSize.preMean,
+          sd: effectSize.preSD
+        },
+        posttest: {
+          mean: effectSize.postMean,
+          sd: effectSize.postSD
+        },
+        
+        // Effect size
+        cohensD: effectSize.cohensD,
+        interpretation: effectSize.interpretation,
+        
+        // Statistical test
+        pairedTTest: {
+          t: Math.round(tValue * 1000) / 1000,
+          df,
+          p: Math.round(pValue * 10000) / 10000,
+          significant: pValue < 0.05
+        },
+        
+        // Mean difference
+        meanDifference: Math.round(meanDiff * 1000) / 1000,
+        
+        // Report text
+        reportText: `A paired-samples t-test was conducted to compare HOTS scores before and after using the AI assessment system. ` +
+          `There was a significant difference in scores before (M=${effectSize.preMean}, SD=${effectSize.preSD}) and ` +
+          `after (M=${effectSize.postMean}, SD=${effectSize.postSD}) the intervention; t(${df})=${Math.round(tValue * 100) / 100}, p=${pValue < 0.001 ? '<.001' : pValue.toFixed(3)}. ` +
+          `Cohen's d = ${effectSize.cohensD}, indicating a ${effectSize.interpretation.toLowerCase()} effect size.`
+      })
+      
+    } catch (error) {
+      console.error('Effect size calculation error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+// ==========================================
+// 📊 RESEARCH DATA API ENDPOINTS
+// ==========================================
+
+/**
+ * 📤 Export Research Dataset (CSV)
+ * ส่งออกข้อมูลการเรียนรู้เป็น CSV สำหรับงานวิจัย
+ */
+exports.exportResearchData = functions.runWith({ 
+  timeoutSeconds: 300,
+  memory: '1GB'
+}).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, format = 'csv', dateFrom, dateTo } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      if (format === 'csv') {
+        const result = await exportResearchCSV(db, courseId, { dateFrom, dateTo })
+        
+        if (!result.success) {
+          return res.status(500).json({ error: result.error })
+        }
+        
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename=${result.filename}`)
+        return res.send(result.csv)
+      }
+      
+      // JSON format
+      const summary = await generateResearchSummary(db, courseId)
+      return res.json(summary)
+      
+    } catch (error) {
+      console.error('Export research data error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 Research Summary & Statistics
+ * สรุปสถิติเชิงพรรณนาสำหรับงานวิจัย
+ */
+exports.researchSummary = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      const summary = await generateResearchSummary(db, courseId)
+      
+      // Add correlation analysis
+      const correlation = await calculateScoreCorrelation(db, courseId)
+      
+      return res.json({
+        ...summary,
+        correlation
+      })
+      
+    } catch (error) {
+      console.error('Research summary error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📐 Correlation Analysis
+ * วิเคราะห์ความสัมพันธ์ระหว่าง Chat และ Worksheet scores
+ */
+exports.correlationAnalysis = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      const result = await calculateScoreCorrelation(db, courseId)
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Correlation analysis error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📚 Log Intervention (Micro-lesson, Knowledge Sheet, etc.)
+ * บันทึกการเรียนเสริม/แทรกแซง
+ */
+exports.logInterventionEvent = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const {
+        studentId,
+        courseId,
+        interventionType, // 'micro_lesson' | 'knowledge_sheet' | 'teacher_feedback' | 'scaffolding'
+        contentId,
+        contentTitle,
+        targetLOs,
+        durationSec,
+        completionRate,
+        teacherId,
+        notes
+      } = req.body
+      
+      if (!studentId || !courseId || !interventionType) {
+        return res.status(400).json({ 
+          error: 'Missing required fields: studentId, courseId, interventionType' 
+        })
+      }
+      
+      const result = await logIntervention(db, {
+        studentId,
+        courseId,
+        interventionType,
+        contentId,
+        contentTitle,
+        targetLOs,
+        durationSec,
+        completionRate,
+        teacherId,
+        notes
+      })
+      
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Log intervention error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📈 Student Growth History
+ * ดึงประวัติพัฒนาการของนักเรียน
+ */
+exports.getGrowthHistory = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { studentId, courseId } = req.query
+      
+      if (!studentId || !courseId) {
+        return res.status(400).json({ error: 'studentId and courseId are required' })
+      }
+      
+      const historyDoc = await db.collection('studentGrowthHistory')
+        .doc(`${studentId}_${courseId}`).get()
+      
+      if (!historyDoc.exists) {
+        return res.json({
+          success: true,
+          studentId,
+          courseId,
+          history: [],
+          message: 'No growth history found'
+        })
+      }
+      
+      const data = historyDoc.data()
+      
+      return res.json({
+        success: true,
+        studentId,
+        courseId,
+        history: data.history || [],
+        latestScores: data.latestScores,
+        latestAverage: data.latestAverage,
+        totalEntries: data.totalEntries,
+        firstEntry: data.firstEntry,
+        lastUpdated: data.lastUpdated
+      })
+      
+    } catch (error) {
+      console.error('Get growth history error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 🔬 Research Data Quality Check
+ * ตรวจสอบคุณภาพและความครบถ้วนของข้อมูลวิจัย
+ */
+exports.researchDataQuality = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      // Check data completeness
+      const [assessments, worksheets, events, interventions, growth] = await Promise.all([
+        db.collection('assessments').where('courseId', '==', courseId).get(),
+        db.collection('worksheetSubmissions').where('courseId', '==', courseId).get(),
+        db.collection('learningEvents').where('courseId', '==', courseId).get(),
+        db.collection('interventions').where('courseId', '==', courseId).get(),
+        db.collection('studentGrowthHistory').where('courseId', '==', courseId).get()
+      ])
+      
+      // Check for missing fields in assessments
+      let missingReliabilityScore = 0
+      let missingAiConfidence = 0
+      let missingLOAssessment = 0
+      
+      assessments.forEach(doc => {
+        const data = doc.data()
+        if (data.reliabilityScore === undefined) missingReliabilityScore++
+        if (data.aiConfidence === undefined) missingAiConfidence++
+        if (!data.loAssessment) missingLOAssessment++
+      })
+      
+      const quality = {
+        courseId,
+        checkedAt: new Date().toISOString(),
+        
+        // Data Volume
+        dataVolume: {
+          assessments: assessments.size,
+          worksheets: worksheets.size,
+          learningEvents: events.size,
+          interventions: interventions.size,
+          growthHistories: growth.size
+        },
+        
+        // Data Completeness
+        completeness: {
+          assessmentsWithReliabilityScore: assessments.size > 0 
+            ? Math.round(((assessments.size - missingReliabilityScore) / assessments.size) * 100) 
+            : 0,
+          assessmentsWithAiConfidence: assessments.size > 0 
+            ? Math.round(((assessments.size - missingAiConfidence) / assessments.size) * 100) 
+            : 0,
+          assessmentsWithLOAssessment: assessments.size > 0 
+            ? Math.round(((assessments.size - missingLOAssessment) / assessments.size) * 100) 
+            : 0
+        },
+        
+        // Data Synchronization
+        synchronization: {
+          eventToAssessmentRatio: assessments.size > 0 
+            ? Math.round((events.size / assessments.size) * 100) / 100 
+            : 0,
+          hasInterventionData: interventions.size > 0,
+          hasGrowthTracking: growth.size > 0
+        },
+        
+        // Research Readiness Score (0-100) - Legacy version
+        researchReadinessScore: calculateResearchReadinessLegacy(
+          assessments.size,
+          events.size,
+          interventions.size,
+          growth.size,
+          missingReliabilityScore,
+          missingAiConfidence
+        ),
+        
+        // Recommendations
+        recommendations: generateDataQualityRecommendations({
+          assessments: assessments.size,
+          events: events.size,
+          interventions: interventions.size,
+          growth: growth.size,
+          missingReliability: missingReliabilityScore,
+          missingConfidence: missingAiConfidence
+        })
+      }
+      
+      return res.json(quality)
+      
+    } catch (error) {
+      console.error('Research data quality check error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * Calculate Research Readiness Score (Legacy - for researchDataQuality)
+ */
+function calculateResearchReadinessLegacy(assessments, events, interventions, growth, missingReliability, missingConfidence) {
+  let score = 0
+  
+  // Volume score (max 30)
+  if (assessments >= 100) score += 30
+  else if (assessments >= 50) score += 20
+  else if (assessments >= 20) score += 10
+  
+  // Event tracking score (max 25)
+  if (events >= assessments * 0.9) score += 25
+  else if (events >= assessments * 0.5) score += 15
+  else if (events > 0) score += 5
+  
+  // Intervention data score (max 20)
+  if (interventions >= 10) score += 20
+  else if (interventions >= 5) score += 10
+  else if (interventions > 0) score += 5
+  
+  // Growth tracking score (max 15)
+  if (growth >= assessments * 0.8) score += 15
+  else if (growth > 0) score += 10
+  
+  // Data quality score (max 10)
+  const completenessRate = assessments > 0 
+    ? ((assessments - missingReliability - missingConfidence) / (assessments * 2)) 
+    : 0
+  score += Math.round(completenessRate * 10)
+  
+  return Math.min(100, score)
+}
+
+/**
+ * Generate Data Quality Recommendations
+ */
+function generateDataQualityRecommendations(data) {
+  const recommendations = []
+  
+  if (data.assessments < 30) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: `ข้อมูลน้อยเกินไป (${data.assessments} assessments)`,
+      action: 'ต้องมีข้อมูลอย่างน้อย 30 ชุดสำหรับงานวิจัยที่น่าเชื่อถือ',
+      impact: 'Statistical Significance'
+    })
+  }
+  
+  if (data.events < data.assessments * 0.5) {
+    recommendations.push({
+      priority: 'MEDIUM',
+      issue: 'Learning Events ไม่ครบถ้วน',
+      action: 'ตรวจสอบว่าระบบบันทึก Events ทุกครั้งที่มีการประเมิน',
+      impact: 'Data Triangulation'
+    })
+  }
+  
+  if (data.interventions === 0) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'ไม่มีข้อมูล Intervention',
+      action: 'เพิ่มการบันทึกเมื่อนักเรียนดู Micro-lesson หรือ Knowledge Sheet',
+      impact: 'Pre/Post Analysis'
+    })
+  }
+  
+  if (data.growth === 0) {
+    recommendations.push({
+      priority: 'MEDIUM',
+      issue: 'ไม่มี Growth History',
+      action: 'ระบบจะเริ่มบันทึกอัตโนมัติในการประเมินครั้งถัดไป',
+      impact: 'Longitudinal Analysis'
+    })
+  }
+  
+  if (data.missingReliability > data.assessments * 0.1) {
+    recommendations.push({
+      priority: 'LOW',
+      issue: `${data.missingReliability} assessments ไม่มี Reliability Score`,
+      action: 'ข้อมูลเก่าก่อนอัพเกรดระบบ ไม่กระทบงานวิจัยหากใช้ข้อมูลใหม่',
+      impact: 'System Validation'
+    })
+  }
+  
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: 'INFO',
+      issue: 'ข้อมูลพร้อมสำหรับงานวิจัย',
+      action: 'สามารถ Export และวิเคราะห์ได้ทันที',
+      impact: 'Ready for Analysis'
+    })
+  }
+  
+  return recommendations
+}
+
+// ============================================================
+// 🧹 SCHEDULED CLEANUP FUNCTIONS
+// ============================================================
+
+/**
+ * Scheduled cleanup for rate limits (runs daily at 3 AM)
+ */
+exports.scheduledCleanupRateLimits = functions.pubsub
+  .schedule('0 3 * * *')
+  .timeZone('Asia/Bangkok')
+  .onRun(async (context) => {
+    console.log('🧹 Starting scheduled rate limit cleanup...')
+    
+    try {
+      const result = await cleanupRateLimits(db)
+      console.log(`✅ Rate limit cleanup completed: ${result.deleted} entries deleted`)
+      
+      return { success: true, deleted: result.deleted }
+    } catch (error) {
+      console.error('❌ Rate limit cleanup failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+/**
+ * Scheduled cleanup for old AI audit logs (runs weekly on Sunday at 2 AM)
+ * Keeps logs for 30 days
+ */
+exports.scheduledCleanupAuditLogs = functions.pubsub
+  .schedule('0 2 * * 0')
+  .timeZone('Asia/Bangkok')
+  .onRun(async (context) => {
+    console.log('🧹 Starting scheduled audit log cleanup...')
+    
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - 30) // 30 days ago
+    
+    try {
+      // Clean old AI parse logs
+      const parseLogsSnap = await db.collection('aiParseLogs')
+        .where('timestamp', '<', cutoffDate)
+        .limit(500)
+        .get()
+      
+      if (!parseLogsSnap.empty) {
+        const batch = db.batch()
+        parseLogsSnap.docs.forEach(doc => batch.delete(doc.ref))
+        await batch.commit()
+        console.log(`✅ Deleted ${parseLogsSnap.size} old AI parse logs`)
+      }
+      
+      // Clean old anti-cheat logs (keep resolved ones for 7 days only)
+      const resolvedCutoff = new Date()
+      resolvedCutoff.setDate(resolvedCutoff.getDate() - 7)
+      
+      const antiCheatSnap = await db.collection('antiCheatLogs')
+        .where('resolved', '==', true)
+        .where('timestamp', '<', resolvedCutoff)
+        .limit(500)
+        .get()
+      
+      if (!antiCheatSnap.empty) {
+        const batch = db.batch()
+        antiCheatSnap.docs.forEach(doc => batch.delete(doc.ref))
+        await batch.commit()
+        console.log(`✅ Deleted ${antiCheatSnap.size} resolved anti-cheat logs`)
+      }
+      
+      return { 
+        success: true, 
+        deletedParseLogs: parseLogsSnap.size,
+        deletedAntiCheatLogs: antiCheatSnap.size
+      }
+    } catch (error) {
+      console.error('❌ Audit log cleanup failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+// ============================================================
+// 🔬 RESEARCH DATA PIPELINE v3.0 - NEW APIs
+// ============================================================
+
+/**
+ * 📊 Sequential Pattern Mining - Log Event
+ * บันทึก micro-level events สำหรับ Sequential Pattern Mining
+ */
+exports.logSequenceEventAPI = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const { sessionId, studentId, courseId, questionId, eventType, data } = req.body
+      
+      if (!sessionId || !studentId || !questionId || !eventType) {
+        return res.status(400).json({ 
+          error: 'Missing required fields: sessionId, studentId, questionId, eventType' 
+        })
+      }
+      
+      // Validate eventType
+      const validTypes = Object.keys(SEQUENCE_EVENT_TYPES)
+      if (!validTypes.includes(eventType)) {
+        return res.status(400).json({ 
+          error: `Invalid eventType. Must be one of: ${validTypes.join(', ')}` 
+        })
+      }
+      
+      const result = await logSequenceEvent(db, {
+        sessionId,
+        studentId,
+        courseId,
+        questionId,
+        eventType,
+        data
+      })
+      
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Log sequence event error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 Sequential Pattern Mining - Finalize Sequence
+ * สรุป sequence เมื่อจบการตอบคำถาม
+ */
+exports.finalizeSequenceAPI = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const { sessionId, questionId } = req.body
+      
+      if (!sessionId || !questionId) {
+        return res.status(400).json({ 
+          error: 'Missing required fields: sessionId, questionId' 
+        })
+      }
+      
+      const result = await finalizeSequence(db, sessionId, questionId)
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Finalize sequence error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 K-Anonymity Export
+ * Enhanced anonymization สำหรับ publication-ready data
+ */
+exports.exportKAnonymousDataAPI = functions.runWith({
+  timeoutSeconds: 300,
+  memory: '1GB'
+}).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, k, level, format } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      const result = await exportKAnonymousData(db, courseId, {
+        k: k ? parseInt(k) : 5,
+        level: level || 'research',
+        format: format || 'json'
+      })
+      
+      if (!result.success) {
+        return res.status(500).json({ error: result.error })
+      }
+      
+      if (format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename=k${k}_${level}_${courseId}.csv`)
+        return res.send(result.data)
+      }
+      
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('K-Anonymity export error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 🔒 Re-identification Risk Assessment
+ * ประเมินความเสี่ยงในการระบุตัวตนจากข้อมูล
+ */
+exports.assessReidentificationRiskAPI = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      const result = await assessReidentificationRisk(db, courseId)
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Risk assessment error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📈 Research Readiness Score v2
+ * With Power Analysis and Statistical Requirements
+ */
+exports.researchReadinessV2 = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId } = req.query
+      
+      if (!courseId) {
+        return res.status(400).json({ error: 'courseId is required' })
+      }
+      
+      const result = await calculateResearchReadiness(db, courseId)
+      return res.json(result)
+      
+    } catch (error) {
+      console.error('Research readiness error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 📊 Get Learning Sequences
+ * ดึงข้อมูล sequential pattern ของนักเรียน
+ */
+exports.getLearningSequences = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { courseId, studentId, sessionId, finalizedOnly } = req.query
+      
+      let query = db.collection('learningSequences')
+      
+      if (courseId) query = query.where('courseId', '==', courseId)
+      if (studentId) query = query.where('studentId', '==', studentId)
+      if (sessionId) query = query.where('sessionId', '==', sessionId)
+      if (finalizedOnly === 'true') query = query.where('finalized', '==', true)
+      
+      const sequences = await query.limit(500).get()
+      
+      const results = sequences.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      
+      // Calculate common patterns if courseId provided
+      let patternAnalysis = null
+      if (courseId && results.length > 0) {
+        const patterns = results
+          .filter(r => r.sequenceSummary?.pattern)
+          .map(r => r.sequenceSummary.pattern)
+        
+        const patternCounts = {}
+        patterns.forEach(p => {
+          patternCounts[p] = (patternCounts[p] || 0) + 1
+        })
+        
+        const sortedPatterns = Object.entries(patternCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+        
+        patternAnalysis = {
+          totalSequences: patterns.length,
+          uniquePatterns: Object.keys(patternCounts).length,
+          topPatterns: sortedPatterns.map(([pattern, count]) => ({
+            pattern,
+            count,
+            percentage: Math.round((count / patterns.length) * 100)
+          }))
+        }
+      }
+      
+      return res.json({
+        success: true,
+        sequences: results,
+        count: results.length,
+        patternAnalysis
+      })
+      
+    } catch (error) {
+      console.error('Get learning sequences error:', error)
+      return res.status(500).json({ error: error.message })
+    }
+  })
+})
+
+/**
+ * Sync worksheet counts in learning rooms
+ * Removes deleted worksheet IDs and returns actual count
+ */
+exports.syncLearningRoomWorksheets = functions.runWith({
+  timeoutSeconds: 60,
+  memory: '256MB'
+}).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { roomId } = req.body
+      
+      if (roomId) {
+        // Sync specific room
+        const roomDoc = await db.collection('learningRooms').doc(roomId).get()
+        if (!roomDoc.exists) {
+          return res.status(404).send({ error: 'Room not found' })
+        }
+        
+        const roomData = roomDoc.data()
+        const worksheetIds = roomData.worksheetIds || []
+        
+        // Check which worksheets actually exist
+        const existingIds = []
+        for (const wsId of worksheetIds) {
+          const wsDoc = await db.collection('eWorksheets').doc(wsId).get()
+          if (wsDoc.exists) {
+            existingIds.push(wsId)
+          }
+        }
+        
+        // Update if different
+        if (existingIds.length !== worksheetIds.length) {
+          await db.collection('learningRooms').doc(roomId).update({
+            worksheetIds: existingIds
+          })
+        }
+        
+        return res.status(200).send({
+          success: true,
+          roomId,
+          originalCount: worksheetIds.length,
+          actualCount: existingIds.length,
+          removed: worksheetIds.length - existingIds.length
+        })
+      } else {
+        // Sync all rooms
+        const roomsSnap = await db.collection('learningRooms').get()
+        let totalSynced = 0
+        let totalRemoved = 0
+        
+        for (const roomDoc of roomsSnap.docs) {
+          const roomData = roomDoc.data()
+          const worksheetIds = roomData.worksheetIds || []
+          
+          // Check which worksheets actually exist
+          const existingIds = []
+          for (const wsId of worksheetIds) {
+            const wsDoc = await db.collection('eWorksheets').doc(wsId).get()
+            if (wsDoc.exists) {
+              existingIds.push(wsId)
+            }
+          }
+          
+          // Update if different
+          if (existingIds.length !== worksheetIds.length) {
+            await db.collection('learningRooms').doc(roomDoc.id).update({
+              worksheetIds: existingIds
+            })
+            totalSynced++
+            totalRemoved += worksheetIds.length - existingIds.length
+          }
+        }
+        
+        return res.status(200).send({
+          success: true,
+          roomsChecked: roomsSnap.size,
+          roomsSynced: totalSynced,
+          worksheetsRemoved: totalRemoved
+        })
+      }
+    } catch (error) {
+      console.error('❌ Sync error:', error)
+      return res.status(500).send({ error: error.message })
     }
   })
 })

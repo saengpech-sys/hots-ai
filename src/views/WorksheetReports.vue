@@ -1,4 +1,5 @@
 <template>
+  <ErrorBoundary context="WorksheetReports">
   <div class="worksheet-reports-view">
     <!-- Top Navigation -->
     <nav class="top-navbar">
@@ -502,11 +503,13 @@
       </div>
     </div>
   </div>
+  </ErrorBoundary>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { db } from '@/firebase/config'
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'

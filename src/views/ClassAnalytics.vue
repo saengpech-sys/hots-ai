@@ -190,6 +190,72 @@
         </div>
       </div>
 
+      <!-- AI Detection Section -->
+      <div class="section ai-detection">
+        <div class="section-header">
+          <h2>🤖 AI Detection & Integrity</h2>
+          <button 
+            class="btn-refresh-small" 
+            @click="loadAIDetectionStats"
+            :disabled="aiDetectionLoading"
+          >
+            {{ aiDetectionLoading ? '⏳' : '🔄' }}
+          </button>
+        </div>
+
+        <div v-if="aiDetectionStats" class="ai-stats-grid">
+          <div class="ai-stat-card">
+            <div class="stat-icon">🔍</div>
+            <div class="stat-content">
+              <span class="stat-value">{{ aiDetectionStats.totalAnalyzed || 0 }}</span>
+              <span class="stat-label">Analyzed</span>
+            </div>
+          </div>
+          <div class="ai-stat-card warning">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-content">
+              <span class="stat-value">{{ aiDetectionStats.flaggedCount || 0 }}</span>
+              <span class="stat-label">Flagged</span>
+            </div>
+          </div>
+          <div class="ai-stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-content">
+              <span class="stat-value">{{ (aiDetectionStats.flagRate * 100).toFixed(1) }}%</span>
+              <span class="stat-label">Flag Rate</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flagged Assessments List -->
+        <div v-if="flaggedAssessments.length > 0" class="flagged-list">
+          <h3>⚠️ Flagged Submissions ({{ flaggedAssessments.length }})</h3>
+          <div 
+            v-for="item in flaggedAssessments.slice(0, 10)" 
+            :key="item.id"
+            class="flagged-item"
+          >
+            <div class="flagged-info">
+              <span class="student-name">{{ getStudentName(item.studentId) }}</span>
+              <span class="flag-reason">{{ item.flagReason || 'Suspected AI Content' }}</span>
+              <span class="flag-score">Risk: {{ (item.aiScore * 100).toFixed(0) }}%</span>
+            </div>
+            <div class="flagged-date">{{ formatDate(item.createdAt) }}</div>
+            <button class="btn-review" @click="viewStudentDetail(item.studentId)">
+              ตรวจสอบ →
+            </button>
+          </div>
+          
+          <p v-if="flaggedAssessments.length > 10" class="more-count">
+            +{{ flaggedAssessments.length - 10 }} รายการเพิ่มเติม
+          </p>
+        </div>
+
+        <div v-else-if="!aiDetectionLoading" class="no-flagged">
+          ✅ ไม่พบรายการที่ต้องสงสัยในรายวิชานี้
+        </div>
+      </div>
+
       <!-- Report Metadata -->
       <div class="report-metadata">
         <p>
@@ -212,9 +278,15 @@ import { collection, query, where, getDocs } from 'firebase/firestore'
 const router = useRouter()
 const dashboardStore = useDashboardStore()
 const authStore = useAuthStore()
+const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
 
 const selectedCourseId = ref('')
 const courses = ref([])
+
+// AI Detection State
+const aiDetectionLoading = ref(false)
+const aiDetectionStats = ref(null)
+const flaggedAssessments = ref([])
 
 // Computed
 const averageOverallScore = computed(() => {
@@ -252,6 +324,8 @@ async function loadCourses() {
 async function onCourseChange() {
   if (!selectedCourseId.value) {
     dashboardStore.clearReport()
+    aiDetectionStats.value = null
+    flaggedAssessments.value = []
     return
   }
 
@@ -267,9 +341,41 @@ async function onCourseChange() {
       ]
       const uniqueIds = [...new Set(allStudentIds)]
       await dashboardStore.fetchAllStudentDetails(uniqueIds)
+      
+      // Load AI Detection data
+      await loadAIDetectionStats()
     }
   } catch (error) {
     console.error('Load report error:', error)
+  }
+}
+
+async function loadAIDetectionStats() {
+  if (!selectedCourseId.value) return
+  
+  aiDetectionLoading.value = true
+  try {
+    // Get AI detection stats
+    const statsResponse = await fetch(`${functionsUrl}/aiDetectionStats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: selectedCourseId.value })
+    })
+    const stats = await statsResponse.json()
+    aiDetectionStats.value = stats
+    
+    // Get flagged assessments
+    const flaggedResponse = await fetch(`${functionsUrl}/getFlaggedAssessments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: selectedCourseId.value })
+    })
+    const flagged = await flaggedResponse.json()
+    flaggedAssessments.value = flagged.assessments || []
+  } catch (error) {
+    console.error('AI Detection load error:', error)
+  } finally {
+    aiDetectionLoading.value = false
   }
 }
 
@@ -288,6 +394,9 @@ async function refreshReport() {
       ]
       const uniqueIds = [...new Set(allStudentIds)]
       await dashboardStore.fetchAllStudentDetails(uniqueIds)
+      
+      // Load AI Detection data
+      await loadAIDetectionStats()
     }
   } catch (error) {
     console.error('Generate report error:', error)
@@ -717,6 +826,157 @@ onMounted(async () => {
   font-style: italic;
 }
 
+/* AI Detection Section */
+.ai-detection {
+  margin-top: 2rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+  margin: 0;
+}
+
+.btn-refresh-small {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.btn-refresh-small:hover {
+  background: var(--bg-hover);
+}
+
+.ai-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.ai-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.ai-stat-card.warning {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.stat-icon {
+  font-size: 1.5rem;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.flagged-list {
+  margin-top: 1rem;
+}
+
+.flagged-list h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: #f59e0b;
+}
+
+.flagged-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid #f59e0b;
+}
+
+.flagged-info {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+
+.flagged-info .student-name {
+  font-weight: 600;
+}
+
+.flagged-info .flag-reason {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.flagged-info .flag-score {
+  padding: 0.2rem 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.flagged-date {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.btn-review {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-review:hover {
+  background: #2563eb;
+}
+
+.more-count {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.no-flagged {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
 /* Report Metadata */
 .report-metadata {
   text-align: center;
@@ -754,5 +1014,9 @@ onMounted(async () => {
   .lo-grid {
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
+  
+  .flagged-item {
+    flex-direction: column;
+    align-items: flex-start;  }
 }
 </style>

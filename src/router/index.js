@@ -113,7 +113,7 @@ const routes = [
     path: '/student-detail/:studentId',
     name: 'StudentDetail',
     component: () => import('@/views/StudentDetail.vue'),
-    meta: { requiresAuth: true, role: 'teacher' }
+    meta: { requiresAuth: true }  // Allow teacher and parent to view
   },
   {
     path: '/class-analytics',
@@ -220,6 +220,12 @@ const routes = [
     name: 'WorksheetResult',
     component: () => import('@/views/WorksheetResult.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/worksheet-history/:id',
+    name: 'WorksheetHistory',
+    component: () => import('@/views/WorksheetHistory.vue'),
+    meta: { requiresAuth: true, role: 'student' }
   },
   {
     path: '/learning-room/:id',
@@ -459,6 +465,68 @@ const routes = [
     name: 'AnalyticsInsights',
     component: () => import('@/views/community/AnalyticsInsights.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
+  },
+  
+  // ==========================================
+  // Enhanced Social Learning Routes
+  // ==========================================
+  
+  // Peer Review System
+  {
+    path: '/social/peer-review',
+    name: 'PeerReviewSystem',
+    component: () => import('@/views/social/PeerReviewSystem.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  
+  // Collaborative Tasks
+  {
+    path: '/social/collaborative/:id',
+    name: 'CollaborativeTask',
+    component: () => import('@/views/social/CollaborativeTask.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/social/collaborative',
+    name: 'CollaborativeTaskList',
+    component: () => import('@/views/social/CollaborativeTaskList.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // ==========================================
+  // Parent Portal Routes
+  // ==========================================
+  
+  // Weekly Report
+  {
+    path: '/parent/weekly-report',
+    name: 'ParentWeeklyReport',
+    component: () => import('@/views/parent/ParentWeeklyReportView.vue'),
+    meta: { requiresAuth: true, role: 'parent' }
+  },
+  
+  // Parent Notifications Settings
+  {
+    path: '/parent/notifications',
+    name: 'ParentNotifications',
+    component: () => import('@/views/parent/ParentNotificationsView.vue'),
+    meta: { requiresAuth: true, role: 'parent' }
+  },
+  
+  // Achievement Sharing
+  {
+    path: '/social/achievements',
+    name: 'AchievementSharing',
+    component: () => import('@/views/social/AchievementSharing.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // Learning Community Hub (unified entry point)
+  {
+    path: '/learning-hub',
+    name: 'LearningCommunityHub',
+    component: () => import('@/views/community/LearningCommunityHub.vue'),
+    meta: { requiresAuth: true }
   },
 ]
 

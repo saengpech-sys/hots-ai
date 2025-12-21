@@ -110,9 +110,13 @@
                   <span class="ws-meta">
                     {{ ws.metadata?.totalQuestions || 0 }} คำถาม • {{ ws.metadata?.maxScore || 0 }} คะแนน
                   </span>
-                  <div class="ws-arce-badges" v-if="ws.metadata?.arceFocus?.length">
-                    <span v-for="arce in ws.metadata.arceFocus" :key="arce" :class="['arce-mini-badge', arce]">
-                      {{ getArceIcon(arce) }} {{ arce.charAt(0).toUpperCase() }}
+                  <div class="ws-arce-badges" v-if="normalizeArceFocus(ws.metadata?.arceFocus).length">
+                    <span 
+                      v-for="arce in normalizeArceFocus(ws.metadata?.arceFocus)" 
+                      :key="arce" 
+                      :class="['arce-mini-badge', arce]"
+                    >
+                      {{ getArceIcon(arce) }} {{ getArceLabel(arce) }}
                     </span>
                   </div>
                 </div>
@@ -242,13 +246,22 @@
               
               <div v-for="(q, idx) in section.questions" :key="idx" class="preview-question">
                 <div class="question-header">
-                  <span class="q-number">{{ q.questionNumber || idx + 1 }}</span>
+                  <span class="q-number">{{ q.number || q.questionNumber || idx + 1 }}</span>
                   <span class="q-type">{{ getQuestionTypeLabel(q.type) }}</span>
                   <span class="q-score">{{ q.maxScore }} คะแนน</span>
                 </div>
-                <p class="q-text">{{ q.questionText }}</p>
+                <!-- รองรับทั้ง prompt, questionText, และ question -->
+                <p class="q-text">{{ q.prompt || q.questionText || q.question || q.situation || '(ไม่มีคำถาม)' }}</p>
+                <!-- แสดง context/task ถ้ามี -->
+                <p v-if="q.context || q.task" class="q-context">
+                  {{ q.context || q.task }}
+                </p>
                 <div class="q-arce">
-                  <span v-for="arce in q.arceFocus" :key="arce" :class="['arce-badge', arce]">
+                  <span 
+                    v-for="arce in normalizeArceFocus(q.arceFocus)" 
+                    :key="arce" 
+                    :class="['arce-badge', arce]"
+                  >
                     {{ getArceIcon(arce) }} {{ getArceLabel(arce) }}
                   </span>
                 </div>
@@ -265,7 +278,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp, arrayRemove } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
@@ -356,6 +369,17 @@ function getArceLabel(arce) {
   return labels[arce] || arce
 }
 
+// 🔧 Normalize arceFocus - แปลง string เป็น array ถ้าจำเป็น
+function normalizeArceFocus(arceFocus) {
+  if (!arceFocus) return []
+  if (Array.isArray(arceFocus)) return arceFocus
+  // ถ้าเป็น string เช่น "analysis|reasoning" หรือ "analysis, reasoning"
+  if (typeof arceFocus === 'string') {
+    return arceFocus.split(/[|,]/).map(s => s.trim()).filter(Boolean)
+  }
+  return []
+}
+
 function getPhaseEmoji(phase) {
   const emojis = {
     engagement: '🎯',
@@ -364,7 +388,9 @@ function getPhaseEmoji(phase) {
     elaboration: '🚀',
     evaluation: '📊'
   }
-  return emojis[phase] || '📝'
+  // Handle pipe-separated phases - get first one
+  const firstPhase = phase?.split?.('|')?.[0]?.trim() || phase
+  return emojis[firstPhase] || '📝'
 }
 
 function getPhaseLabel(phase) {
@@ -375,15 +401,29 @@ function getPhaseLabel(phase) {
     elaboration: 'Elaboration (ขยายความ)',
     evaluation: 'Evaluation (ประเมิน)'
   }
+  // Handle pipe-separated phases - show all
+  if (phase?.includes?.('|')) {
+    const phases = phase.split('|').map(p => p.trim())
+    return phases.map(p => labels[p] || p).join(' → ')
+  }
   return labels[phase] || phase
 }
 
 function getQuestionTypeLabel(type) {
   const labels = {
-    short_answer: 'คำตอบสั้น',
+    // Standard types
+    short_answer: 'ตอบสั้น',
     long_answer: 'เรียงความ',
     multiple_choice: 'เลือกตอบ',
-    diagram: 'วาดภาพ/แผนผัง'
+    diagram: 'วาดภาพ/แผนผัง',
+    // AI generated types
+    open_ended: 'อัตนัย',
+    short_text: 'ตอบสั้น',
+    table: 'ตาราง',
+    arce_situation: 'สถานการณ์ ARCE',
+    checkbox: 'เลือกหลายข้อ',
+    matching: 'จับคู่',
+    fill_blank: 'เติมคำ'
   }
   return labels[type] || type
 }
@@ -472,9 +512,32 @@ async function deleteWorksheet(ws) {
   if (!confirm(`ต้องการลบใบงาน "${ws.metadata?.title}" ใช่ไหม?\nการลบจะไม่สามารถกู้คืนได้`)) return
   
   try {
+    // ลบจาก eWorksheets
     await deleteDoc(doc(db, 'eWorksheets', ws.id))
+    
+    // อัปเดต worksheetIds ในทุก learningRooms ที่มีใบงานนี้
+    const roomsQuery = query(
+      collection(db, 'learningRooms'),
+      where('worksheetIds', 'array-contains', ws.id)
+    )
+    const roomsSnapshot = await getDocs(roomsQuery)
+    const updatePromises = roomsSnapshot.docs.map(roomDoc => 
+      updateDoc(doc(db, 'learningRooms', roomDoc.id), {
+        worksheetIds: arrayRemove(ws.id)
+      })
+    )
+    await Promise.all(updatePromises)
+    
+    // อัปเดต UI
     worksheets.value = worksheets.value.filter(w => w.id !== ws.id)
-    alert('ลบใบงานสำเร็จ')
+    
+    // อัปเดต rooms state ถ้ามี
+    rooms.value = rooms.value.map(room => ({
+      ...room,
+      worksheetIds: room.worksheetIds?.filter(id => id !== ws.id) || []
+    }))
+    
+    alert(`ลบใบงานสำเร็จ (อัปเดต ${roomsSnapshot.size} ห้องกิจกรรม)`)
   } catch (error) {
     console.error('Error deleting worksheet:', error)
     alert('เกิดข้อผิดพลาดในการลบ')
@@ -1469,6 +1532,18 @@ onMounted(() => {
 .q-text {
   margin-bottom: 0.5rem;
   line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.q-context {
+  margin-bottom: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(var(--primary-rgb), 0.05);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 0.5rem 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 .q-arce {

@@ -1,6 +1,8 @@
 <template>
   <div :class="['app-container', { 'dark-mode': isDarkMode }]">
-    <router-view />
+    <ErrorBoundary context="App">
+      <router-view />
+    </ErrorBoundary>
     <ReloadPrompt />
     <ConsentModal 
       :show="authStore.showConsentModal"
@@ -17,7 +19,9 @@ import { useThemeStore } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
 import ReloadPrompt from '@/components/ReloadPrompt.vue'
 import ConsentModal from '@/components/ConsentModal.vue'
+import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { usePresence } from '@/composables/usePresence'
+import { logger, setGlobalContext } from '@/utils/logger'
 
 const themeStore = useThemeStore()
 const authStore = useAuthStore()
@@ -26,6 +30,19 @@ const isDarkMode = computed(() => themeStore.isDarkMode)
 // Initialize presence tracking for students
 // This will automatically send heartbeats every 30 seconds
 const { isTracking } = usePresence()
+
+// Set global logger context when user is authenticated
+watch(() => authStore.user, (user) => {
+  if (user) {
+    setGlobalContext({
+      userId: user.uid,
+      userRole: authStore.userProfile?.role
+    })
+    logger.info('User authenticated', { 
+      role: authStore.userProfile?.role 
+    })
+  }
+})
 
 // Sync with Tailwind's dark mode
 const updateThemeClass = (dark) => {

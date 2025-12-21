@@ -51,6 +51,22 @@
       </div>
     </div>
 
+    <!-- Quick Actions -->
+    <div class="quick-actions-bar">
+      <button @click="$router.push('/curriculum-management')" class="quick-btn">
+        <span>📚</span> จัดการหลักสูตรแกนกลาง
+      </button>
+      <button @click="$router.push('/research/export')" class="quick-btn highlight">
+        <span>📦</span> Research Data Export
+      </button>
+      <button @click="$router.push('/research/expert-validation')" class="quick-btn">
+        <span>🔬</span> Expert Validation
+      </button>
+      <button @click="$router.push('/leaderboard')" class="quick-btn">
+        <span>🏆</span> National Leaderboard
+      </button>
+    </div>
+
     <!-- Tabs -->
     <div class="tabs">
       <button 
@@ -660,6 +676,38 @@ function exportNationalData() {
 
 .trend-down {
   color: var(--danger);
+}
+
+/* Quick Actions Bar */
+.quick-actions-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border: 2px solid var(--border-color, #e2e8f0);
+  border-radius: 0.5rem;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.quick-btn:hover {
+  border-color: #4299e1;
+  background: linear-gradient(135deg, rgba(66, 153, 225, 0.1), rgba(99, 102, 241, 0.1));
+  transform: translateY(-2px);
+}
+
+.quick-btn.highlight {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(52, 211, 153, 0.1));
 }
 
 .tabs {

@@ -253,6 +253,15 @@ CSS variables in `src/styles/main.css`, toggled via `.dark-mode` class on `<html
 - `firestore.rules`: Role-based security, helper functions
 
 ## Recent Major Features
+- **🔬 Phase 2: AI Precision & Integrity** (NEW!)
+  - `temperature: 0` + `seed: 42` for deterministic scoring
+  - Chain of Thought (CoT) reasoning before scoring
+  - AI Confidence Score (0-100%) with reason
+  - Language Bias Prevention (thinking ≠ writing skill)
+  - Prompt Injection Defense with XML tags
+  - Grade-Level Calibration (ป.4-6, ม.1-3, ม.4-6)
+  - Full Audit Trail (modelUsed, promptVersion, rawResponseLength)
+  - Retry Logic (max 2 attempts for malformed JSON)
 - **Worksheet LO System**: ใบงาน (Worksheet) ประเมินและบันทึก LO เหมือน Assessment Chat
   - `generateElectronicWorksheet` เก็บ learningOutcomes ใน metadata
   - `assessWorksheetSubmission` เรียก `assessLearningOutcomesInternal` 
@@ -269,6 +278,36 @@ CSS variables in `src/styles/main.css`, toggled via `.dark-mode` class on `<html
 - **Smart Question Selection**: Prioritizes weak areas using student progress data
 - **National Scale**: Ministry → ESA → School hierarchy with dashboards
 
+## Phase 2 AI Assessment Schema (NEW!)
+```javascript
+// 🔬 New fields in assessmentData (Firestore: assessments collection)
+{
+  // Standard fields...
+  rubricScores: { analysis, reasoning, creativity, evidence },
+  
+  // Phase 2: AI Confidence & Chain of Thought
+  aiConfidence: 85,              // 0-100%
+  aiConfidenceReason: "คำตอบชัดเจน มีตัวอย่างเฉพาะเจาะจง",
+  chainOfThought: {
+    step1_summary: "สรุปประเด็นหลักของคำตอบ",
+    step2_evidence: { analysis: "...", reasoning: "...", ... },
+    step3_anchor_match: "หลักฐานตรงกับ Anchor ระดับ 4",
+    step4_decision: "เหตุผลการตัดสินใจ"
+  },
+  
+  // Phase 2: Audit Trail
+  promptVersion: 'v3.0-cot-confidence',
+  auditTrail: {
+    modelUsed: 'gpt-4o-mini',
+    temperature: 0,
+    seed: 42,
+    maxTokens: 1500,
+    rawResponseLength: 1234,
+    parseAttempts: 1,
+    timestamp: '2024-...'
+  }
+}
+```
 ## Model Preference
 Use **gpt-4o-mini** for all operations (15-20x cheaper than gpt-4o). Already configured in functions/.env as `OPENAI_MODEL=gpt-4o-mini`.
 
