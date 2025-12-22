@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # 🧠 HOTS AI ChatLoop
 
@@ -565,4 +565,3 @@ copies of the Software...
 <sub>Made with ❤️ for Thai Education</sub>
 
 </div>
-]]>
