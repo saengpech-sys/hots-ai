@@ -168,6 +168,18 @@
           <h3>⚖️ สิทธิ์ตามกฎหมาย PDPA</h3>
           <p class="section-description">ท่านมีสิทธิ์ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562</p>
           
+          <div class="pdpa-quick-links" style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+            <button @click="$router.push('/privacy/data-retention')" class="btn btn-outline">
+              📋 นโยบายการเก็บข้อมูล
+            </button>
+            <button @click="$router.push('/privacy/ai-explanation')" class="btn btn-outline">
+              🤖 อธิบายการทำงานของ AI
+            </button>
+            <button v-if="isStudent" @click="$router.push('/privacy/parental-consent')" class="btn btn-outline">
+              👨‍👩‍👧 แบบยินยอมผู้ปกครอง
+            </button>
+          </div>
+
           <div class="data-rights-actions">
             <button 
               @click="handleDownloadData" 

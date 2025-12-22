@@ -1,7 +1,37 @@
 /**
  * Gamification System
  * Manages badges, points, achievements, and leaderboards
+ * 
+ * 🔬 PHASE 3 Updates:
+ * - Added daily XP cap to prevent exploitation
+ * - Added minimum score threshold for base points
+ * - Added anti-gaming measures
  */
+
+// 🔬 PHASE 3: Gamification Configuration
+const GAMIFICATION_CONFIG = {
+  // Daily XP cap to prevent exploitation
+  dailyXPCap: 500,
+  
+  // Minimum score to earn base points (prevents spam submissions)
+  minScoreForBasePoints: 8,  // Out of 20 - must show some HOTS
+  
+  // Minimum score thresholds for bonuses
+  thresholds: {
+    excellent: 18,    // 90% = 50 bonus
+    good: 15,         // 75% = 20 bonus
+    fair: 12,         // 60% = 10 bonus
+    minimum: 8        // 40% = base points only
+  },
+  
+  // Anti-gaming: minimum time between assessments for full points
+  minTimeBetweenAssessments: 60,  // seconds
+  rapidFirePenalty: 0.5,          // 50% points if too fast
+  
+  // Streak configurations
+  streakBonusPerWeek: 5,          // Extra points per week of streak
+  maxStreakBonus: 50              // Cap streak bonus
+}
 
 // Badge Definitions
 const BADGES = {
@@ -171,33 +201,121 @@ const BADGES = {
 }
 
 // Point calculation based on performance
-function calculatePoints(assessment) {
-  const basePoints = 10 // Base points for completing an assessment
+// 🔬 PHASE 3: Enhanced with minimum threshold and anti-gaming
+function calculatePoints(assessment, options = {}) {
+  const { 
+    todaysTotalXP = 0, 
+    lastAssessmentTime = null,
+    studentStats = {}
+  } = options
+  
+  const overallScore = assessment.overallScore || 0
+  const result = {
+    basePoints: 0,
+    bonusPoints: 0,
+    totalEarned: 0,
+    appliedCap: false,
+    penalties: [],
+    breakdown: {}
+  }
+  
+  // 🔬 PHASE 3: Check minimum score threshold
+  if (overallScore < GAMIFICATION_CONFIG.minScoreForBasePoints) {
+    result.penalties.push({
+      type: 'LOW_SCORE',
+      message: `คะแนน ${overallScore}/20 ต่ำกว่าเกณฑ์ขั้นต่ำ (${GAMIFICATION_CONFIG.minScoreForBasePoints}/20)`,
+      reduction: 'NO_BASE_POINTS'
+    })
+    result.breakdown.baseReason = 'Score below minimum threshold'
+    // Still allow small participation points
+    result.basePoints = 2
+  } else {
+    result.basePoints = 10
+    result.breakdown.baseReason = 'Met minimum score threshold'
+  }
+  
+  // 🔬 PHASE 3: Check for rapid-fire submissions (anti-gaming)
+  let multiplier = 1.0
+  if (lastAssessmentTime) {
+    const timeDiff = (Date.now() - new Date(lastAssessmentTime).getTime()) / 1000
+    if (timeDiff < GAMIFICATION_CONFIG.minTimeBetweenAssessments) {
+      multiplier = GAMIFICATION_CONFIG.rapidFirePenalty
+      result.penalties.push({
+        type: 'RAPID_FIRE',
+        message: `ส่งคำตอบเร็วเกินไป (${Math.round(timeDiff)}s < ${GAMIFICATION_CONFIG.minTimeBetweenAssessments}s)`,
+        reduction: `${(1 - multiplier) * 100}%`
+      })
+    }
+  }
   
   // Bonus points based on overall score
   let bonusPoints = 0
-  const overallScore = assessment.overallScore || 0
   
   if (overallScore >= 20) {
     bonusPoints = 50 // Perfect score
-  } else if (overallScore >= 18) {
+    result.breakdown.scoreBonus = 'Perfect score (20/20)'
+  } else if (overallScore >= GAMIFICATION_CONFIG.thresholds.excellent) {
     bonusPoints = 30 // Excellent
-  } else if (overallScore >= 15) {
+    result.breakdown.scoreBonus = `Excellent (${overallScore}/20)`
+  } else if (overallScore >= GAMIFICATION_CONFIG.thresholds.good) {
     bonusPoints = 20 // Good
-  } else if (overallScore >= 12) {
+    result.breakdown.scoreBonus = `Good (${overallScore}/20)`
+  } else if (overallScore >= GAMIFICATION_CONFIG.thresholds.fair) {
     bonusPoints = 10 // Fair
+    result.breakdown.scoreBonus = `Fair (${overallScore}/20)`
+  } else if (overallScore >= GAMIFICATION_CONFIG.thresholds.minimum) {
+    bonusPoints = 0 // Minimum - base points only
+    result.breakdown.scoreBonus = `Minimum threshold met`
   }
   
   // Bonus for mastering specific skills (5/5 in any dimension)
   const rubricScores = assessment.rubricScores || {}
-  Object.values(rubricScores).forEach(score => {
+  let skillMasteryBonus = 0
+  Object.entries(rubricScores).forEach(([dim, score]) => {
     if (score === 5) {
-      bonusPoints += 5
+      skillMasteryBonus += 5
     }
   })
+  if (skillMasteryBonus > 0) {
+    bonusPoints += skillMasteryBonus
+    result.breakdown.skillMastery = `${skillMasteryBonus} points for dimension mastery`
+  }
   
   // Bonus for passing new LOs
   const newLOsCount = assessment.loAssessment?.passedLOs?.length || 0
+  if (newLOsCount > 0) {
+    bonusPoints += newLOsCount * 5
+    result.breakdown.loBonus = `${newLOsCount * 5} points for ${newLOsCount} new LOs`
+  }
+  
+  // Apply multiplier (for rapid-fire penalty)
+  result.bonusPoints = Math.round(bonusPoints * multiplier)
+  
+  // Calculate total before cap
+  let totalBeforeCap = result.basePoints + result.bonusPoints
+  
+  // 🔬 PHASE 3: Apply daily XP cap
+  const remainingCap = GAMIFICATION_CONFIG.dailyXPCap - todaysTotalXP
+  if (remainingCap <= 0) {
+    result.totalEarned = 0
+    result.appliedCap = true
+    result.breakdown.capMessage = `Daily XP cap (${GAMIFICATION_CONFIG.dailyXPCap}) reached`
+  } else if (totalBeforeCap > remainingCap) {
+    result.totalEarned = remainingCap
+    result.appliedCap = true
+    result.breakdown.capMessage = `Reduced from ${totalBeforeCap} to ${remainingCap} due to daily cap`
+  } else {
+    result.totalEarned = totalBeforeCap
+  }
+  
+  return result
+}
+
+// 🔬 PHASE 3: Legacy wrapper for backward compatibility
+function calculatePointsSimple(assessment) {
+  const result = calculatePoints(assessment, {})
+  return result.totalEarned
+}
   bonusPoints += newLOsCount * 5
   
   return basePoints + bonusPoints
@@ -277,7 +395,9 @@ function calculateDailyReward(consecutiveDays) {
 
 module.exports = {
   BADGES,
+  GAMIFICATION_CONFIG,
   calculatePoints,
+  calculatePointsSimple,
   checkBadges,
   calculateStreak,
   calculateLeaderboardScore,

@@ -88,6 +88,13 @@
               <small>สร้างโครงสร้างหลักสูตรทั้งรายวิชาด้วย AI</small>
             </div>
           </button>
+          <button @click="$router.push('/quality-assurance')" class="action-btn highlight-new">
+            <span class="action-icon">📊</span>
+            <div class="action-text">
+              <strong>Quality Assurance</strong>
+              <small>ตรวจสอบความเป็นธรรม + Expert Review Queue</small>
+            </div>
+          </button>
           <button @click="$router.push('/micro-lessons')" class="action-btn">
             <span class="action-icon">📖</span>
             <div class="action-text">
@@ -184,6 +191,32 @@
               <strong>Research Data Export</strong>
               <small>ส่งออกข้อมูลสำหรับวิเคราะห์ทางสถิติ</small>
             </div>
+          </button>
+          <button @click="$router.push('/research/ground-truth')" class="action-btn highlight-research">
+            <span class="action-icon">🎯</span>
+            <div class="action-text">
+              <strong>Ground Truth Validation</strong>
+              <small>Calibrate AI ด้วย Expert Scoring</small>
+            </div>
+            <span class="badge-new">NEW</span>
+          </button>
+          <button @click="$router.push('/research/ai-comparison')" class="action-btn highlight-research">
+            <span class="action-icon">📊</span>
+            <div class="action-text">
+              <strong>AI vs Teacher Dashboard</strong>
+              <small>IRR, Cohen's Kappa, Pearson r</small>
+            </div>
+            <span class="badge-new">NEW</span>
+          </button>
+          <!-- Admin Tools Section -->
+          <div class="action-divider">🛠️ Admin Tools</div>
+          <button @click="$router.push('/admin/system-check')" class="action-btn highlight-admin">
+            <span class="action-icon">🔧</span>
+            <div class="action-text">
+              <strong>System Check</strong>
+              <small>Integration Tests, Anti-Cheat Logs, Debug Tools</small>
+            </div>
+            <span class="badge-new">NEW</span>
           </button>
         </div>
       </div>

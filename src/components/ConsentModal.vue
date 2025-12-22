@@ -62,6 +62,53 @@
           <p>อีเมล: <a href="mailto:dpo@hots-ai.edu">dpo@hots-ai.edu</a></p>
         </div>
 
+        <!-- Research Consent Section - IRB Ready -->
+        <div class="consent-section research-box">
+          <h3>🔬 การยินยอมสำหรับการวิจัย (Research Consent)</h3>
+          <p>ข้อมูลจากการประเมินของท่านอาจถูกใช้เพื่อการวิจัยทางการศึกษา โดย:</p>
+          <ul>
+            <li>ข้อมูลจะถูก <strong>ลบชื่อและตัวระบุตัวตน (Anonymization)</strong> ก่อนนำไปวิเคราะห์</li>
+            <li>ผลการวิจัยจะเผยแพร่ในรูปแบบสถิติรวมเท่านั้น ไม่สามารถระบุตัวบุคคลได้</li>
+            <li>การวิจัยผ่านการพิจารณาจากคณะกรรมการจริยธรรมการวิจัย (IRB)</li>
+            <li>ท่านสามารถ <strong>ปฏิเสธ</strong> การใช้ข้อมูลเพื่อการวิจัยได้โดยไม่กระทบการใช้งานระบบ</li>
+          </ul>
+          
+          <div class="research-options">
+            <label class="consent-checkbox-label">
+              <input 
+                type="checkbox" 
+                v-model="researchConsent" 
+                class="consent-checkbox"
+              />
+              <span class="consent-text-optional">
+                (ไม่บังคับ) ยินยอมให้ใช้ข้อมูลที่ไม่ระบุตัวตนเพื่อการวิจัยทางการศึกษา
+              </span>
+            </label>
+            
+            <label class="consent-checkbox-label">
+              <input 
+                type="checkbox" 
+                v-model="longitudinalConsent" 
+                class="consent-checkbox"
+                :disabled="!researchConsent"
+              />
+              <span class="consent-text-optional" :class="{ disabled: !researchConsent }">
+                (ไม่บังคับ) ยินยอมให้ติดตามพัฒนาการระยะยาว (Longitudinal Study)
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="consent-section data-retention-box">
+          <h3>📅 ระยะเวลาการเก็บรักษาข้อมูล</h3>
+          <ul>
+            <li><strong>ข้อมูลการใช้งาน:</strong> เก็บรักษาตลอดระยะเวลาที่ท่านใช้งานระบบ + 1 ปีการศึกษาหลังจากจบ</li>
+            <li><strong>ข้อมูลการประเมิน:</strong> เก็บรักษา 5 ปีเพื่อการวิเคราะห์พัฒนาการ</li>
+            <li><strong>ข้อมูลวิจัย (ไม่ระบุตัวตน):</strong> เก็บรักษาตลอดไปเพื่อการวิจัย</li>
+            <li><strong>การลบข้อมูล:</strong> สามารถร้องขอลบได้ทุกเมื่อ (ดำเนินการภายใน 30 วัน)</li>
+          </ul>
+        </div>
+
         <div class="consent-checkbox-group">
           <label class="consent-checkbox-label">
             <input 
@@ -121,10 +168,18 @@ const props = defineProps({
 const emit = defineEmits(['accept', 'close'])
 
 const consentGiven = ref(false)
+const researchConsent = ref(false)
+const longitudinalConsent = ref(false)
 
 function handleAccept() {
   if (!consentGiven.value) return
-  emit('accept')
+  emit('accept', {
+    operationalConsent: true,
+    researchConsent: researchConsent.value,
+    longitudinalConsent: longitudinalConsent.value,
+    consentTimestamp: new Date().toISOString(),
+    consentVersion: '2.0-irb-ready'
+  })
 }
 
 function closeIfNotRequired() {
@@ -261,6 +316,39 @@ function closeIfNotRequired() {
   font-size: 1rem;
   line-height: 1.6;
   font-weight: 500;
+}
+
+.consent-text-optional {
+  color: #4a5568;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.consent-text-optional.disabled {
+  color: #a0aec0;
+}
+
+.research-box {
+  background: linear-gradient(135deg, #ebf8ff 0%, #e6fffa 100%);
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #3182ce;
+}
+
+.research-options {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #90cdf4;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.data-retention-box {
+  background: #faf5ff;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #805ad5;
 }
 
 .consent-footer {

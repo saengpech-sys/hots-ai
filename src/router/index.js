@@ -173,6 +173,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'teacher' }
   },
   {
+    path: '/quality-assurance',
+    name: 'QualityAssurance',
+    component: () => import('@/views/QualityAssurance.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
     path: '/teacher-portfolio',
     name: 'TeacherPortfolio',
     component: () => import('@/views/TeacherPortfolio.vue'),
@@ -277,6 +283,32 @@ const routes = [
     component: () => import('@/views/AdminLOManager.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
+  {
+    path: '/admin/system-check',
+    name: 'AdminSystemCheck',
+    component: () => import('@/views/AdminSystemCheck.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  
+  // PDPA Compliance & Privacy
+  {
+    path: '/privacy/data-retention',
+    name: 'DataRetentionPolicy',
+    component: () => import('@/views/DataRetentionPolicy.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/privacy/parental-consent',
+    name: 'ParentalConsent',
+    component: () => import('@/views/ParentalConsent.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/privacy/ai-explanation',
+    name: 'RightToExplanation',
+    component: () => import('@/views/RightToExplanation.vue'),
+    meta: { requiresAuth: true }
+  },
   // Research Tools
   {
     path: '/research/export',
@@ -294,6 +326,18 @@ const routes = [
     path: '/research/expert-validation',
     name: 'ExpertValidation',
     component: () => import('@/views/ExpertValidation.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/research/ground-truth',
+    name: 'GroundTruthValidation',
+    component: () => import('@/views/GroundTruthValidation.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/research/ai-comparison',
+    name: 'AITeacherComparison',
+    component: () => import('@/views/AITeacherComparison.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
   

@@ -1318,6 +1318,313 @@ async function calculateResearchReadiness(db, courseId) {
   }
 }
 
+/**
+ * 🆕 Export Hierarchical JSON Structure
+ * ส่งออกข้อมูลในรูปแบบ nested JSON สำหรับวิเคราะห์เชิงลึก
+ * 
+ * Structure:
+ * - course
+ *   - students[]
+ *     - demographics
+ *     - assessments[]
+ *     - worksheets[]
+ *     - interventions[]
+ *     - growth
+ *     - sequences[]
+ * 
+ * @param {Object} db - Firestore instance
+ * @param {string} courseId - Course ID
+ * @param {Object} options - Export options
+ * @returns {Object} Hierarchical JSON export
+ */
+async function exportHierarchicalJSON(db, courseId, options = {}) {
+  const {
+    includeRawAnswers = false,  // Privacy consideration
+    includeSequences = true,
+    includeDemographics = true,
+    kAnonymity = 0,  // Apply k-anonymity (0 = disabled)
+    dateFrom = null,
+    dateTo = null
+  } = options
+
+  try {
+    // 1. Fetch course metadata
+    const courseDoc = await db.collection('courses').doc(courseId).get()
+    if (!courseDoc.exists) {
+      return { success: false, error: 'Course not found' }
+    }
+    const courseData = courseDoc.data()
+
+    // 2. Build date query filter
+    const dateFilter = (query) => {
+      if (dateFrom) query = query.where('timestamp', '>=', new Date(dateFrom))
+      if (dateTo) query = query.where('timestamp', '<=', new Date(dateTo))
+      return query
+    }
+
+    // 3. Fetch all assessments for this course
+    let assessmentQuery = db.collection('assessments')
+      .where('courseId', '==', courseId)
+      .orderBy('timestamp', 'asc')
+    assessmentQuery = dateFilter(assessmentQuery)
+    const assessmentSnap = await assessmentQuery.limit(10000).get()
+
+    // 4. Fetch all worksheet submissions
+    let worksheetQuery = db.collection('worksheetSubmissions')
+      .where('courseId', '==', courseId)
+      .orderBy('timestamp', 'asc')
+    worksheetQuery = dateFilter(worksheetQuery)
+    const worksheetSnap = await worksheetQuery.limit(5000).get()
+
+    // 5. Fetch interventions
+    let interventionQuery = db.collection('interventions')
+      .where('courseId', '==', courseId)
+    interventionQuery = dateFilter(interventionQuery)
+    const interventionSnap = await interventionQuery.limit(5000).get()
+
+    // 6. Fetch growth histories
+    const growthSnap = await db.collection('growthHistories')
+      .where('courseId', '==', courseId)
+      .get()
+
+    // 7. Fetch learning sequences if requested
+    let sequences = []
+    if (includeSequences) {
+      const sequenceSnap = await db.collection('learningSequences')
+        .where('courseId', '==', courseId)
+        .get()
+      sequences = sequenceSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    }
+
+    // 8. Group data by student
+    const studentMap = new Map()
+
+    // Helper to ensure student entry exists
+    const ensureStudent = (studentId) => {
+      if (!studentMap.has(studentId)) {
+        studentMap.set(studentId, {
+          studentId: kAnonymity > 0 ? `ANON_${studentMap.size + 1}` : studentId,
+          demographics: null,
+          assessments: [],
+          worksheets: [],
+          interventions: [],
+          growth: null,
+          sequences: []
+        })
+      }
+      return studentMap.get(studentId)
+    }
+
+    // Process assessments
+    assessmentSnap.forEach(doc => {
+      const data = doc.data()
+      const student = ensureStudent(data.studentId)
+      
+      // Store demographics from first assessment (denormalized)
+      if (!student.demographics && data.studentData && includeDemographics) {
+        student.demographics = {
+          grade: data.studentData.grade || null,
+          room: data.studentData.room || null,
+          section: data.studentData.section || null,
+          gender: data.studentData.gender || null,
+          schoolId: data.studentData.schoolId || null,
+          experimentGroup: data.assessmentContext?.experimentGroup || null
+        }
+      }
+
+      student.assessments.push({
+        id: doc.id,
+        timestamp: data.timestamp?.toDate?.()?.toISOString() || null,
+        questionId: data.questionId || null,
+        rubricScores: data.rubricScores,
+        overallScore: data.overallScore,
+        rawAnswer: includeRawAnswers ? data.rawAnswer : undefined,
+        answerLength: data.rawAnswer?.length || 0,
+        aiConfidence: data.aiConfidence || null,
+        reliabilityScore: data.reliabilityScore || null,
+        loAssessment: data.loAssessment ? {
+          passedLOs: data.loAssessment.passedLOs || [],
+          passedLOCount: data.loAssessment.passedLOs?.length || 0
+        } : null,
+        scaffolding: {
+          provided: data.assessmentContext?.scaffoldingProvided || false,
+          level: data.assessmentContext?.scaffoldingLevel || 0
+        },
+        scoreAdjustment: data.scoreAdjustment || null,
+        aiDetection: data.aiDetection ? {
+          score: data.aiDetection.score,
+          riskLevel: data.aiDetection.riskLevel,
+          flagged: data.aiDetection.flagged
+        } : null,
+        answerMetrics: data.answerMetrics || null,
+        timingMetrics: data.timingMetrics || null
+      })
+    })
+
+    // Process worksheets
+    worksheetSnap.forEach(doc => {
+      const data = doc.data()
+      const student = ensureStudent(data.studentId)
+      
+      student.worksheets.push({
+        id: doc.id,
+        worksheetId: data.worksheetId,
+        timestamp: data.timestamp?.toDate?.()?.toISOString() || null,
+        rubricScores: data.rubricScores,
+        overallScore: data.overallScore,
+        questionCount: data.answers?.length || 0,
+        completionRate: data.completionRate || null,
+        totalTimeMinutes: data.totalTimeMinutes || null
+      })
+    })
+
+    // Process interventions
+    interventionSnap.forEach(doc => {
+      const data = doc.data()
+      const student = ensureStudent(data.studentId)
+      
+      student.interventions.push({
+        id: doc.id,
+        timestamp: data.timestamp?.toDate?.()?.toISOString() || null,
+        type: data.interventionType,
+        contentId: data.contentId || null,
+        durationSec: data.durationSec || null,
+        completionRate: data.completionRate || null,
+        targetLOs: data.targetLOs || []
+      })
+    })
+
+    // Process growth histories
+    growthSnap.forEach(doc => {
+      const data = doc.data()
+      const student = ensureStudent(data.studentId)
+      
+      student.growth = {
+        entries: data.entries?.length || 0,
+        firstEntry: data.entries?.[0] || null,
+        lastEntry: data.entries?.[data.entries?.length - 1] || null,
+        averageScores: calculateGrowthAverages(data.entries || [])
+      }
+    })
+
+    // Process sequences
+    for (const seq of sequences) {
+      if (studentMap.has(seq.studentId)) {
+        const student = studentMap.get(seq.studentId)
+        student.sequences.push({
+          sessionId: seq.sessionId,
+          pattern: seq.compactPattern || seq.events?.map(e => e.type).join('') || '',
+          eventCount: seq.events?.length || 0,
+          totalDurationMs: seq.totalDurationMs || null,
+          outcome: seq.outcomeScore || null
+        })
+      }
+    }
+
+    // Convert map to array
+    const students = Array.from(studentMap.values())
+
+    // Apply k-anonymity if requested
+    if (kAnonymity > 0) {
+      // Group by demographics and ensure each group has k members
+      // (simplified - in production would use proper k-anonymity algorithm)
+      const demographicGroups = new Map()
+      for (const student of students) {
+        const key = student.demographics 
+          ? `${student.demographics.grade}_${student.demographics.room}` 
+          : 'unknown'
+        if (!demographicGroups.has(key)) {
+          demographicGroups.set(key, [])
+        }
+        demographicGroups.get(key).push(student)
+      }
+      
+      // Flag groups with fewer than k members
+      for (const [key, group] of demographicGroups) {
+        if (group.length < kAnonymity) {
+          for (const student of group) {
+            student.kAnonymityWarning = `Group size ${group.length} < k=${kAnonymity}`
+          }
+        }
+      }
+    }
+
+    // Build final structure
+    const exportData = {
+      exportMetadata: {
+        exportedAt: new Date().toISOString(),
+        courseId,
+        format: 'hierarchical_json',
+        schemaVersion: '1.0',
+        options: {
+          includeRawAnswers,
+          includeSequences,
+          includeDemographics,
+          kAnonymity,
+          dateFrom,
+          dateTo
+        }
+      },
+      course: {
+        id: courseId,
+        name: courseData.name || courseData.courseName,
+        createdAt: courseData.createdAt?.toDate?.()?.toISOString() || null,
+        learningOutcomes: courseData.learningOutcomes || []
+      },
+      statistics: {
+        totalStudents: students.length,
+        totalAssessments: assessmentSnap.size,
+        totalWorksheets: worksheetSnap.size,
+        totalInterventions: interventionSnap.size,
+        dateRange: {
+          from: dateFrom || 'all',
+          to: dateTo || 'all'
+        }
+      },
+      students
+    }
+
+    return {
+      success: true,
+      data: exportData,
+      filename: `hots_hierarchical_${courseId}_${new Date().toISOString().split('T')[0]}.json`
+    }
+
+  } catch (error) {
+    console.error('Error exporting hierarchical JSON:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Helper: Calculate growth averages from entries
+ */
+function calculateGrowthAverages(entries) {
+  if (!entries || entries.length === 0) return null
+  
+  const sums = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+  let count = 0
+  
+  for (const entry of entries) {
+    if (entry.rubricScores) {
+      sums.analysis += entry.rubricScores.analysis || 0
+      sums.reasoning += entry.rubricScores.reasoning || 0
+      sums.creativity += entry.rubricScores.creativity || 0
+      sums.evidence += entry.rubricScores.evidence || 0
+      count++
+    }
+  }
+  
+  if (count === 0) return null
+  
+  return {
+    analysis: Math.round(sums.analysis / count * 100) / 100,
+    reasoning: Math.round(sums.reasoning / count * 100) / 100,
+    creativity: Math.round(sums.creativity / count * 100) / 100,
+    evidence: Math.round(sums.evidence / count * 100) / 100
+  }
+}
+
 module.exports = {
   EVENT_TYPES,
   SEQUENCE_EVENT_TYPES,
@@ -1326,6 +1633,7 @@ module.exports = {
   logIntervention,
   calculateScoreCorrelation,
   exportResearchCSV,
+  exportHierarchicalJSON,
   generateResearchSummary,
   pearsonCorrelation,
   interpretCorrelation,

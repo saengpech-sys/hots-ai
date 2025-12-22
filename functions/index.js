@@ -34,6 +34,7 @@ const {
   logIntervention,
   calculateScoreCorrelation,
   exportResearchCSV,
+  exportHierarchicalJSON,
   generateResearchSummary,
   calculateScaffoldingSummary,
   // 🔴 NEW: Sequential Pattern Mining
@@ -76,6 +77,40 @@ const {
   RATE_LIMIT_CONFIG
 } = require('./utils/rateLimiter')
 
+// 🚦 Distributed Rate Limiter (for production scale)
+const distributedRateLimiter = require('./utils/distributedRateLimiter')
+
+// 🔍 Model Drift Detector - track OpenAI model changes
+const {
+  recordModelFingerprint,
+  analyzeModelDrift,
+  getReproducibilityReport
+} = require('./utils/modelDriftDetector')
+
+// ✅ Question Quality Checker - validate HOTS questions
+const {
+  analyzeQuestionQuality,
+  suggestHOTSTransformation,
+  batchAnalyzeQuestions
+} = require('./utils/questionQualityChecker')
+
+// 📐 Construct Validity - A.R.C.E. validation
+const {
+  calculateCorrelationMatrix,
+  detectDoubleCounting,
+  calculateCronbachAlpha,
+  adjustForDoubleCounting,
+  checkCourseScoreAdjustment
+} = require('./utils/constructValidity')
+
+// 📊 Question Difficulty & Adaptive Selection
+const {
+  analyzeQuestionDifficulty,
+  estimateStudentAbility,
+  selectAdaptiveQuestion,
+  updateDifficultyProgression
+} = require('./utils/questionDifficulty')
+
 // 📝 NEW: Modular Prompt System
 const {
   sanitizeStudentInput,
@@ -96,6 +131,36 @@ const {
   performHOTSAssessment,
   performCompleteAssessment
 } = require('./services/assessmentService')
+
+// 🔬 NEW: Quality Assurance Modules (Phase 2+)
+const {
+  generateAdaptiveScaffolding,
+  formatScaffoldingMessage,
+  analyzeScaffoldingEffectiveness,
+  SCAFFOLDING_LEVELS
+} = require('./utils/adaptiveScaffolding')
+
+const {
+  shouldFlagForReview,
+  createReviewQueueItem,
+  REVIEW_PRIORITY
+} = require('./utils/humanInTheLoop')
+
+const {
+  generateGradeCalibrationContext,
+  getAdjustedThresholds,
+  checkScoreAppropriateness
+} = require('./utils/gradeLevelCalibration')
+
+// 📊 NEW: Fairness & Validation
+const fairnessAudit = require('./utils/fairnessAudit')
+const validationStudy = require('./utils/validationStudy')
+
+// 🤖 NEW: Multi-LLM Provider
+const { getLLMProvider, createChatCompletion } = require('./utils/llmProvider')
+
+// 📊 Quality Assurance Controller
+const qualityAssuranceController = require('./controllers/qualityAssuranceController')
 
 admin.initializeApp()
 const db = admin.firestore()
@@ -152,27 +217,48 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         })
       }
 
-      // 🚦 RATE LIMITING: ป้องกัน spam API calls
+      // 🚦 RATE LIMITING: ป้องกัน spam API calls (Distributed-first with fallback)
       const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip
-      const ipRateResult = checkIPRateLimit(ip, 'assessment')
-      if (!ipRateResult.allowed) {
-        console.warn(`🚨 IP rate limit exceeded: ${ip}`)
-        return res.status(429).send({
-          error: 'Too Many Requests',
-          message: 'คุณส่งคำขอเร็วเกินไป กรุณารอสักครู่',
-          retryAfter: 60
-        })
-      }
+      
+      // Try distributed rate limiter first (Redis/Firestore)
+      let rateLimitResult
+      try {
+        rateLimitResult = await distributedRateLimiter.checkUserRateLimit(studentId, 'assessment')
+        if (!rateLimitResult.allowed) {
+          console.warn(`🚨 Distributed rate limit exceeded: ${studentId}`)
+          return res.status(429).send({
+            error: 'Rate Limit Exceeded',
+            message: rateLimitResult.blockedUntil 
+              ? `คุณถูกบล็อคชั่วคราว กรุณารอจนถึง ${new Date(rateLimitResult.blockedUntil).toLocaleTimeString('th-TH')}`
+              : 'คุณส่งคำตอบเร็วเกินไป กรุณารอสักครู่',
+            remaining: rateLimitResult.remaining,
+            retryAfter: rateLimitResult.retryAfter || 60,
+            backend: rateLimitResult.backend
+          })
+        }
+      } catch (distRateLimitErr) {
+        console.warn('⚠️ Distributed rate limiter failed, falling back to basic:', distRateLimitErr.message)
+        // Fallback to basic rate limiter
+        const ipRateResult = checkIPRateLimit(ip, 'assessment')
+        if (!ipRateResult.allowed) {
+          console.warn(`🚨 IP rate limit exceeded: ${ip}`)
+          return res.status(429).send({
+            error: 'Too Many Requests',
+            message: 'คุณส่งคำขอเร็วเกินไป กรุณารอสักครู่',
+            retryAfter: 60
+          })
+        }
 
-      const userRateResult = await checkUserRateLimit(db, studentId, 'assessment')
-      if (!userRateResult.allowed) {
-        console.warn(`🚨 User rate limit exceeded: ${studentId}`)
-        return res.status(429).send({
-          error: 'Rate Limit Exceeded',
-          message: userRateResult.error || 'คุณส่งคำตอบเร็วเกินไป กรุณารอ 5 นาที',
-          remaining: userRateResult.remaining,
-          resetAt: userRateResult.resetAt
-        })
+        const userRateResult = await checkUserRateLimit(db, studentId, 'assessment')
+        if (!userRateResult.allowed) {
+          console.warn(`🚨 User rate limit exceeded: ${studentId}`)
+          return res.status(429).send({
+            error: 'Rate Limit Exceeded',
+            message: userRateResult.error || 'คุณส่งคำตอบเร็วเกินไป กรุณารอ 5 นาที',
+            remaining: userRateResult.remaining,
+            resetAt: userRateResult.resetAt
+          })
+        }
       }
 
       // Check if OpenAI is configured
@@ -180,6 +266,95 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         return res.status(500).send({
           error: 'OpenAI API not configured',
           message: 'Please set OpenAI API key using: firebase functions:config:set openai.key="your-key"'
+        })
+      }
+
+      // 🆕 EMOTIONAL SUPPORT DETECTION: ตรวจจับความเครียด/ท้อแท้
+      const emotionalState = detectEmotionalState(studentAnswer)
+      if (emotionalState.isEmotional && emotionalState.intensity !== 'low') {
+        console.log(`💙 Emotional state detected for student ${studentId}:`, emotionalState)
+        
+        // Log emotional state
+        await db.collection('emotionalLogs').add({
+          studentId,
+          sessionId,
+          emotionType: emotionalState.emotionType,
+          intensity: emotionalState.intensity,
+          matchedPatterns: emotionalState.matchedPatterns,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+        
+        // Return supportive response instead of assessment
+        if (emotionalState.intensity === 'high') {
+          return res.status(200).json({
+            success: true,
+            isSupportiveMode: true,
+            emotionalState: emotionalState,
+            supportiveMessage: '💙 ครูเห็นว่าหนูกำลังรู้สึกท้อแท้หรือเครียด ไม่เป็นไรนะ การเรียนรู้ต้องใช้เวลา\n\n🌟 ลองหยุดพักสักครู่ หายใจลึกๆ แล้วค่อยกลับมาทำใหม่\n\n💪 ถ้ายังไม่เข้าใจ ลองอ่านคำถามอีกครั้งช้าๆ หรือถามครูผู้สอนได้เลยนะ\n\n📚 ความผิดพลาดคือส่วนหนึ่งของการเรียนรู้ ไม่มีใครเก่งตั้งแต่เริ่มต้น!',
+            tips: [
+              'ลองแบ่งคำถามออกเป็นส่วนย่อยๆ',
+              'เขียนสิ่งที่รู้ออกมาก่อน',
+              'ถามตัวเองว่า "คำถามนี้ถามอะไรจริงๆ"',
+              'ปรึกษาเพื่อนหรือครู'
+            ]
+          })
+        }
+      }
+
+      // 🆕 SPEED RUN DETECTION: ตรวจจับการตอบเร็วเกินไป
+      const speedRunResult = detectSpeedRun(studentAnswer, typingFingerprint)
+      if (speedRunResult.isSpeedRun) {
+        console.warn(`⚡ Speed run detected for student ${studentId}:`, speedRunResult)
+        
+        await db.collection('antiCheatLogs').add({
+          studentId,
+          sessionId,
+          type: 'speed_run',
+          timeSpent: speedRunResult.timeSpent,
+          expectedMinTime: speedRunResult.expectedMinTime,
+          reason: speedRunResult.reason,
+          answerLength: studentAnswer.length,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+        
+        return res.status(400).send({
+          error: 'Speed run detected',
+          speedRun: true,
+          message: `⚡ ตอบเร็วเกินไป! ${speedRunResult.reason}\n\n📝 คำถาม HOTS ต้องใช้เวลาคิดวิเคราะห์ กรุณาอ่านคำถามอีกครั้งและคิดให้รอบคอบก่อนตอบ`,
+          timeSpent: speedRunResult.timeSpent,
+          expectedMinTime: speedRunResult.expectedMinTime
+        })
+      }
+
+      // 🆕 HACKER/CODE DETECTION: ตรวจจับ code และ prompt injection
+      const hackerResult = detectHackerAttempt(studentAnswer)
+      if (hackerResult.isHacker) {
+        console.warn(`🚨 Hacker attempt detected for student ${studentId}:`, hackerResult)
+        
+        await db.collection('antiCheatLogs').add({
+          studentId,
+          sessionId,
+          type: 'hacker_attempt',
+          hackerType: hackerResult.type,
+          severity: hackerResult.severity,
+          reason: hackerResult.reason,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+        
+        // Different messages based on type
+        let warningMessage = ''
+        if (hackerResult.type === 'prompt_injection') {
+          warningMessage = '🛡️ ระบบตรวจพบความพยายามแทรกคำสั่ง\n\nการกระทำนี้ถูกบันทึกไว้แล้ว กรุณาตอบคำถามตามปกติ'
+        } else {
+          warningMessage = `🤖 กรุณาตอบเป็น "ภาษาคน" ไม่ใช่โค้ดโปรแกรม!\n\nระบบตรวจพบ: ${hackerResult.reason}\n\n📝 คำถาม HOTS ต้องการคำตอบที่แสดงการคิดวิเคราะห์ ไม่ใช่โค้ดคอมพิวเตอร์`
+        }
+        
+        return res.status(400).send({
+          error: 'Invalid answer content',
+          hackerAttempt: true,
+          type: hackerResult.type,
+          severity: hackerResult.severity,
+          message: warningMessage
         })
       }
 
@@ -373,29 +548,105 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
 
       // Calculate overall score
       const rubricScores = assessmentResult.rubricScores
-      const overallScore = 
-        rubricScores.analysis + 
-        rubricScores.reasoning + 
-        rubricScores.creativity + 
-        rubricScores.evidence
-
-      // 🆕 SCAFFOLDING LOGIC: Check if score is low and should ask probing question
-      const shouldScaffold = overallScore < 10 && scaffoldingAttempts < 2 && !isScaffolding
       
-      if (shouldScaffold && assessmentResult.probingQuestion) {
+      // 🔬 PHASE 3: Check for Reasoning-Evidence double-counting
+      // Apply adjustment if correlation is high (prevents score inflation)
+      const doubleCountAdjustment = adjustForDoubleCounting(rubricScores)
+      
+      // Use adjusted scores for overall calculation if adjustment was applied
+      const effectiveScores = doubleCountAdjustment.adjusted 
+        ? doubleCountAdjustment.adjustedScores 
+        : rubricScores
+      
+      const overallScore = 
+        effectiveScores.analysis + 
+        effectiveScores.reasoning + 
+        effectiveScores.creativity + 
+        effectiveScores.evidence
+      
+      // Log if adjustment was made
+      if (doubleCountAdjustment.adjusted) {
+        console.log(`📐 Score adjustment applied: ${doubleCountAdjustment.originalTotal} → ${doubleCountAdjustment.adjustedTotal} (${doubleCountAdjustment.reason})`)
+      }
+
+      // 🔬 PHASE 2: Grade-level score appropriateness check
+      const gradeContext = gradeLevel || studentData?.grade
+      let scoreAppropriatenessCheck = null
+      if (gradeContext) {
+        scoreAppropriatenessCheck = checkScoreAppropriateness(rubricScores, gradeContext)
+        if (scoreAppropriatenessCheck.concerns.length > 0) {
+          console.log(`📊 Grade appropriateness concerns for ${gradeContext}:`, scoreAppropriatenessCheck)
+        }
+      }
+
+      // 🔬 PHASE 2: Adaptive Scaffolding with dimension-specific support
+      // 🔬 PHASE 3: Added dimension variance trigger - คะแนนแต่ละมิติต่างกันมาก = ต้องการ scaffolding
+      const dimensionScores = [rubricScores.analysis, rubricScores.reasoning, rubricScores.creativity, rubricScores.evidence]
+      const maxDimScore = Math.max(...dimensionScores)
+      const minDimScore = Math.min(...dimensionScores)
+      const dimensionVariance = maxDimScore - minDimScore
+      
+      // Trigger scaffolding if:
+      // 1. Overall score < 10 (original condition)
+      // 2. OR Dimension variance > 3 (new: significant imbalance in skills)
+      const needsScaffoldingForScore = overallScore < 10
+      const needsScaffoldingForVariance = dimensionVariance > 3 && overallScore < 16  // Don't scaffold high performers
+      const shouldScaffold = (needsScaffoldingForScore || needsScaffoldingForVariance) && scaffoldingAttempts < 2 && !isScaffolding
+      
+      if (shouldScaffold) {
+        // Log why scaffolding was triggered
+        const scaffoldReason = needsScaffoldingForScore 
+          ? 'LOW_OVERALL_SCORE' 
+          : 'HIGH_DIMENSION_VARIANCE'
+        
+        // Use new adaptive scaffolding module
+        const scaffoldingResult = generateAdaptiveScaffolding(
+          rubricScores,
+          scaffoldingAttempts,
+          { maxAttempts: 2 }
+        )
+        
+        // Store scaffolding context for future analysis
+        await db.collection('scaffoldingLogs').add({
+          studentId,
+          sessionId,
+          questionId: questionId || null,
+          attempt: scaffoldingAttempts + 1,
+          rubricScores,
+          weakestDimension: scaffoldingResult.weakestDimension,
+          scaffoldingLevel: scaffoldingResult.level,
+          scaffoldType: scaffoldingResult.scaffoldType,
+          // 🔬 PHASE 3: Track why scaffolding was triggered
+          scaffoldReason,
+          dimensionVariance,
+          overallScore,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+        
         // Don't save final assessment yet - return probing question
         await sessionRef.set({
           isScaffolding: true,
           scaffoldingAttempts: scaffoldingAttempts + 1,
           previousAnswer: studentAnswer,
-          probingQuestion: assessmentResult.probingQuestion,
+          probingQuestion: scaffoldingResult.prompts[0], // Use first prompt
+          scaffoldingContext: {
+            weakestDimension: scaffoldingResult.weakestDimension,
+            level: scaffoldingResult.level,
+            scaffoldType: scaffoldingResult.scaffoldType
+          },
           lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true })
 
         return res.status(200).json({
           success: true,
           needsScaffolding: true,
-          probingQuestion: assessmentResult.probingQuestion,
+          probingQuestion: scaffoldingResult.prompts[0],
+          scaffoldingInfo: {
+            targetDimension: scaffoldingResult.weakestDimension,
+            scaffoldType: scaffoldingResult.scaffoldType,
+            level: scaffoldingResult.level,
+            explanation: scaffoldingResult.explanation
+          },
           currentScore: overallScore,
           attemptsRemaining: 2 - (scaffoldingAttempts + 1)
         })
@@ -406,7 +657,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         await sessionRef.set({
           isScaffolding: false,
           previousAnswer: null,
-          probingQuestion: null
+          probingQuestion: null,
+          scaffoldingContext: null
         }, { merge: true })
       }
 
@@ -614,7 +866,11 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           // Note: Full rawResponse stored separately in aiAuditLogs for privacy
           parseAttempts: parseResult?.errors?.length > 0 ? 2 : 1,
           apiCallAttempts: aiCallResult?.attempts || 1,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          // 🔬 PHASE 3: Model fingerprint for exact reproducibility
+          systemFingerprint: completion?.system_fingerprint || null,
+          completionId: completion?.id || null,
+          modelSnapshot: completion?.model || model  // Actual model used (may differ from requested)
         },
         
         // 🛡️ Reliability Score (0-100)
@@ -663,10 +919,37 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           weekOfTerm: weekOfTerm || null,
           scaffoldingProvided: scaffoldingAttempts > 0,
           scaffoldingLevel: scaffoldingAttempts
+        },
+        
+        // 🔬 PHASE 3: Double-Counting Adjustment metadata
+        scoreAdjustment: doubleCountAdjustment.adjusted ? {
+          applied: true,
+          reason: doubleCountAdjustment.reason,
+          method: doubleCountAdjustment.adjustmentMethod,
+          originalTotal: doubleCountAdjustment.originalTotal,
+          adjustedTotal: doubleCountAdjustment.adjustedTotal,
+          adjustmentFactor: doubleCountAdjustment.adjustmentFactor,
+          correlation: doubleCountAdjustment.correlation
+        } : {
+          applied: false,
+          reason: 'no_adjustment_needed'
         }
       }
 
       const assessmentRef = await db.collection('assessments').add(assessmentData)
+
+      // 🔬 PHASE 3: Track model fingerprint for drift detection (non-blocking)
+      if (completion?.system_fingerprint) {
+        recordModelFingerprint(db, {
+          systemFingerprint: completion.system_fingerprint,
+          completionId: completion.id,
+          modelSnapshot: completion.model,
+          modelRequested: model
+        }, {
+          rubricScores: assessmentData.rubricScores,
+          overallScore: assessmentData.overallScore
+        }).catch(err => console.error('Model fingerprint recording failed:', err))
+      }
 
       // บันทึก Student Progress ถ้ามี LO assessment (+ Gamification)
       if (loAssessment && loAssessment.passedLOs && loAssessment.passedLOs.length > 0) {
@@ -725,11 +1008,26 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           .catch(err => console.error('Growth history update failed:', err))
       }
 
+      // 🔬 PHASE 2: Human-in-the-Loop flagging for low confidence assessments
+      const reviewDecision = shouldFlagForReview(assessmentData)
+      if (reviewDecision.shouldFlag) {
+        // Create review queue item asynchronously
+        createReviewQueueItem(db, assessmentRef.id, assessmentData, reviewDecision.reason, reviewDecision.priority)
+          .then(() => console.log(`📋 Assessment ${assessmentRef.id} flagged for review: ${reviewDecision.reason}`))
+          .catch(err => console.error('Review queue creation failed:', err))
+      }
+
       // Return result
       return res.status(200).json({
         success: true,
         id: assessmentRef.id,
-        result: assessmentData
+        result: assessmentData,
+        // 🔬 PHASE 2: Include review status for transparency
+        reviewStatus: reviewDecision.shouldFlag ? {
+          flagged: true,
+          reason: reviewDecision.reason,
+          priority: reviewDecision.priority
+        } : null
       })
 
     } catch (error) {
@@ -831,6 +1129,21 @@ ${scaffoldingInstructions}
 3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
 4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
 </bias_prevention>
+
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
+- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+- "ดีมากครับ เห็นด้วยเลย"
+
+การตรวจสอบ:
+- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
+- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
+</fluffy_content_detection>
 
 <scoring_rubric>
 หลักการให้คะแนน (0–5 เป็นจำนวนเต็ม)
@@ -1389,6 +1702,169 @@ function detectCopyPaste(text) {
 }
 
 /**
+ * 🆕 Emotional Support Detection
+ * ตรวจจับเมื่อนักเรียนแสดงความเครียด/ท้อแท้ เพื่อเปลี่ยนโหมดเป็น Supportive Mode
+ */
+function detectEmotionalState(text) {
+  const emotionalPatterns = {
+    stress: [
+      /หนู(ทำ)?ไม่ไหว/i, /ไม่เข้าใจ(เลย)?/i, /ยากมาก/i, /ยากเกินไป/i,
+      /เครียด/i, /กดดัน/i, /ท้อ(แท้)?/i, /หมดไฟ/i, /เหนื่อย/i,
+      /ไม่รู้(จะ)?ทำ(ยังไง|อย่างไร)/i, /ช่วย(ด้วย|หน่อย)/i,
+      /ไม่มีความสุข/i, /อยากร้องไห้/i, /กลัว/i
+    ],
+    frustration: [
+      /ทำไม่(ได้|ถูก)/i, /ผิดอีกแล้ว/i, /ไม่เคยถูก/i,
+      /โง่/i, /เกลียด(วิชานี้|ตัวเอง)/i, /ยอมแพ้/i
+    ],
+    confusion: [
+      /งง(มาก)?/i, /สับสน/i, /ไม่เข้าใจคำถาม/i,
+      /หมายความว่า(อะไร|ยังไง)/i, /ช่วยอธิบาย/i
+    ]
+  }
+  
+  const result = {
+    isEmotional: false,
+    emotionType: null,
+    intensity: 'low',
+    matchedPatterns: []
+  }
+  
+  const lowerText = text.toLowerCase()
+  let matchCount = 0
+  
+  for (const [emotionType, patterns] of Object.entries(emotionalPatterns)) {
+    for (const pattern of patterns) {
+      if (pattern.test(lowerText)) {
+        result.matchedPatterns.push(emotionType)
+        matchCount++
+        if (!result.emotionType) {
+          result.emotionType = emotionType
+        }
+      }
+    }
+  }
+  
+  if (matchCount > 0) {
+    result.isEmotional = true
+    result.intensity = matchCount >= 3 ? 'high' : matchCount >= 2 ? 'medium' : 'low'
+  }
+  
+  return result
+}
+
+/**
+ * 🆕 Speed Run Detection (Minimum Time Threshold)
+ * ตรวจจับการตอบเร็วเกินไป (< 10 วินาที) ซึ่งไม่สมเหตุสมผลสำหรับคำถาม HOTS
+ */
+function detectSpeedRun(text, typingFingerprint) {
+  const MINIMUM_TIME_SECONDS = 10 // ขั้นต่ำ 10 วินาทีสำหรับคำถาม HOTS
+  const MINIMUM_CHARS_PER_SECOND = 10 // สูงสุด 10 ตัวอักษร/วินาที (เร็วมาก)
+  
+  const result = {
+    isSpeedRun: false,
+    reason: null,
+    timeSpent: null,
+    expectedMinTime: MINIMUM_TIME_SECONDS
+  }
+  
+  if (!typingFingerprint) return result
+  
+  // Calculate time spent
+  const typingDurationMs = typingFingerprint.typingDurationMs || 0
+  const totalTimeMs = typingFingerprint.totalTimeMs || typingDurationMs
+  const timeSpentSeconds = totalTimeMs / 1000
+  result.timeSpent = timeSpentSeconds
+  
+  // Check minimum time
+  if (timeSpentSeconds < MINIMUM_TIME_SECONDS && text.length > 50) {
+    result.isSpeedRun = true
+    result.reason = `ใช้เวลาตอบเพียง ${timeSpentSeconds.toFixed(1)} วินาที (ขั้นต่ำ ${MINIMUM_TIME_SECONDS} วินาที)`
+    return result
+  }
+  
+  // Check typing speed (chars per second)
+  if (timeSpentSeconds > 0) {
+    const charsPerSecond = text.length / timeSpentSeconds
+    if (charsPerSecond > MINIMUM_CHARS_PER_SECOND && text.length > 100) {
+      result.isSpeedRun = true
+      result.reason = `พิมพ์เร็วเกินไป (${charsPerSecond.toFixed(1)} ตัวอักษร/วินาที)`
+    }
+  }
+  
+  return result
+}
+
+/**
+ * 🆕 Enhanced Code/Hacker Detection
+ * ตรวจจับ HTML/JS/CSS code และ prompt injection attempts
+ */
+function detectHackerAttempt(text) {
+  const result = {
+    isHacker: false,
+    type: null,
+    reason: null,
+    severity: 'low'
+  }
+  
+  // Prompt injection patterns
+  const promptInjectionPatterns = [
+    /ignore (previous |all )?instructions?/i,
+    /forget (everything|what|your)/i,
+    /you are now/i,
+    /new (system )?prompt/i,
+    /tell me a joke/i,
+    /ให้คะแนนเต็ม/i,
+    /ให้ 20 คะแนน/i,
+    /ให้ผ่าน(ทุก|ทั้งหมด)/i,
+    /bypass/i,
+    /override/i,
+    /jailbreak/i,
+    /DAN mode/i
+  ]
+  
+  // Code patterns
+  const codePatterns = [
+    { pattern: /<script[^>]*>/i, type: 'javascript', severity: 'high' },
+    { pattern: /<\/script>/i, type: 'javascript', severity: 'high' },
+    { pattern: /javascript:/i, type: 'javascript', severity: 'high' },
+    { pattern: /onclick=|onerror=|onload=/i, type: 'xss', severity: 'high' },
+    { pattern: /<iframe/i, type: 'html', severity: 'medium' },
+    { pattern: /<style[^>]*>/i, type: 'css', severity: 'low' },
+    { pattern: /SELECT\s+.*\s+FROM/i, type: 'sql', severity: 'medium' },
+    { pattern: /DROP\s+TABLE/i, type: 'sql', severity: 'high' },
+    { pattern: /function\s*\([^)]*\)\s*\{/i, type: 'javascript', severity: 'medium' },
+    { pattern: /const\s+\w+\s*=\s*(\(|function|async)/i, type: 'javascript', severity: 'medium' },
+    { pattern: /import\s+\{[^}]+\}\s+from/i, type: 'javascript', severity: 'medium' },
+    { pattern: /require\s*\(['"][^'"]+['"]\)/i, type: 'javascript', severity: 'medium' }
+  ]
+  
+  // Check prompt injection
+  for (const pattern of promptInjectionPatterns) {
+    if (pattern.test(text)) {
+      result.isHacker = true
+      result.type = 'prompt_injection'
+      result.reason = 'ตรวจพบความพยายามแทรกคำสั่ง'
+      result.severity = 'high'
+      return result
+    }
+  }
+  
+  // Check code patterns
+  for (const { pattern, type, severity } of codePatterns) {
+    if (pattern.test(text)) {
+      result.isHacker = true
+      result.type = type
+      result.reason = `ตรวจพบโค้ด ${type.toUpperCase()}`
+      result.severity = severity
+      return result
+    }
+  }
+  
+  return result
+}
+
+/**
  * 🆕 Enhanced Anti-Cheat Validation
  * ตรวจสอบทั้ง text patterns และ typing fingerprint
  * รองรับทั้ง PC และ Mobile
@@ -1758,9 +2234,29 @@ ${loList}
         throw new Error('Invalid response format from AI')
       }
 
+      // 🆕 QUALITY CHECK: Validate generated questions are HOTS-compliant
+      const validatedQuestions = []
+      for (const q of (result.questions || [])) {
+        const qualityReport = analyzeQuestionQuality(q.question, {
+          hint: q.hint,
+          category: q.category,
+          relatedLOs: q.relatedLOs
+        })
+        
+        validatedQuestions.push({
+          ...q,
+          qualityMetrics: {
+            bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
+            hotsScore: qualityReport.hotsScore,
+            issues: qualityReport.issues?.slice(0, 3) || [],
+            passesHOTSThreshold: qualityReport.hotsScore >= 70
+          }
+        })
+      }
+
       return res.status(200).json({
         success: true,
-        questions: result.questions || []
+        questions: validatedQuestions
       })
 
     } catch (error) {
@@ -1775,6 +2271,198 @@ ${loList}
         })
       }
       
+      return res.status(500).send({
+        error: 'Internal server error',
+        message: error.message
+      })
+    }
+  })
+})
+
+/**
+ * 🆕 Cloud Function to validate question quality before saving
+ * Checks if a question meets HOTS standards
+ */
+exports.validateQuestionQuality = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { question, hint, category, relatedLOs } = req.body
+
+      if (!question) {
+        return res.status(400).send({
+          error: 'Missing required field: question'
+        })
+      }
+
+      // Analyze question quality
+      const qualityReport = analyzeQuestionQuality(question, {
+        hint,
+        category,
+        relatedLOs
+      })
+
+      // Determine pass/fail
+      const passesThreshold = qualityReport.hotsScore >= 70
+      const needsImprovement = qualityReport.hotsScore < 50
+
+      // Get transformation suggestions if needed
+      let transformationSuggestions = null
+      if (needsImprovement && qualityReport.bloomAnalysis.dominantLevel <= 3) {
+        transformationSuggestions = suggestHOTSTransformation(question, qualityReport)
+      }
+
+      return res.status(200).json({
+        success: true,
+        valid: passesThreshold,
+        hotsScore: qualityReport.hotsScore,
+        bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
+        bloomCategory: qualityReport.bloomAnalysis.levelName,
+        cognitiveComplexity: qualityReport.cognitiveComplexity,
+        issues: qualityReport.issues || [],
+        strengths: qualityReport.strengths || [],
+        suggestions: transformationSuggestions,
+        recommendation: passesThreshold 
+          ? '✅ คำถามนี้เหมาะสำหรับประเมิน HOTS'
+          : needsImprovement
+            ? '⚠️ คำถามนี้ยังไม่ถึงมาตรฐาน HOTS แนะนำให้ปรับปรุง'
+            : '📝 คำถามนี้พอใช้ได้ แต่ควรปรับให้ท้าทายขึ้น'
+      })
+
+    } catch (error) {
+      console.error('Validate Question Quality error:', error)
+      return res.status(500).send({
+        error: 'Internal server error',
+        message: error.message
+      })
+    }
+  })
+})
+
+/**
+ * 🆕 Cloud Function to generate a fallback question when question pool is exhausted
+ * Uses weak LOs to create a targeted HOTS question on-the-fly
+ */
+exports.generateFallbackQuestion = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { courseId, courseName, weakLOs, studentGrade, learningOutcomes } = req.body
+
+      if (!courseId || !weakLOs || weakLOs.length === 0) {
+        return res.status(400).send({
+          error: 'Missing required fields: courseId, weakLOs (array of LO codes)'
+        })
+      }
+
+      if (!openai) {
+        return res.status(500).send({
+          error: 'OpenAI API not configured'
+        })
+      }
+
+      // Build LO context
+      const targetLODescriptions = (learningOutcomes || [])
+        .filter(lo => weakLOs.includes(lo.code || lo.loCode))
+        .map(lo => `${lo.code || lo.loCode}: ${lo.description || lo.loDescription}`)
+        .join('\n')
+
+      const gradeContext = studentGrade ? `ระดับชั้น: ${studentGrade}` : 'ระดับมัธยมศึกษา'
+
+      const prompt = `คุณเป็นผู้เชี่ยวชาญออกแบบคำถาม HOTS สำหรับนักเรียน${gradeContext}
+
+**รายวิชา:** ${courseName || 'ไม่ระบุ'}
+
+**Learning Outcomes ที่ต้องการประเมิน (นักเรียนยังอ่อนในเรื่องนี้):**
+${targetLODescriptions || weakLOs.join(', ')}
+
+**คำสั่ง:**
+สร้างคำถาม HOTS 1 ข้อที่:
+1. ตรงเป้าหมายกับ LO ที่กำหนด
+2. กระตุ้นทักษะ Analysis, Reasoning, Creativity, และ Evidence
+3. เป็นคำถามเปิด (Open-ended) ไม่มีคำตอบตายตัว
+4. ท้าทายแต่ไม่ยากเกินไป (ระดับ Bloom's Analyze หรือ Evaluate)
+5. ใช้บริบทที่นักเรียนเข้าใจได้
+6. ไม่ซ้ำกับคำถามทั่วไป (ต้องมีความสร้างสรรค์)
+
+ตอบกลับในรูปแบบ JSON:
+{
+  "question": "คำถาม HOTS ที่สร้างขึ้น",
+  "hint": "คำใบ้สำหรับนักเรียนที่ติด",
+  "category": "หมวดหมู่ (Analysis/Evaluation/Creation)",
+  "relatedLOs": ["LO1", "LO2"],
+  "targetedSkills": ["analysis", "reasoning", "creativity", "evidence"],
+  "difficultyLevel": 3,
+  "bloomLevel": "Analyze",
+  "isGenerated": true,
+  "generatedReason": "question_pool_exhausted"
+}`
+
+      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini'
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert in creating HOTS questions in Thai. Generate creative, engaging questions that assess higher-order thinking. Always respond with valid JSON.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.9, // Higher creativity for varied questions
+        max_tokens: 800
+      })
+
+      const responseText = completion.choices[0].message.content
+      let result
+
+      try {
+        let cleanedText = responseText.trim()
+        if (cleanedText.startsWith('```')) {
+          cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
+          cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+        }
+        result = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error('Failed to parse fallback question response:', responseText)
+        throw new Error('Invalid response format from AI')
+      }
+
+      // Validate the generated question
+      const qualityReport = analyzeQuestionQuality(result.question, {
+        hint: result.hint,
+        category: result.category,
+        relatedLOs: result.relatedLOs
+      })
+
+      return res.status(200).json({
+        success: true,
+        question: {
+          ...result,
+          id: `generated_${Date.now()}`,
+          courseId,
+          isTemporary: true, // Not saved to DB
+          qualityMetrics: {
+            hotsScore: qualityReport.hotsScore,
+            bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
+            passesHOTSThreshold: qualityReport.hotsScore >= 70
+          }
+        },
+        source: 'ai_fallback',
+        reason: 'question_pool_exhausted_for_weak_los'
+      })
+
+    } catch (error) {
+      console.error('Generate Fallback Question error:', error)
       return res.status(500).send({
         error: 'Internal server error',
         message: error.message
@@ -4852,7 +5540,7 @@ ${arceContext}
 กรุณาสร้างใบงานวัดผล ARCE ที่มี ${questionCount || 3} สถานการณ์ ตอบเป็น JSON (ห้าม markdown wrapper):
 {
   "metadata": {
-    "title": "ใบงานวัดผล ARCE: ${topic || 'หัวข้อ'}",
+    "title": "${topic || 'ใบงาน'}",
     "description": "ใบงานประเมินทักษะการคิดขั้นสูงตาม A.R.C.E. Framework",
     "worksheetType": "arce_evaluate",
     "lessonPlanId": "${lessonPlanId || ''}",
@@ -7915,6 +8603,139 @@ exports.healthCheck = functions.https.onRequest(async (req, res) => {
 })
 
 /**
+ * 🧪 System Debug API
+ * ดึง logs และสถิติสำหรับ debugging
+ */
+exports.systemDebug = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { type, hours = 24, limit: limitNum = 50 } = req.query
+      
+      const cutoff = new Date()
+      cutoff.setHours(cutoff.getHours() - parseInt(hours))
+      
+      let result = {}
+      
+      switch (type) {
+        case 'antiCheat':
+          const antiCheatSnapshot = await db.collection('antiCheatLogs')
+            .where('timestamp', '>=', cutoff)
+            .orderBy('timestamp', 'desc')
+            .limit(parseInt(limitNum))
+            .get()
+          
+          result = {
+            type: 'antiCheat',
+            count: antiCheatSnapshot.size,
+            logs: antiCheatSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+            summary: {
+              speedRuns: antiCheatSnapshot.docs.filter(d => d.data().type === 'speed_run').length,
+              hackerAttempts: antiCheatSnapshot.docs.filter(d => d.data().type === 'hacker_attempt').length,
+              copyPaste: antiCheatSnapshot.docs.filter(d => 
+                (d.data().reasons || []).some(r => r.toLowerCase().includes('paste'))
+              ).length
+            }
+          }
+          break
+          
+        case 'emotional':
+          const emotionalSnapshot = await db.collection('emotionalLogs')
+            .where('timestamp', '>=', cutoff)
+            .orderBy('timestamp', 'desc')
+            .limit(parseInt(limitNum))
+            .get()
+          
+          result = {
+            type: 'emotional',
+            count: emotionalSnapshot.size,
+            logs: emotionalSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+            summary: {
+              highIntensity: emotionalSnapshot.docs.filter(d => d.data().intensity === 'high').length,
+              mediumIntensity: emotionalSnapshot.docs.filter(d => d.data().intensity === 'medium').length
+            }
+          }
+          break
+          
+        case 'parseErrors':
+          const parseSnapshot = await db.collection('aiParseLogs')
+            .where('timestamp', '>=', cutoff)
+            .orderBy('timestamp', 'desc')
+            .limit(parseInt(limitNum))
+            .get()
+          
+          result = {
+            type: 'parseErrors',
+            count: parseSnapshot.size,
+            logs: parseSnapshot.docs.map(d => ({ 
+              id: d.id, 
+              ...d.data(),
+              rawResponse: d.data().rawResponse?.substring(0, 500) // Truncate for safety
+            }))
+          }
+          break
+          
+        case 'reliability':
+          // Get reliability stats
+          const assessmentsSnapshot = await db.collection('assessments')
+            .where('createdAt', '>=', cutoff)
+            .limit(200)
+            .get()
+          
+          let totalReliability = 0
+          let fallbackCount = 0
+          let count = 0
+          const reliabilityBuckets = { high: 0, medium: 0, low: 0 }
+          
+          assessmentsSnapshot.forEach(doc => {
+            const data = doc.data()
+            if (data.reliabilityScore !== undefined) {
+              totalReliability += data.reliabilityScore
+              count++
+              
+              if (data.reliabilityScore >= 80) reliabilityBuckets.high++
+              else if (data.reliabilityScore >= 50) reliabilityBuckets.medium++
+              else reliabilityBuckets.low++
+            }
+            if (data.isFallback) fallbackCount++
+          })
+          
+          result = {
+            type: 'reliability',
+            totalAssessments: assessmentsSnapshot.size,
+            averageReliability: count > 0 ? Math.round(totalReliability / count) : null,
+            fallbackCount,
+            fallbackRate: assessmentsSnapshot.size > 0 
+              ? Math.round((fallbackCount / assessmentsSnapshot.size) * 100) 
+              : 0,
+            buckets: reliabilityBuckets
+          }
+          break
+          
+        default:
+          result = {
+            availableTypes: ['antiCheat', 'emotional', 'parseErrors', 'reliability'],
+            usage: '/systemDebug?type=antiCheat&hours=24&limit=50'
+          }
+      }
+      
+      return res.status(200).json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        hours: parseInt(hours),
+        ...result
+      })
+      
+    } catch (error) {
+      console.error('System debug error:', error)
+      return res.status(500).json({
+        success: false,
+        error: error.message
+      })
+    }
+  })
+})
+
+/**
  * 🔄 Sync Student Progress
  * Manual trigger เพื่อ sync LO data จาก assessments + worksheets
  */
@@ -8757,8 +9578,13 @@ exports.calculateEffectSize = functions.https.onRequest(async (req, res) => {
 // ==========================================
 
 /**
- * 📤 Export Research Dataset (CSV)
- * ส่งออกข้อมูลการเรียนรู้เป็น CSV สำหรับงานวิจัย
+ * 📤 Export Research Dataset (CSV, JSON, or Hierarchical JSON)
+ * ส่งออกข้อมูลการเรียนรู้สำหรับงานวิจัย
+ * 
+ * Formats:
+ * - csv: Flat CSV for SPSS/Excel
+ * - json: Summary statistics
+ * - hierarchical: Nested JSON (Student → Assessments → Details)
  */
 exports.exportResearchData = functions.runWith({ 
   timeoutSeconds: 300,
@@ -8766,12 +9592,23 @@ exports.exportResearchData = functions.runWith({
 }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
-      const { courseId, format = 'csv', dateFrom, dateTo } = req.query
+      const { 
+        courseId, 
+        format = 'csv', 
+        dateFrom, 
+        dateTo,
+        // Hierarchical JSON options
+        includeRawAnswers = 'false',
+        includeSequences = 'true',
+        includeDemographics = 'true',
+        kAnonymity = '0'
+      } = req.query
       
       if (!courseId) {
         return res.status(400).json({ error: 'courseId is required' })
       }
       
+      // CSV Format
       if (format === 'csv') {
         const result = await exportResearchCSV(db, courseId, { dateFrom, dateTo })
         
@@ -8784,7 +9621,27 @@ exports.exportResearchData = functions.runWith({
         return res.send(result.csv)
       }
       
-      // JSON format
+      // Hierarchical JSON Format
+      if (format === 'hierarchical') {
+        const result = await exportHierarchicalJSON(db, courseId, {
+          dateFrom,
+          dateTo,
+          includeRawAnswers: includeRawAnswers === 'true',
+          includeSequences: includeSequences === 'true',
+          includeDemographics: includeDemographics === 'true',
+          kAnonymity: parseInt(kAnonymity) || 0
+        })
+        
+        if (!result.success) {
+          return res.status(500).json({ error: result.error })
+        }
+        
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Content-Disposition', `attachment; filename=${result.filename}`)
+        return res.json(result.data)
+      }
+      
+      // Default: JSON summary format
       const summary = await generateResearchSummary(db, courseId)
       return res.json(summary)
       
@@ -9538,3 +10395,49 @@ exports.syncLearningRoomWorksheets = functions.runWith({
     }
   })
 })
+
+// ============================================================
+// 📊 QUALITY ASSURANCE ENDPOINTS (Phase 2+)
+// ============================================================
+
+/**
+ * 📊 Get Fairness Report - Bias analysis across demographic groups
+ * POST /getFairnessReport { courseId, period }
+ */
+exports.getFairnessReport = qualityAssuranceController.getFairnessReport
+
+/**
+ * 👁️ Submit Assessment for Expert Review
+ * POST /submitForReview { assessmentId, reason, priority }
+ */
+exports.submitForReview = qualityAssuranceController.submitForReview
+
+/**
+ * 📋 Get Review Queue - Pending assessments for expert review
+ * GET /getReviewQueue?status=pending
+ */
+exports.getReviewQueue = qualityAssuranceController.getReviewQueue
+
+/**
+ * ✅ Submit Expert Review - Human validation of AI assessment
+ * POST /submitExpertReview { reviewId, expertScores, notes }
+ */
+exports.submitExpertReview = qualityAssuranceController.submitExpertReview
+
+/**
+ * 📐 Get Validation Data - Psychometric validation for research
+ * POST /getValidationData { courseId, validationType }
+ */
+exports.getValidationData = qualityAssuranceController.getValidationData
+
+/**
+ * 🎓 Get Grade Calibration - Grade-appropriate scoring thresholds
+ * GET /getGradeCalibration?gradeLevel=ม.3&subject=วิทยาศาสตร์
+ */
+exports.getGradeCalibration = qualityAssuranceController.getGradeCalibration
+
+/**
+ * 📊 Get Calibration Report - Expert agreement statistics
+ * POST /getCalibrationReport { courseId }
+ */
+exports.getCalibrationReport = qualityAssuranceController.getCalibrationReport

@@ -398,6 +398,319 @@ function getRecommendation(score) {
 }
 
 /**
+ * 🆕 Keystroke Dynamics Analysis
+ * วิเคราะห์รูปแบบการกดแป้นพิมพ์แบบละเอียด
+ * 
+ * Features:
+ * - Key hold duration (dwell time)
+ * - Inter-key interval (flight time)
+ * - Digraph patterns
+ * - Rhythm consistency
+ * 
+ * @param {Array} keystrokeData - Array of keystroke events with timestamps
+ * @returns {Object} Keystroke analysis result
+ */
+function analyzeKeystrokeDynamics(keystrokeData) {
+  if (!keystrokeData || keystrokeData.length < 10) {
+    return {
+      analyzed: false,
+      reason: 'Insufficient keystroke data (need at least 10 keystrokes)',
+      signals: []
+    }
+  }
+  
+  const signals = []
+  
+  // 1. Calculate dwell times (key press duration)
+  const dwellTimes = []
+  for (const event of keystrokeData) {
+    if (event.type === 'keyup' && event.dwellTime !== undefined) {
+      dwellTimes.push(event.dwellTime)
+    }
+  }
+  
+  // 2. Calculate flight times (time between key releases)
+  const flightTimes = []
+  for (let i = 1; i < keystrokeData.length; i++) {
+    if (keystrokeData[i].timestamp && keystrokeData[i - 1].timestamp) {
+      const flight = keystrokeData[i].timestamp - keystrokeData[i - 1].timestamp
+      if (flight > 0 && flight < 5000) { // Filter outliers
+        flightTimes.push(flight)
+      }
+    }
+  }
+  
+  // 3. Statistical analysis of dwell times
+  if (dwellTimes.length >= 5) {
+    const avgDwell = dwellTimes.reduce((a, b) => a + b, 0) / dwellTimes.length
+    const dwellVariance = dwellTimes.reduce((sum, t) => sum + Math.pow(t - avgDwell, 2), 0) / dwellTimes.length
+    const dwellStdDev = Math.sqrt(dwellVariance)
+    const dwellCV = dwellStdDev / avgDwell
+    
+    // Very uniform dwell time is suspicious (human typing varies naturally)
+    if (dwellCV < 0.15) {
+      signals.push({
+        type: 'uniform_dwell_time',
+        cv: Math.round(dwellCV * 100) / 100,
+        avgDwell: Math.round(avgDwell),
+        weight: 20,
+        description: `เวลากดปุ่มสม่ำเสมอผิดปกติ (CV=${dwellCV.toFixed(2)}) - อาจเป็น bot หรือ paste`
+      })
+    }
+    
+    // Average dwell time too fast or too slow
+    if (avgDwell < 50) {
+      signals.push({
+        type: 'very_short_dwell',
+        avgDwell: Math.round(avgDwell),
+        weight: 15,
+        description: `เวลากดปุ่มสั้นมาก (${Math.round(avgDwell)}ms) - เร็วกว่าปกติ`
+      })
+    }
+  }
+  
+  // 4. Statistical analysis of flight times
+  if (flightTimes.length >= 5) {
+    const avgFlight = flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length
+    const flightVariance = flightTimes.reduce((sum, t) => sum + Math.pow(t - avgFlight, 2), 0) / flightTimes.length
+    const flightStdDev = Math.sqrt(flightVariance)
+    const flightCV = flightStdDev / avgFlight
+    
+    // Very uniform flight time is suspicious
+    if (flightCV < 0.20) {
+      signals.push({
+        type: 'uniform_flight_time',
+        cv: Math.round(flightCV * 100) / 100,
+        avgFlight: Math.round(avgFlight),
+        weight: 20,
+        description: `จังหวะการพิมพ์สม่ำเสมอผิดปกติ (CV=${flightCV.toFixed(2)}) - อาจเป็น automated input`
+      })
+    }
+  }
+  
+  // 5. Detect bursts (rapid typing followed by long pauses)
+  let burstCount = 0
+  let longPauseCount = 0
+  const BURST_THRESHOLD = 50   // ms - faster than typical typing
+  const PAUSE_THRESHOLD = 2000 // ms - long thinking pause
+  
+  for (const flight of flightTimes) {
+    if (flight < BURST_THRESHOLD) burstCount++
+    if (flight > PAUSE_THRESHOLD) longPauseCount++
+  }
+  
+  const burstRatio = burstCount / flightTimes.length
+  if (burstRatio > 0.5) {
+    signals.push({
+      type: 'high_burst_ratio',
+      ratio: Math.round(burstRatio * 100),
+      weight: 15,
+      description: `${Math.round(burstRatio * 100)}% เป็นการพิมพ์เร็วผิดปกติ (burst typing)`
+    })
+  }
+  
+  // 6. Lack of thinking pauses in long text
+  const totalKeystrokes = keystrokeData.length
+  if (totalKeystrokes > 100 && longPauseCount < 2) {
+    signals.push({
+      type: 'no_thinking_pauses',
+      keystrokes: totalKeystrokes,
+      pauses: longPauseCount,
+      weight: 15,
+      description: `พิมพ์ ${totalKeystrokes} ตัวอักษรโดยแทบไม่หยุดคิด`
+    })
+  }
+  
+  // 7. Rhythm consistency (standard deviation of rhythm)
+  if (flightTimes.length >= 10) {
+    // Calculate local rhythm consistency
+    const rhythmChanges = []
+    for (let i = 1; i < flightTimes.length; i++) {
+      const change = Math.abs(flightTimes[i] - flightTimes[i - 1])
+      rhythmChanges.push(change)
+    }
+    
+    const avgRhythmChange = rhythmChanges.reduce((a, b) => a + b, 0) / rhythmChanges.length
+    
+    // Very consistent rhythm (low change) is suspicious
+    if (avgRhythmChange < 30) {
+      signals.push({
+        type: 'machine_like_rhythm',
+        avgChange: Math.round(avgRhythmChange),
+        weight: 25,
+        description: `จังหวะการพิมพ์คงที่เหมือนเครื่อง (avg change=${Math.round(avgRhythmChange)}ms)`
+      })
+    }
+  }
+  
+  // Calculate total suspicion score
+  const totalWeight = signals.reduce((sum, s) => sum + (s.weight || 0), 0)
+  const suspicionScore = Math.min(100, totalWeight)
+  
+  return {
+    analyzed: true,
+    suspicionScore,
+    signals,
+    signalCount: signals.length,
+    riskLevel: suspicionScore >= 50 ? 'HIGH' : suspicionScore >= 30 ? 'MEDIUM' : 'LOW',
+    metrics: {
+      keystrokeCount: keystrokeData.length,
+      dwellTimesCount: dwellTimes.length,
+      flightTimesCount: flightTimes.length,
+      avgDwellTime: dwellTimes.length > 0 ? Math.round(dwellTimes.reduce((a, b) => a + b, 0) / dwellTimes.length) : null,
+      avgFlightTime: flightTimes.length > 0 ? Math.round(flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length) : null,
+      burstRatio: Math.round(burstRatio * 100) / 100,
+      longPauseCount
+    },
+    interpretation: suspicionScore >= 50 
+      ? '⚠️ รูปแบบการพิมพ์ผิดปกติ - อาจเป็น automated input หรือ copy-paste'
+      : suspicionScore >= 30
+        ? '📊 รูปแบบการพิมพ์น่าสังเกต - ควรติดตาม'
+        : '✅ รูปแบบการพิมพ์ปกติ'
+  }
+}
+
+/**
+ * 🆕 Build Keystroke Profile for Student
+ * สร้าง profile การพิมพ์ของนักเรียนเพื่อเปรียบเทียบในอนาคต
+ * 
+ * @param {Array} keystrokeHistory - Array of past keystroke sessions
+ * @returns {Object} Student typing profile
+ */
+function buildKeystrokeProfile(keystrokeHistory) {
+  if (!keystrokeHistory || keystrokeHistory.length < 3) {
+    return {
+      profileBuilt: false,
+      reason: 'Need at least 3 sessions to build profile'
+    }
+  }
+  
+  // Aggregate metrics across sessions
+  const allDwellTimes = []
+  const allFlightTimes = []
+  const sessionMetrics = []
+  
+  for (const session of keystrokeHistory) {
+    if (session.metrics) {
+      if (session.metrics.avgDwellTime) allDwellTimes.push(session.metrics.avgDwellTime)
+      if (session.metrics.avgFlightTime) allFlightTimes.push(session.metrics.avgFlightTime)
+      sessionMetrics.push(session.metrics)
+    }
+  }
+  
+  // Calculate profile statistics
+  const profile = {
+    profileBuilt: true,
+    sessionCount: keystrokeHistory.length,
+    avgDwellTime: allDwellTimes.length > 0 
+      ? Math.round(allDwellTimes.reduce((a, b) => a + b, 0) / allDwellTimes.length)
+      : null,
+    dwellTimeStdDev: calculateStdDev(allDwellTimes),
+    avgFlightTime: allFlightTimes.length > 0
+      ? Math.round(allFlightTimes.reduce((a, b) => a + b, 0) / allFlightTimes.length)
+      : null,
+    flightTimeStdDev: calculateStdDev(allFlightTimes),
+    typingSpeedRange: {
+      min: Math.min(...sessionMetrics.map(m => m.cpm || 0).filter(x => x > 0)),
+      max: Math.max(...sessionMetrics.map(m => m.cpm || 0)),
+      avg: Math.round(sessionMetrics.reduce((sum, m) => sum + (m.cpm || 0), 0) / sessionMetrics.length)
+    }
+  }
+  
+  // Define acceptable deviation range (2 standard deviations)
+  profile.acceptableRanges = {
+    dwellTime: {
+      min: profile.avgDwellTime - 2 * (profile.dwellTimeStdDev || 20),
+      max: profile.avgDwellTime + 2 * (profile.dwellTimeStdDev || 20)
+    },
+    flightTime: {
+      min: profile.avgFlightTime - 2 * (profile.flightTimeStdDev || 50),
+      max: profile.avgFlightTime + 2 * (profile.flightTimeStdDev || 50)
+    }
+  }
+  
+  return profile
+}
+
+/**
+ * 🆕 Compare Current Session Against Profile
+ * เปรียบเทียบ session ปัจจุบันกับ profile ปกติของนักเรียน
+ * 
+ * @param {Object} currentMetrics - Current session metrics
+ * @param {Object} profile - Student's typing profile
+ * @returns {Object} Comparison result
+ */
+function compareToProfile(currentMetrics, profile) {
+  if (!profile.profileBuilt || !currentMetrics) {
+    return { compared: false, reason: 'Profile or metrics not available' }
+  }
+  
+  const deviations = []
+  
+  // Check dwell time deviation
+  if (currentMetrics.avgDwellTime && profile.avgDwellTime) {
+    const dwellDev = Math.abs(currentMetrics.avgDwellTime - profile.avgDwellTime) / (profile.dwellTimeStdDev || 20)
+    if (dwellDev > 2) {
+      deviations.push({
+        type: 'dwell_time_anomaly',
+        expected: profile.avgDwellTime,
+        actual: currentMetrics.avgDwellTime,
+        zScore: Math.round(dwellDev * 10) / 10,
+        description: `เวลากดปุ่มต่างจากปกติ ${Math.round(dwellDev * 10) / 10} SD`
+      })
+    }
+  }
+  
+  // Check flight time deviation
+  if (currentMetrics.avgFlightTime && profile.avgFlightTime) {
+    const flightDev = Math.abs(currentMetrics.avgFlightTime - profile.avgFlightTime) / (profile.flightTimeStdDev || 50)
+    if (flightDev > 2) {
+      deviations.push({
+        type: 'flight_time_anomaly',
+        expected: profile.avgFlightTime,
+        actual: currentMetrics.avgFlightTime,
+        zScore: Math.round(flightDev * 10) / 10,
+        description: `จังหวะการพิมพ์ต่างจากปกติ ${Math.round(flightDev * 10) / 10} SD`
+      })
+    }
+  }
+  
+  // Check typing speed deviation
+  if (currentMetrics.cpm && profile.typingSpeedRange) {
+    if (currentMetrics.cpm > profile.typingSpeedRange.max * 1.5) {
+      deviations.push({
+        type: 'speed_anomaly',
+        expected: profile.typingSpeedRange.avg,
+        actual: currentMetrics.cpm,
+        description: `ความเร็วพิมพ์สูงกว่าปกติมาก (${currentMetrics.cpm} vs avg ${profile.typingSpeedRange.avg} CPM)`
+      })
+    }
+  }
+  
+  return {
+    compared: true,
+    isAnomaly: deviations.length > 0,
+    deviations,
+    deviationCount: deviations.length,
+    interpretation: deviations.length === 0
+      ? '✅ รูปแบบการพิมพ์ตรงกับประวัติของนักเรียน'
+      : deviations.length === 1
+        ? '📊 พบความแตกต่างเล็กน้อย - ควรสังเกต'
+        : '⚠️ รูปแบบการพิมพ์ต่างจากปกติมาก - ควรตรวจสอบ'
+  }
+}
+
+/**
+ * Helper: Calculate standard deviation
+ */
+function calculateStdDev(values) {
+  if (!values || values.length < 2) return null
+  const avg = values.reduce((a, b) => a + b, 0) / values.length
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / values.length
+  return Math.round(Math.sqrt(variance) * 10) / 10
+}
+
+/**
  * 🔍 Quick AI Check
  * ตรวจเร็วสำหรับใช้ใน assessment flow
  * 
@@ -423,6 +736,9 @@ module.exports = {
   AI_SIGNALS,
   analyzeForAISignals,
   analyzeTypingBehavior,
+  analyzeKeystrokeDynamics,
+  buildKeystrokeProfile,
+  compareToProfile,
   comprehensiveAIDetection,
   quickAICheck,
   interpretAIScore,

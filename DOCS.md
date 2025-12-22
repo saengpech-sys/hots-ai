@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 5.1** | **Last Updated: December 21, 2025**
+**Version 5.2** | **Last Updated: December 22, 2025**
 
 *Comprehensive technical reference for developers, researchers, and system administrators*
 
@@ -25,6 +25,7 @@
 11. [Firestore Collections Schema](#11-firestore-collections-schema)
 12. [Development Patterns](#12-development-patterns)
 13. [Troubleshooting](#13-troubleshooting)
+14. [Reliability Ecosystem](#14-reliability-ecosystem) ⭐ NEW
 
 ---
 
@@ -1148,6 +1149,86 @@ firebase deploy --only firestore:rules --debug
 
 ---
 
+## 14. Reliability Ecosystem
+
+### 🎯 Overview
+
+HOTS AI implements a comprehensive **8-layer reliability ecosystem** to ensure assessment accuracy, consistency, and trustworthiness. This system is designed with a **Chain of Reasoning** philosophy where each layer validates and enhances the next.
+
+### 📚 Documentation
+
+| Document | Purpose | Language |
+|----------|---------|----------|
+| [RELIABILITY_ECOSYSTEM.md](RELIABILITY_ECOSYSTEM.md) | Complete technical reference | English |
+| [RELIABILITY_ECOSYSTEM_TH.md](RELIABILITY_ECOSYSTEM_TH.md) | Thai explanation | ไทย |
+
+### 🔗 8-Layer Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                   RELIABILITY ECOSYSTEM                       │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│   Layer 1: INPUT VALIDATION        ─► aiParser.js            │
+│            Clean markdown, validate JSON schema               │
+│                                                               │
+│   Layer 2: AI RESILIENCE           ─► reliability.js         │
+│            Retry mechanism, fallback assessment               │
+│                                                               │
+│   Layer 3: INTER-RATER RELIABILITY ─► interRaterReliability.js│
+│            κ, ICC, MAE, Percent Agreement                     │
+│                                                               │
+│   Layer 4: VALIDATION STUDY        ─► validationStudy.js     │
+│            CVR, CVI, Cronbach's α, Criterion Validity         │
+│                                                               │
+│   Layer 5: FAIRNESS AUDIT          ─► fairnessAudit.js       │
+│            Effect size, DIF, group bias detection             │
+│                                                               │
+│   Layer 6: DATA CONSISTENCY        ─► dataConsistency.js     │
+│            Firestore transactions, sync verification          │
+│                                                               │
+│   Layer 7: HUMAN-IN-THE-LOOP       ─► humanInTheLoop.js      │
+│            Review queue, expert calibration                   │
+│                                                               │
+│   Layer 8: GRADE CALIBRATION       ─► gradeLevelCalibration.js│
+│            Developmental stage anchors, age-appropriate norms │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 📊 Key Metrics & Thresholds
+
+| Metric | Minimum | Target | Excellent |
+|--------|---------|--------|-----------|
+| Weighted Kappa (κw) | ≥ 0.60 | ≥ 0.70 | ≥ 0.80 |
+| ICC (2,1) | ≥ 0.70 | ≥ 0.80 | ≥ 0.90 |
+| MAE | ≤ 1.0 | ≤ 0.75 | ≤ 0.50 |
+| Cronbach's Alpha | ≥ 0.70 | ≥ 0.80 | ≥ 0.90 |
+| Effect Size (d) | ≤ 0.20 | ≤ 0.10 | ≤ 0.05 |
+
+### 🔑 Publication Standard
+
+```javascript
+function meetsPublicationStandard(kappa, icc) {
+  return kappa >= 0.60 && icc >= 0.70
+}
+```
+
+### 📁 Module Reference
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `aiParser.js` | ~100 | Clean markdown, parse JSON |
+| `reliability.js` | ~500 | Schema validation, retry logic |
+| `interRaterReliability.js` | ~700 | IRR calculations |
+| `validationStudy.js` | ~580 | Validity metrics |
+| `fairnessAudit.js` | ~550 | Bias detection |
+| `dataConsistency.js` | ~380 | Transaction handling |
+| `humanInTheLoop.js` | ~520 | Review queue |
+| `gradeLevelCalibration.js` | ~550 | Grade norms |
+
+---
+
 ## 🔑 Key Files Reference
 
 | File | Purpose | Lines |
@@ -1156,6 +1237,8 @@ firebase deploy --only firestore:rules --debug
 | `functions/utils/prompts.js` | Modular prompt templates | ~200 |
 | `functions/utils/loAssessment.js` | LO assessment logic | ~150 |
 | `functions/utils/aiParser.js` | JSON response cleaning | ~100 |
+| `functions/utils/reliability.js` | AI resilience & validation | ~500 |
+| `functions/utils/interRaterReliability.js` | IRR metrics | ~700 |
 | `src/stores/chat.js` | Session management, question selection | ~600 |
 | `src/utils/loProgress.js` | **Standard LO counting** | ~420 |
 | `src/views/ChatView.vue` | Main chat interface | ~800 |
@@ -1193,6 +1276,6 @@ firebase emulators:start       # Start all emulators
 
 **HOTS AI ChatLoop — Technical Documentation**
 
-*Version 5.1 | December 21, 2025*
+*Version 5.2 | December 22, 2025*
 
 </div>

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-5.1.0-blue)
+![Version](https://img.shields.io/badge/Version-5.2.0-blue)
 ![Phase](https://img.shields.io/badge/Phase-4%2B%20Production-green)
 ![Tests](https://img.shields.io/badge/Tests-123%20Passed-success)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
@@ -12,9 +12,9 @@
 
 *ระบบประเมินทักษะการคิดขั้นสูง (HOTS) ด้วยปัญญาประดิษฐ์ สำหรับการศึกษาไทยระดับชาติ*
 
-🌐 [Live Demo](https://hots-ai-d028b.web.app) | 📚 [Documentation](./DOCS.md) | 🔬 [Research Pipeline](./RESEARCH_DATA_PIPELINE.md) | 🏆 [DPA Assessment](./DPA_ASSESSMENT_CHECKLIST.md)
+🌐 [Live Demo](https://hots-ai-d028b.web.app) | 📚 [Documentation](./DOCS.md) | 🔬 [Research Pipeline](./RESEARCH_DATA_PIPELINE.md) | 🎯 [Reliability](./RELIABILITY_ECOSYSTEM.md) | 🏆 [DPA Assessment](./DPA_ASSESSMENT_CHECKLIST.md)
 
-**Last Updated:** December 21, 2025
+**Last Updated:** December 22, 2025
 
 </div>
 
@@ -756,6 +756,8 @@ cd functions && npm test # Run all backend tests
 |----------|-------------|-----------------|
 | [DOCS.md](./DOCS.md) | Complete Technical Documentation | Developers |
 | [RESEARCH_DATA_PIPELINE.md](./RESEARCH_DATA_PIPELINE.md) | Research Data Export Guide | Researchers |
+| [RELIABILITY_ECOSYSTEM.md](./RELIABILITY_ECOSYSTEM.md) | 8-Layer Reliability System ⭐ NEW | Researchers |
+| [RELIABILITY_ECOSYSTEM_TH.md](./RELIABILITY_ECOSYSTEM_TH.md) | Thai Reliability Documentation | นักวิจัยไทย |
 | [DPA_ASSESSMENT_CHECKLIST.md](./DPA_ASSESSMENT_CHECKLIST.md) | DPA Competition Evaluation | Evaluators |
 | [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) | IRR Testing Dataset | Researchers |
 | [CODE_AUDIT_REPORT.md](./CODE_AUDIT_REPORT.md) | Function Integration Status | Developers |

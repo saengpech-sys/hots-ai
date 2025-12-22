@@ -769,5 +769,52 @@ service cloud.firestore {
       ); // Mark as read
       allow delete: if isTeacher() || isAnyAdmin();
     }
+    
+    // 🆕 Error Logs collection (Admin/Teacher debug)
+    match /errorLogs/{logId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isSignedIn(); // System creates error logs
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // 🆕 Emotional Support Logs collection (Admin/Teacher debug)
+    match /emotionalLogs/{logId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isSignedIn(); // System creates emotional logs
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // 🆕 Anti-Cheat Logs collection (Admin/Teacher debug)
+    match /antiCheatLogs/{logId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isSignedIn(); // System creates anti-cheat logs
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // 🆕 Speed Run Logs collection (Admin/Teacher debug)
+    match /speedRunLogs/{logId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isSignedIn(); // System creates speed run logs
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // 🆕 AI Parse Logs collection (Admin/Teacher debug)
+    match /aiParseLogs/{logId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isSignedIn(); // System creates AI parse logs
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // 🆕 Idempotency Keys collection (Duplicate submission prevention)
+    match /idempotencyKeys/{keyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable
+    }
+    
+    // 🆕 System Tests collection (Admin/Teacher integration tests)
+    match /_systemTests/{testId} {
+      allow read, write: if isSignedIn() && (isTeacher() || isAnyAdmin());
+    }
   }
 }
