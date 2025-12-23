@@ -464,10 +464,118 @@ export function mergeLOSets(set1, set2) {
   return Array.from(merged).sort()
 }
 
+/**
+ * 🚀 OPTIMIZED: Get passed LOs from denormalized studentProgress
+ * This is faster than querying assessments + worksheetSubmissions
+ * Use this for dashboard displays, fallback to full query if cache is stale
+ * 
+ * @param {string} studentUid - Student's UID
+ * @param {string} courseId - Course ID
+ * @returns {Promise<{passedLOs: string[], fromCache: boolean, lastUpdated: Date|null}>}
+ */
+export async function getStudentPassedLOsFast(studentUid, courseId) {
+  if (!studentUid || !courseId) {
+    return { passedLOs: [], fromCache: false, lastUpdated: null }
+  }
+
+  try {
+    const { doc, getDoc } = await import('firebase/firestore')
+    
+    const progressId = `${studentUid}_${courseId}`
+    const progressRef = doc(db, 'studentProgress', progressId)
+    const progressSnap = await getDoc(progressRef)
+    
+    if (progressSnap.exists()) {
+      const data = progressSnap.data()
+      return {
+        passedLOs: data.passedLOs || [],
+        fromCache: true,
+        lastUpdated: data.lastUpdatedAt?.toDate() || null,
+        totalAssessments: data.assessmentCount || 0,
+        totalWorksheets: data.worksheetCount || 0
+      }
+    }
+    
+    // Fallback to full query if no cached data
+    console.log('[loProgress] No cached data, falling back to full query')
+    const fullResult = await getStudentPassedLOs(studentUid, courseId)
+    return {
+      ...fullResult,
+      fromCache: false,
+      lastUpdated: null
+    }
+  } catch (error) {
+    console.error('[loProgress] Error in fast query:', error)
+    // Fallback to full query on error
+    return await getStudentPassedLOs(studentUid, courseId)
+  }
+}
+
+/**
+ * 🚀 OPTIMIZED: Batch get passed LOs using denormalized studentProgress
+ * Uses 1 query per student instead of 2 (assessments + worksheets)
+ * 
+ * @param {Array<string>} studentUids - Array of student UIDs
+ * @param {string} courseId - Course ID
+ * @returns {Promise<Object>} - Map of studentUid -> {passedLOs, fromCache}
+ */
+export async function getBatchStudentPassedLOsFast(studentUids, courseId) {
+  if (!studentUids?.length || !courseId) {
+    return {}
+  }
+
+  try {
+    const { doc, getDoc } = await import('firebase/firestore')
+    
+    const results = {}
+    const missingStudents = []
+    
+    // Query studentProgress for each student
+    await Promise.all(studentUids.map(async (uid) => {
+      const progressId = `${uid}_${courseId}`
+      const progressRef = doc(db, 'studentProgress', progressId)
+      
+      try {
+        const progressSnap = await getDoc(progressRef)
+        
+        if (progressSnap.exists()) {
+          const data = progressSnap.data()
+          results[uid] = {
+            passedLOs: data.passedLOs || [],
+            assessmentCount: data.assessmentCount || 0,
+            worksheetCount: data.worksheetCount || 0,
+            fromCache: true
+          }
+        } else {
+          missingStudents.push(uid)
+        }
+      } catch (err) {
+        console.warn(`[loProgress] Error fetching progress for ${uid}:`, err.message)
+        missingStudents.push(uid)
+      }
+    }))
+    
+    // Fallback to full query for students without cached data
+    if (missingStudents.length > 0) {
+      console.log(`[loProgress] Falling back to full query for ${missingStudents.length} students`)
+      const fallbackResults = await getBatchStudentPassedLOs(missingStudents, courseId)
+      Object.assign(results, fallbackResults)
+    }
+    
+    return results
+  } catch (error) {
+    console.error('[loProgress] Error in batch fast query:', error)
+    // Fallback to full query
+    return await getBatchStudentPassedLOs(studentUids, courseId)
+  }
+}
+
 export default {
   getStudentPassedLOs,
   getStudentAllPassedLOs,
   getBatchStudentPassedLOs,
+  getStudentPassedLOsFast,
+  getBatchStudentPassedLOsFast,
   addLOToAssessment,
   removeLOFromAssessment,
   updateAssessmentPassedLOs,

@@ -316,10 +316,6 @@ function calculatePointsSimple(assessment) {
   const result = calculatePoints(assessment, {})
   return result.totalEarned
 }
-  bonusPoints += newLOsCount * 5
-  
-  return basePoints + bonusPoints
-}
 
 // Check which badges should be awarded
 function checkBadges(studentStats, totalLOsInCourse = 0) {

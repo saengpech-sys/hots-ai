@@ -15,9 +15,15 @@
  * - Unified response format
  * - Cost tracking per provider
  * - Rate limit handling
+ * - Circuit Breaker protection
+ * - Locked model versions for consistency
+ * 
+ * @version 2.0.0
+ * @since 2025-12-23
  */
 
 const OpenAI = require('openai')
+const { getCircuitBreaker, isOpenAIAvailable } = require('./circuitBreaker')
 
 /**
  * Provider Configuration
@@ -30,12 +36,39 @@ const PROVIDERS = {
 }
 
 /**
+ * 🔒 LOCKED MODEL VERSIONS
+ * ใช้ specific version เพื่อป้องกัน model drift
+ * เมื่อ OpenAI update model behavior จะไม่กระทบ production
+ */
+const LOCKED_MODELS = {
+  // Primary model for assessments - locked to specific version
+  'gpt-4o-mini': 'gpt-4o-mini-2024-07-18',
+  'gpt-4o': 'gpt-4o-2024-08-06',
+  'gpt-4-turbo': 'gpt-4-turbo-2024-04-09',
+  // Fallback versions
+  'gpt-4o-mini-latest': 'gpt-4o-mini',  // Use if specific version fails
+  'gpt-4o-latest': 'gpt-4o'
+}
+
+/**
+ * Get locked model version
+ * @param {string} modelName - Model name
+ * @returns {string} Locked version or original name
+ */
+function getLockedModelVersion(modelName) {
+  return LOCKED_MODELS[modelName] || modelName
+}
+
+/**
  * Model pricing per 1M tokens (as of Dec 2025)
  */
 const MODEL_PRICING = {
   'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gpt-4o-mini-2024-07-18': { input: 0.15, output: 0.60 },
   'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4o-2024-08-06': { input: 2.50, output: 10.00 },
   'gpt-4-turbo': { input: 10.00, output: 30.00 },
+  'gpt-4-turbo-2024-04-09': { input: 10.00, output: 30.00 },
   'claude-3-haiku': { input: 0.25, output: 1.25 },
   'claude-3-sonnet': { input: 3.00, output: 15.00 },
   'gemini-1.5-flash': { input: 0.075, output: 0.30 }
@@ -129,7 +162,7 @@ class LLMProviderManager {
   }
 
   /**
-   * Create chat completion with automatic fallback
+   * Create chat completion with automatic fallback and circuit breaker
    * 
    * @param {Object} params - Completion parameters
    * @param {Array} params.messages - Chat messages
@@ -138,6 +171,7 @@ class LLMProviderManager {
    * @param {number} params.maxTokens - Max tokens
    * @param {number} params.seed - Seed for reproducibility
    * @param {string} params.preferredProvider - Preferred provider ID
+   * @param {boolean} params.useLockedVersion - Use locked model version (default: true)
    * @returns {Object} Unified response
    */
   async createChatCompletion(params) {
@@ -147,8 +181,31 @@ class LLMProviderManager {
       temperature = 0,
       maxTokens = 1500,
       seed = 42,
-      preferredProvider = null
+      preferredProvider = null,
+      useLockedVersion = true
     } = params
+
+    // 🔒 Use locked model version for consistency
+    const resolvedModel = useLockedVersion 
+      ? getLockedModelVersion(model || this.providers.get(PROVIDERS.OPENAI)?.defaultModel || 'gpt-4o-mini')
+      : (model || 'gpt-4o-mini')
+
+    // 🔌 Check circuit breaker before attempting
+    const circuitBreaker = getCircuitBreaker('openai')
+    if (!circuitBreaker.canExecute()) {
+      console.warn('🔌 Circuit breaker OPEN - returning graceful error')
+      return {
+        success: false,
+        error: 'Service temporarily unavailable due to high error rate',
+        circuitState: 'OPEN',
+        attemptLog: [{
+          provider: 'circuit_breaker',
+          success: false,
+          error: 'Circuit breaker open',
+          duration: 0
+        }]
+      }
+    }
 
     // Determine provider order
     const providerOrder = preferredProvider 
@@ -174,14 +231,22 @@ class LLMProviderManager {
       const attemptStart = Date.now()
       
       try {
-        const completion = await provider.client.chat.completions.create({
-          model: model || provider.defaultModel,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          seed
+        // Execute with circuit breaker protection
+        const circuitResult = await circuitBreaker.execute(async () => {
+          return await provider.client.chat.completions.create({
+            model: resolvedModel,
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+            seed
+          })
         })
 
+        if (!circuitResult.success) {
+          throw circuitResult.error || new Error('Circuit breaker rejected request')
+        }
+
+        const completion = circuitResult.result
         const attemptDuration = Date.now() - attemptStart
 
         // Reset failure counter on success
@@ -190,7 +255,7 @@ class LLMProviderManager {
 
         // Track cost
         const usage = completion.usage || {}
-        this._trackCost(providerId, model || provider.defaultModel, usage)
+        this._trackCost(providerId, resolvedModel, usage)
 
         // Log successful attempt
         attemptLog.push({
@@ -373,6 +438,8 @@ module.exports = {
   LLMProviderManager,
   getLLMProvider,
   createChatCompletion,
+  getLockedModelVersion,
   PROVIDERS,
-  MODEL_PRICING
+  MODEL_PRICING,
+  LOCKED_MODELS
 }

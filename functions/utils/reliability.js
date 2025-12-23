@@ -456,14 +456,17 @@ function sleep(ms) {
 function calculateReliabilityScore(assessmentResult, parseResult, retryAttempts) {
   let score = 100
   
+  // Guard against null/undefined parseResult
+  const safeParseResult = parseResult || {}
+  
   // Deduct for parse errors
-  if (parseResult.errors?.length > 0) {
-    score -= parseResult.errors.length * 10
+  if (safeParseResult.errors?.length > 0) {
+    score -= safeParseResult.errors.length * 10
   }
   
   // Deduct for warnings
-  if (parseResult.warnings?.length > 0) {
-    score -= parseResult.warnings.length * 2
+  if (safeParseResult.warnings?.length > 0) {
+    score -= safeParseResult.warnings.length * 2
   }
   
   // Deduct for retry attempts
@@ -472,7 +475,7 @@ function calculateReliabilityScore(assessmentResult, parseResult, retryAttempts)
   }
   
   // Deduct if used fallback
-  if (parseResult.usedFallback) {
+  if (safeParseResult.usedFallback) {
     score -= 30
   }
   

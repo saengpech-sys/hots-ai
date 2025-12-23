@@ -92,6 +92,11 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  // 🔧 FIX: Cleanup function for logout
+  function cleanup() {
+    unsubscribeFromNotifications()
+  }
+
   return {
     notifications,
     loading,
@@ -102,6 +107,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    createNotification
+    createNotification,
+    cleanup
   }
 })

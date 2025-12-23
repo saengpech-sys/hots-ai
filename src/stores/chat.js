@@ -10,10 +10,15 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
-  getDoc
+  getDoc,
+  increment
 } from 'firebase/firestore'
 import { db } from '@/firebase/config'
 import { useAuthStore } from './auth'
+import router from '@/router'
+
+// 🆕 Fetch timeout configuration
+const FETCH_TIMEOUT_MS = 90000 // 90 seconds (Cloud Function timeout is 180s)
 
 export const useChatStore = defineStore('chat', () => {
   const authStore = useAuthStore()
@@ -25,8 +30,22 @@ export const useChatStore = defineStore('chat', () => {
   const error = ref(null)
   const currentQuestion = ref(null)
   
+  // 🆕 AbortController for cancellable requests
+  let currentAbortController = null
+  
   let unsubscribeMessages = null
   let unsubscribeAssessments = null
+
+  // 🆕 Cancel current request function
+  function cancelCurrentRequest() {
+    if (currentAbortController) {
+      currentAbortController.abort()
+      currentAbortController = null
+      loading.value = false
+      return true
+    }
+    return false
+  }
 
   // HOTS Starter Questions - คำถามเริ่มต้นหลากหลายหมวดหมู่
   const starterQuestions = [
@@ -182,9 +201,9 @@ export const useChatStore = defineStore('chat', () => {
         
         allQuestionsWithoutSolution.sort((a, b) => (a.usageCount || 0) - (b.usageCount || 0))
         
-        // อัพเดท usageCount
+        // อัพเดท usageCount atomically
         await updateDoc(doc(db, 'questions', allQuestionsWithoutSolution[0].id), {
-          usageCount: (allQuestionsWithoutSolution[0].usageCount || 0) + 1
+          usageCount: increment(1)
         })
         
         return allQuestionsWithoutSolution[0]
@@ -216,9 +235,9 @@ export const useChatStore = defineStore('chat', () => {
         console.log('📝 Selected random unused question')
       }
 
-      // อัพเดท usageCount
+      // อัพเดท usageCount atomically
       await updateDoc(doc(db, 'questions', selectedQuestion.id), {
-        usageCount: (selectedQuestion.usageCount || 0) + 1
+        usageCount: increment(1)
       })
 
       return selectedQuestion
@@ -311,9 +330,9 @@ export const useChatStore = defineStore('chat', () => {
         console.log('🔄 Selected least-used question (already attempted)')
       }
 
-      // อัพเดท usageCount
+      // อัพเดท usageCount atomically
       await updateDoc(doc(db, 'questions', selectedQuestion.id), {
-        usageCount: (selectedQuestion.usageCount || 0) + 1
+        usageCount: increment(1)
       })
 
       return selectedQuestion
@@ -536,38 +555,83 @@ export const useChatStore = defineStore('chat', () => {
         })
       }
 
+      // 🆕 Create AbortController for timeout and cancellation
+      currentAbortController = new AbortController()
+      const timeoutId = setTimeout(() => {
+        currentAbortController?.abort()
+      }, FETCH_TIMEOUT_MS)
+
       // Call Cloud Function for assessment with LO context + 🆕 Anti-Cheat fingerprint + 🔬 Research metrics
       const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
-      const response = await fetch(`${functionsUrl}/assessAnswer`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          studentId: authStore.user.uid,
-          sessionId: currentSession.value.id,
-          courseId: currentSession.value.courseId || null,
-          questionId: currentQuestion.value.id || null,
-          studentAnswer: text,
-          questionContext: contextText,
-          learningOutcomes: currentSession.value.courseData?.learningOutcomes || [],
-          // 🆕 Anti-Cheat: Send typing fingerprint
-          typingFingerprint: typingFingerprint || null,
-          // 🔬 Research Metrics: Send for AIED research
-          answerMetrics: researchMetrics?.answerMetrics || null,
-          timingMetrics: researchMetrics?.timingMetrics || null,
-          revisionMetrics: researchMetrics?.revisionMetrics || null
+      let response
+      try {
+        response = await fetch(`${functionsUrl}/assessAnswer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            studentId: authStore.user.uid,
+            sessionId: currentSession.value.id,
+            courseId: currentSession.value.courseId || null,
+            questionId: currentQuestion.value.id || null,
+            studentAnswer: text,
+            questionContext: contextText,
+            learningOutcomes: currentSession.value.courseData?.learningOutcomes || [],
+            // 🆕 Anti-Cheat: Send typing fingerprint
+            typingFingerprint: typingFingerprint || null,
+            // 🔬 Research Metrics: Send for AIED research
+            answerMetrics: researchMetrics?.answerMetrics || null,
+            timingMetrics: researchMetrics?.timingMetrics || null,
+            revisionMetrics: researchMetrics?.revisionMetrics || null
+          }),
+          signal: currentAbortController.signal
         })
-      })
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        currentAbortController = null
+        
+        // 🆕 Handle timeout/abort
+        if (fetchError.name === 'AbortError') {
+          throw new Error('timeout: การประเมินใช้เวลานานเกินไป กรุณาลองใหม่')
+        }
+        throw fetchError
+      } finally {
+        clearTimeout(timeoutId)
+      }
 
+      // 🆕 Handle HTTP error status codes with proper UX
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        // 🆕 Handle anti-cheat rejection
+        
+        // 🔐 Handle 401/403 - Session expired or permission denied
+        if (response.status === 401 || response.status === 403) {
+          console.warn('🔐 Authentication error - redirecting to login')
+          await authStore.logout()
+          router.push('/login')
+          throw new Error('session-expired: กรุณาเข้าสู่ระบบใหม่')
+        }
+        
+        // ⏳ Handle 429 - Rate limit
+        if (response.status === 429) {
+          const retryAfter = errorData.retryAfter || 60
+          throw new Error(`rate-limit: ${errorData.message || `กรุณารอ ${retryAfter} วินาทีแล้วลองใหม่`}`)
+        }
+        
+        // 🚨 Handle anti-cheat rejection
         if (errorData.error?.includes('copy-paste') || errorData.antiCheat) {
           throw new Error(`anti-cheat: ${errorData.error || 'Possible cheating detected'}`)
         }
-        throw new Error('Assessment failed')
+        
+        // 🤖 Handle AI/Server errors
+        if (response.status >= 500) {
+          throw new Error('server-error: ระบบมีปัญหาชั่วคราว กรุณาลองใหม่ในอีกสักครู่')
+        }
+        
+        throw new Error(errorData.message || 'Assessment failed')
       }
+      
+      currentAbortController = null
 
       const result = await response.json()
 
@@ -843,6 +907,7 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     endSession,
     loadSession,
     subscribeToAssessments,
-    cleanup  // 🔧 Export cleanup function
+    cleanup,  // 🔧 Export cleanup function
+    cancelCurrentRequest  // 🆕 Export cancel function for UI
   }
 })

@@ -1009,6 +1009,12 @@ async function generateLO() {
     generatingLO.value = true
     error.value = ''
 
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+
     // สร้าง learningStandards text จาก selectedStandards
     const standardsText = formData.value.selectedStandards?.length 
       ? `มาตรฐาน: ${formData.value.selectedStandards.join(', ')}`
@@ -1017,7 +1023,10 @@ async function generateLO() {
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
     const response = await fetch(`${functionsUrl}/generateLearningOutcomes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         courseCode: formData.value.courseCode,
         courseName: formData.value.courseName,

@@ -1835,10 +1835,19 @@ async function generateLessonPlan(unitIdx, planIdx) {
   plan.status = 'generating'
 
   try {
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+    
     // ส่งข้อมูลหน่วยที่สมบูรณ์ไปให้ AI
     const response = await fetch(`${import.meta.env.VITE_FUNCTIONS_URL}/generateLessonPlan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         // ข้อมูลรายวิชา
         courseId: selectedCourse.value.id,

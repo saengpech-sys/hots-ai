@@ -407,10 +407,19 @@ async function aiGenerateLOs() {
   try {
     generatingLOs.value = true
     
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+    
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
     const response = await fetch(`${functionsUrl}/generateLearningOutcomes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         subject: curriculumForm.value.subjectName,
         gradeLevel: curriculumForm.value.gradeLevel

@@ -437,7 +437,7 @@ const isReviewComplete = computed(() => {
 // Methods
 async function loadCourses() {
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     const response = await fetch(`${functionsUrl}/getCourses`, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -453,7 +453,7 @@ async function loadFairnessReport() {
   
   loading.value.fairness = true
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     const response = await fetch(`${functionsUrl}/getFairnessReport`, {
       method: 'POST',
       headers: {
@@ -476,7 +476,7 @@ async function loadFairnessReport() {
 async function loadReviewQueue() {
   loading.value.review = true
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     const response = await fetch(`${functionsUrl}/getReviewQueue?status=${reviewFilter.value}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -498,7 +498,7 @@ async function loadCalibrationReport() {
   
   loading.value.calibration = true
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     const response = await fetch(`${functionsUrl}/getCalibrationReport`, {
       method: 'POST',
       headers: {
@@ -520,7 +520,7 @@ async function loadGradeCalibration() {
   
   loading.value.grade = true
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     const response = await fetch(
       `${functionsUrl}/getGradeCalibration?gradeLevel=${encodeURIComponent(selectedGrade.value)}`,
       { headers: { Authorization: `Bearer ${token}` } }
@@ -552,7 +552,7 @@ function closeReviewModal() {
 
 async function submitExpertReview() {
   try {
-    const token = await auth.user?.getIdToken()
+    const token = await auth.getIdToken()
     await fetch(`${functionsUrl}/submitExpertReview`, {
       method: 'POST',
       headers: {

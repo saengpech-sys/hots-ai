@@ -168,6 +168,136 @@ const db = admin.firestore()
 // Define OpenAI API Key as a secret
 const openaiApiKey = defineSecret('OPENAI_API_KEY')
 
+// =============================================================================
+// 🔐 SECURITY: Role-Based Access Control (RBAC) Helper Functions
+// =============================================================================
+
+/**
+ * 🔐 Verify that the caller has Teacher or Admin role
+ * Use this for teacher-only endpoints (generateSolution, generateLessonPlan, etc.)
+ * @param {Request} req - Express request with Authorization header
+ * @param {Response} res - Express response
+ * @returns {Object|null} - { uid, role } if authorized, null if not (response already sent)
+ */
+async function verifyTeacherRole(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ 
+      error: 'Unauthorized', 
+      message: 'Missing or invalid Authorization header. Please login again.',
+      code: 'AUTH_MISSING'
+    })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    const userDoc = await db.collection('users').doc(decoded.uid).get()
+    
+    if (!userDoc.exists) {
+      res.status(403).send({ 
+        error: 'Forbidden', 
+        message: 'User profile not found',
+        code: 'USER_NOT_FOUND'
+      })
+      return null
+    }
+    
+    const role = userDoc.data()?.role
+    const allowedRoles = ['teacher', 'school_admin', 'esa_admin', 'ministry_admin']
+    
+    if (!allowedRoles.includes(role)) {
+      console.warn(`🚨 RBAC: User ${decoded.uid} (role: ${role}) attempted teacher-only action`)
+      res.status(403).send({ 
+        error: 'Forbidden', 
+        message: 'This action requires teacher or admin privileges',
+        code: 'INSUFFICIENT_ROLE'
+      })
+      return null
+    }
+    
+    return { uid: decoded.uid, role, email: decoded.email }
+  } catch (err) {
+    console.error('🔐 Auth verification failed:', err.message)
+    
+    if (err.code === 'auth/id-token-expired') {
+      res.status(401).send({ 
+        error: 'Token Expired', 
+        message: 'Your session has expired. Please login again.',
+        code: 'TOKEN_EXPIRED'
+      })
+    } else {
+      res.status(401).send({ 
+        error: 'Unauthorized', 
+        message: 'Invalid authentication token',
+        code: 'TOKEN_INVALID'
+      })
+    }
+    return null
+  }
+}
+
+/**
+ * 🔐 Verify that the caller is authenticated (any role)
+ * Use this for endpoints that just need login, not specific role
+ */
+async function verifyAuthenticated(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ 
+      error: 'Unauthorized', 
+      message: 'Authentication required',
+      code: 'AUTH_MISSING'
+    })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    return { uid: decoded.uid, email: decoded.email }
+  } catch (err) {
+    res.status(401).send({ 
+      error: 'Unauthorized', 
+      message: 'Invalid or expired token',
+      code: 'TOKEN_INVALID'
+    })
+    return null
+  }
+}
+
+/**
+ * 🔐 Verify Admin role (school_admin, esa_admin, ministry_admin)
+ */
+async function verifyAdminRole(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Missing auth token' })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    const userDoc = await db.collection('users').doc(decoded.uid).get()
+    const role = userDoc.data()?.role
+    
+    const adminRoles = ['school_admin', 'esa_admin', 'ministry_admin']
+    if (!adminRoles.includes(role)) {
+      res.status(403).send({ error: 'Forbidden', message: 'Admin access required' })
+      return null
+    }
+    
+    return { uid: decoded.uid, role }
+  } catch (err) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Invalid token' })
+    return null
+  }
+}
+
+// =============================================================================
+
 // Initialize OpenAI
 let openai
 try {
@@ -214,6 +344,19 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       if (!studentId || !sessionId || !studentAnswer) {
         return res.status(400).send({ 
           error: 'Missing required fields: studentId, sessionId, studentAnswer' 
+        })
+      }
+
+      // 🛡️ SERVER-SIDE VALIDATION: Minimum answer length (20 characters)
+      // Client-side validation can be bypassed - this is the authoritative check
+      const MIN_ANSWER_LENGTH = 20
+      if (!studentAnswer || studentAnswer.trim().length < MIN_ANSWER_LENGTH) {
+        console.warn(`⚠️ Answer too short from student ${studentId}: ${studentAnswer?.length || 0} chars`)
+        return res.status(400).send({
+          error: 'Answer too short',
+          message: `คำตอบต้องมีความยาวอย่างน้อย ${MIN_ANSWER_LENGTH} ตัวอักษร (ขณะนี้มี ${studentAnswer?.trim()?.length || 0} ตัวอักษร)`,
+          minLength: MIN_ANSWER_LENGTH,
+          actualLength: studentAnswer?.trim()?.length || 0
         })
       }
 
@@ -433,8 +576,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         subject: subject || null  // 🔬 PHASE 2: Pass subject for context
       })
 
-      // Get model from config or env
-      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o'
+      // Get model from config or env - Default to gpt-4o-mini (locked version recommended)
+      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
       // 🛡️ RELIABILITY: Execute OpenAI call with retry mechanism
       let responseText, completion
@@ -846,7 +989,7 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         studentData: studentData, // 🆕 DENORMALIZED: Student info for faster reports
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        aiModel: process.env.OPENAI_MODEL || 'gpt-4o',
+        aiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
         
         // 🔬 PHASE 2: Full Audit Trail for AI Assessment
         promptVersion: 'v3.0-cot-confidence',  // Phase 2 prompt with CoT
@@ -1339,7 +1482,7 @@ ${studentAnswer}
   "analysis": "คำตอบวิเคราะห์องค์ประกอบและเชื่อมเหตุ–ผลได้ตรงตาม LO1 และเสนอแนวคิดใหม่ที่ใช้งานได้ตาม LO3 โดยมิติ analysis และ creativity อยู่ที่ ≥3/5 พร้อมยกตัวอย่างอ้างอิงที่เหมาะสม"
 }`
 
-    const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o'
+    const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
     
     const completion = await openai.chat.completions.create({
       model: model,
@@ -2031,6 +2174,7 @@ function validateAntiCheat(text, typingFingerprint) {
 
 /**
  * Cloud Function to generate Learning Outcomes using AI
+ * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateLearningOutcomes = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -2038,6 +2182,10 @@ exports.generateLearningOutcomes = functions.runWith({ secrets: [openaiApiKey] }
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
 
       const { courseCode, courseName, courseDescription, learningStandards } = req.body
 
@@ -2086,7 +2234,7 @@ ${learningStandards}
 `
 
       const completion = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o',
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
         messages: [
           {
             role: 'system',
@@ -2138,6 +2286,7 @@ ${learningStandards}
 /**
  * Cloud Function to generate HOTS questions using AI
  * Based on Learning Outcomes and course context
+ * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateHOTSQuestion = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -2145,6 +2294,10 @@ exports.generateHOTSQuestion = functions.runWith({ secrets: [openaiApiKey] }).ht
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
 
       const { courseId, courseName, learningOutcomes, questionCount = 1 } = req.body
 
@@ -2197,7 +2350,7 @@ ${loList}
 
 **สำคัญ:** คำถามต้องกระตุ้นให้คิด ไม่ใช่ท่องจำ และเชื่อมโยงกับ LO ที่กำหนด`
 
-      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o'
+      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
       const completion = await openai.chat.completions.create({
         model: model,
@@ -2474,6 +2627,7 @@ ${targetLODescriptions || weakLOs.join(', ')}
 /**
  * Cloud Function to generate solution (เฉลย) for a question using AI
  * This creates a model answer that would score maximum points
+ * 🔐 SECURED: Teacher/Admin only - Students should NOT access this!
  */
 exports.generateSolution = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -2481,6 +2635,11 @@ exports.generateSolution = functions.runWith({ secrets: [openaiApiKey] }).https.
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role - CRITICAL for exam security!
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
+      console.log(`📝 generateSolution called by ${caller.role}: ${caller.uid}`)
 
       const { questionId, question, hint, category, relatedLOs, courseContext } = req.body
 
@@ -2550,7 +2709,7 @@ ${contextInfo}
 
 **สำคัญ:** คำตอบต้องเป็นแบบอย่างที่ดีสำหรับนักเรียน แสดงให้เห็นว่าคำตอบที่ได้คะแนนเต็มควรมีองค์ประกอบอะไรบ้าง`
 
-      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o'
+      const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
       const completion = await openai.chat.completions.create({
         model: model,
@@ -2636,6 +2795,7 @@ ${contextInfo}
 /**
  * Cloud Function to generate class analytics
  * Analyzes all assessments for a specific course to create insights
+ * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateClassAnalytics = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -2643,6 +2803,10 @@ exports.generateClassAnalytics = functions.https.onRequest(async (req, res) => {
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
 
       const { courseId, teacherId } = req.body
 
@@ -3693,6 +3857,7 @@ exports.recalculateStudentProgress = functions.https.onCall(async (data, context
 /**
  * Generate Lesson Plan using AI (5E Model with ARCE Assessment)
  * ครบถ้วนตามโครงสร้างแผนการจัดการเรียนรู้มาตรฐานกระทรวงศึกษาธิการไทย
+ * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateLessonPlan = functions.runWith({ 
   secrets: [openaiApiKey],
@@ -3704,6 +3869,10 @@ exports.generateLessonPlan = functions.runWith({
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
 
       const {
         teacherId,
@@ -4398,6 +4567,7 @@ ${additionalNotes ? `- หมายเหตุเพิ่มเติม: ${ad
 /**
  * Generate Worksheet - สร้างใบงานจากการวิเคราะห์แผนการสอน
  * เป็นโจทย์วัดผลสัมฤทธิ์ว่านักเรียนเรียนรู้จากกิจกรรมได้หรือไม่
+ * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateWorksheet = functions.runWith({ 
   secrets: [openaiApiKey],
@@ -4409,6 +4579,10 @@ exports.generateWorksheet = functions.runWith({
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
 
       const {
         teacherId,
@@ -6117,7 +6291,7 @@ exports.assessWorksheetSubmission = functions.runWith({
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
-      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
 
       // Load worksheet structure if not provided
       let worksheet = worksheetStructure
@@ -7464,7 +7638,7 @@ ${standaloneContext}
       // ✨ Use retry with exponential backoff
       const openaiResponse = await retryWithBackoff(async () => {
         return openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
           messages: [
             {
               role: 'system',
@@ -7982,7 +8156,7 @@ ${plansOverview}
 }`
 
       const openaiResponse = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
         messages: [
           {
             role: 'system',
@@ -8372,7 +8546,7 @@ ${otherPlansContext}
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+              model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
               messages: [
                 { role: 'system', content: 'คุณเป็นผู้เชี่ยวชาญด้านการศึกษาและการสร้างสื่อการสอน ตอบเป็น JSON เท่านั้น ห้ามมี markdown wrapper' },
                 { role: 'user', content: prompt }
@@ -10441,3 +10615,875 @@ exports.getGradeCalibration = qualityAssuranceController.getGradeCalibration
  * POST /getCalibrationReport { courseId }
  */
 exports.getCalibrationReport = qualityAssuranceController.getCalibrationReport
+
+// ============================================================================
+// 🔧 GAP ANALYSIS FIX - Missing Backend Functions (Created: 2024-12-23)
+// ============================================================================
+
+/**
+ * 🔄 Update Adaptive Path - Mark step as completed
+ * POST /updateAdaptivePath { pathId, stepIndex, completed }
+ */
+exports.updateAdaptivePath = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { pathId, stepIndex, completed } = req.body
+
+      if (!pathId || stepIndex === undefined) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: pathId, stepIndex' 
+        })
+      }
+
+      const pathRef = db.collection('learningPaths').doc(pathId)
+      const pathDoc = await pathRef.get()
+
+      if (!pathDoc.exists) {
+        return res.status(404).send({ error: 'Learning path not found' })
+      }
+
+      const pathData = pathDoc.data()
+      const steps = pathData.steps || []
+
+      if (stepIndex < 0 || stepIndex >= steps.length) {
+        return res.status(400).send({ error: 'Invalid step index' })
+      }
+
+      // Update step completion
+      steps[stepIndex].completed = completed
+      steps[stepIndex].completedAt = completed ? admin.firestore.FieldValue.serverTimestamp() : null
+
+      // Check if all steps completed
+      const allCompleted = steps.every(s => s.completed)
+      const newStatus = allCompleted ? 'completed' : 'active'
+
+      await pathRef.update({
+        steps,
+        status: newStatus,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(allCompleted && { completedAt: admin.firestore.FieldValue.serverTimestamp() })
+      })
+
+      return res.status(200).send({
+        success: true,
+        status: newStatus,
+        completedSteps: steps.filter(s => s.completed).length,
+        totalSteps: steps.length
+      })
+    } catch (error) {
+      console.error('Error updating adaptive path:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📝 Assess Submission Multi-Pass - Multi-pass AI assessment for assignments
+ * POST /assessSubmissionMultiPass { submissionId, assignmentId, studentAnswer|answer, questionText?, ... }
+ */
+exports.assessSubmissionMultiPass = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { 
+        submissionId, 
+        assignmentId, 
+        studentId,
+        studentName,
+        // Support both 'studentAnswer' and 'answer' for compatibility
+        studentAnswer: studentAnswerDirect,
+        answer: answerAlias,
+        questionText,
+        courseId,
+        learningOutcomes
+      } = req.body
+      
+      // Normalize answer field
+      const studentAnswer = studentAnswerDirect || answerAlias
+      
+      if (!studentAnswer) {
+        return res.status(400).send({ 
+          error: 'Missing required field: studentAnswer (or answer)' 
+        })
+      }
+      
+      // Get question text from assignment if not provided
+      let finalQuestionText = questionText
+      if (!finalQuestionText && assignmentId) {
+        const assignmentDoc = await db.collection('assignments').doc(assignmentId).get()
+        if (assignmentDoc.exists) {
+          const assignment = assignmentDoc.data()
+          finalQuestionText = assignment.question || assignment.description || 'Assignment submission'
+        }
+      }
+      
+      if (!finalQuestionText) {
+        finalQuestionText = 'Please assess this student submission'
+      }
+
+      const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
+      
+      // Multi-pass assessment: Pass 1 - Initial scoring
+      const pass1Response = await openai.chat.completions.create({
+        model: modelToUse,
+        temperature: 0,
+        seed: 42,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an educational assessment expert using A.R.C.E. rubric.
+Score each dimension 0-5:
+- Analysis: Breaking down concepts, identifying patterns
+- Reasoning: Logical thinking, cause-effect relationships  
+- Creativity: Novel ideas, unique perspectives
+- Evidence: Supporting claims with examples/data
+
+Return JSON only:
+{
+  "rubricScores": {"analysis": 0-5, "reasoning": 0-5, "creativity": 0-5, "evidence": 0-5},
+  "totalScore": 0-20,
+  "feedback": "string",
+  "strengths": ["..."],
+  "improvements": ["..."]
+}`
+          },
+          {
+            role: 'user',
+            content: `Question: ${finalQuestionText}\n\nStudent Answer: ${studentAnswer}`
+          }
+        ]
+      })
+
+      let assessment = JSON.parse(
+        pass1Response.choices[0].message.content
+          .replace(/^```(?:json)?\s*\n?/i, '')
+          .replace(/\n?```\s*$/i, '')
+      )
+
+      // Pass 2 - Verification (if score is borderline)
+      const totalScore = assessment.totalScore
+      if (totalScore >= 8 && totalScore <= 12) {
+        const pass2Response = await openai.chat.completions.create({
+          model: modelToUse,
+          temperature: 0,
+          seed: 42,
+          messages: [
+            {
+              role: 'system',
+              content: `Verify this assessment. Adjust scores if needed. Return same JSON format.`
+            },
+            {
+              role: 'user',
+              content: `Question: ${finalQuestionText}\nAnswer: ${studentAnswer}\nInitial Assessment: ${JSON.stringify(assessment)}`
+            }
+          ]
+        })
+        
+        assessment = JSON.parse(
+          pass2Response.choices[0].message.content
+            .replace(/^```(?:json)?\s*\n?/i, '')
+            .replace(/\n?```\s*$/i, '')
+        )
+      }
+
+      // Save to Firestore
+      const assessmentRef = db.collection('submissionAssessments').doc()
+      await assessmentRef.set({
+        submissionId: submissionId || assessmentRef.id,
+        assignmentId,
+        studentId,
+        studentName: studentName || null,
+        questionText: finalQuestionText,
+        studentAnswer,
+        learningOutcomes: learningOutcomes || [],
+        ...assessment,
+        modelUsed: modelToUse,
+        assessmentType: 'multi-pass',
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        submissionId: submissionId || assessmentRef.id,
+        assessmentId: assessmentRef.id,
+        ...assessment
+      })
+    } catch (error) {
+      console.error('Error in multi-pass assessment:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 👨‍🏫 Submit Teacher Review - Teacher reviews and adjusts AI assessment
+ * POST /submitTeacherReview { assessmentId, teacherScores, teacherFeedback, approved }
+ * 🔐 SECURED: Teacher/Admin only
+ */
+exports.submitTeacherReview = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
+
+      const { assessmentId, teacherId, teacherScores, teacherFeedback, approved, adjustedScores } = req.body
+
+      if (!assessmentId || !teacherId) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: assessmentId, teacherId' 
+        })
+      }
+
+      // Get original assessment
+      const assessmentRef = db.collection('assessments').doc(assessmentId)
+      const assessmentDoc = await assessmentRef.get()
+
+      if (!assessmentDoc.exists) {
+        // Try submissionAssessments collection
+        const subAssessmentRef = db.collection('submissionAssessments').doc(assessmentId)
+        const subDoc = await subAssessmentRef.get()
+        
+        if (!subDoc.exists) {
+          return res.status(404).send({ error: 'Assessment not found' })
+        }
+
+        await subAssessmentRef.update({
+          teacherReview: {
+            teacherId,
+            teacherScores: adjustedScores || teacherScores,
+            teacherFeedback,
+            approved,
+            reviewedAt: admin.firestore.FieldValue.serverTimestamp()
+          },
+          status: approved ? 'approved' : 'needs_revision',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        })
+
+        return res.status(200).send({ success: true, message: 'Teacher review submitted' })
+      }
+
+      // Update main assessments collection
+      await assessmentRef.update({
+        teacherReview: {
+          teacherId,
+          teacherScores: adjustedScores || teacherScores,
+          teacherFeedback,
+          approved,
+          reviewedAt: admin.firestore.FieldValue.serverTimestamp()
+        },
+        finalScores: adjustedScores || assessmentDoc.data().rubricScores,
+        status: approved ? 'approved' : 'needs_revision',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      // Log for IRR calculation
+      await db.collection('teacherReviews').add({
+        assessmentId,
+        teacherId,
+        originalScores: assessmentDoc.data().rubricScores,
+        teacherScores: adjustedScores || teacherScores,
+        feedback: teacherFeedback,
+        approved,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        message: 'Teacher review submitted successfully'
+      })
+    } catch (error) {
+      console.error('Error submitting teacher review:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📝 Submit Appeal - Student submits score appeal
+ * POST /submitAppeal { assessmentId, studentId, reason, expectedScores }
+ */
+exports.submitAppeal = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { assessmentId, studentId, reason, expectedScores, category } = req.body
+
+      if (!assessmentId || !studentId || !reason) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: assessmentId, studentId, reason' 
+        })
+      }
+
+      // Check if appeal already exists
+      const existingAppeals = await db.collection('appeals')
+        .where('assessmentId', '==', assessmentId)
+        .where('status', '==', 'pending')
+        .get()
+
+      if (!existingAppeals.empty) {
+        return res.status(400).send({ 
+          error: 'An appeal for this assessment is already pending' 
+        })
+      }
+
+      // Get original assessment
+      const assessmentDoc = await db.collection('assessments').doc(assessmentId).get()
+      if (!assessmentDoc.exists) {
+        return res.status(404).send({ error: 'Assessment not found' })
+      }
+
+      const appealRef = await db.collection('appeals').add({
+        assessmentId,
+        studentId,
+        reason,
+        expectedScores: expectedScores || null,
+        category: category || 'scoring',
+        originalScores: assessmentDoc.data().rubricScores,
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      // Update assessment status
+      await db.collection('assessments').doc(assessmentId).update({
+        hasAppeal: true,
+        appealId: appealRef.id
+      })
+
+      return res.status(200).send({
+        success: true,
+        appealId: appealRef.id,
+        message: 'Appeal submitted successfully'
+      })
+    } catch (error) {
+      console.error('Error submitting appeal:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * ⚖️ Resolve Appeal - Teacher/Admin resolves student appeal
+ * POST /resolveAppeal { appealId, resolution, adjustedScores, teacherNotes }
+ * 🔐 SECURED: Teacher/Admin only
+ */
+exports.resolveAppeal = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // 🔐 RBAC: Verify teacher/admin role
+      const caller = await verifyTeacherRole(req, res)
+      if (!caller) return // Response already sent
+
+      const { appealId, resolution, adjustedScores, teacherNotes, reviewerId } = req.body
+
+      if (!appealId || !resolution || !reviewerId) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: appealId, resolution, reviewerId' 
+        })
+      }
+
+      const appealRef = db.collection('appeals').doc(appealId)
+      const appealDoc = await appealRef.get()
+
+      if (!appealDoc.exists) {
+        return res.status(404).send({ error: 'Appeal not found' })
+      }
+
+      const appealData = appealDoc.data()
+
+      // Update appeal
+      await appealRef.update({
+        status: resolution, // 'approved', 'rejected', 'partial'
+        adjustedScores: adjustedScores || null,
+        teacherNotes,
+        reviewerId,
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      // If approved/partial, update assessment scores
+      if ((resolution === 'approved' || resolution === 'partial') && adjustedScores) {
+        const totalScore = Object.values(adjustedScores).reduce((a, b) => a + b, 0)
+        await db.collection('assessments').doc(appealData.assessmentId).update({
+          rubricScores: adjustedScores,
+          totalScore,
+          appealResolution: resolution,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        })
+      }
+
+      return res.status(200).send({
+        success: true,
+        message: `Appeal ${resolution}`
+      })
+    } catch (error) {
+      console.error('Error resolving appeal:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📖 Get Detailed Explanation - AI explains assessment scores
+ * POST /getDetailedExplanation { assessmentId }
+ */
+exports.getDetailedExplanation = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { assessmentId } = req.body
+
+      if (!assessmentId) {
+        return res.status(400).send({ error: 'Missing assessmentId' })
+      }
+
+      const assessmentDoc = await db.collection('assessments').doc(assessmentId).get()
+      if (!assessmentDoc.exists) {
+        return res.status(404).send({ error: 'Assessment not found' })
+      }
+
+      const assessment = assessmentDoc.data()
+      const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
+
+      const response = await openai.chat.completions.create({
+        model: modelToUse,
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an educational expert explaining assessment scores to students.
+Provide detailed, constructive explanations in Thai language.
+Be encouraging while being honest about areas for improvement.`
+          },
+          {
+            role: 'user',
+            content: `Explain this assessment in detail:
+Question: ${assessment.questionText || 'N/A'}
+Student Answer: ${assessment.studentAnswer || 'N/A'}
+Scores: ${JSON.stringify(assessment.rubricScores)}
+Total: ${assessment.totalScore}/20
+
+Explain:
+1. Why each dimension received its score
+2. What was done well
+3. Specific suggestions for improvement
+4. How to improve each weak area`
+          }
+        ]
+      })
+
+      const explanation = response.choices[0].message.content
+
+      // Cache explanation
+      await db.collection('assessments').doc(assessmentId).update({
+        detailedExplanation: explanation,
+        explanationGeneratedAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        explanation,
+        assessment: {
+          rubricScores: assessment.rubricScores,
+          totalScore: assessment.totalScore,
+          feedback: assessment.feedback
+        }
+      })
+    } catch (error) {
+      console.error('Error getting detailed explanation:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📚 Get Courses - List courses for a teacher
+ * GET /getCourses?teacherId=xxx
+ */
+exports.getCourses = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { teacherId } = req.query
+
+      let coursesQuery = db.collection('courses')
+      
+      if (teacherId) {
+        coursesQuery = coursesQuery.where('teacherId', '==', teacherId)
+      }
+
+      const snapshot = await coursesQuery.orderBy('createdAt', 'desc').get()
+      
+      const courses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      return res.status(200).send({
+        success: true,
+        courses,
+        count: courses.length
+      })
+    } catch (error) {
+      console.error('Error getting courses:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📖 Generate Micro Lesson - AI generates bite-sized learning content
+ * POST /generateMicroLesson { courseId, topic, learningOutcome, difficulty }
+ */
+exports.generateMicroLesson = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { courseId, topic, learningOutcome, difficulty, gradeLevel, subject } = req.body
+
+      if (!topic) {
+        return res.status(400).send({ error: 'Missing required field: topic' })
+      }
+
+      const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
+
+      const response = await openai.chat.completions.create({
+        model: modelToUse,
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert educational content creator for Thai students.
+Create engaging micro-lessons (5-10 minute learning modules).
+Grade Level: ${gradeLevel || 'มัธยมศึกษา'}
+Subject: ${subject || 'General'}
+
+Return JSON:
+{
+  "title": "string",
+  "objectives": ["..."],
+  "content": {
+    "introduction": "string",
+    "mainContent": "string with markdown",
+    "examples": ["..."],
+    "summary": "string"
+  },
+  "activities": [{"type": "quiz|reflection|practice", "instruction": "string"}],
+  "estimatedMinutes": number,
+  "relatedLOs": ["..."]
+}`
+          },
+          {
+            role: 'user',
+            content: `Create a micro-lesson about: ${topic}
+${learningOutcome ? `Learning Outcome: ${learningOutcome}` : ''}
+${difficulty ? `Difficulty: ${difficulty}` : ''}`
+          }
+        ]
+      })
+
+      const lesson = JSON.parse(
+        response.choices[0].message.content
+          .replace(/^```(?:json)?\s*\n?/i, '')
+          .replace(/\n?```\s*$/i, '')
+      )
+
+      // Save to Firestore
+      const lessonRef = await db.collection('microLessons').add({
+        courseId: courseId || null,
+        topic,
+        learningOutcome,
+        difficulty: difficulty || 'medium',
+        gradeLevel,
+        subject,
+        ...lesson,
+        status: 'active',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        lessonId: lessonRef.id,
+        ...lesson
+      })
+    } catch (error) {
+      console.error('Error generating micro lesson:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 🎯 Generate Interventions - AI suggests personalized interventions
+ * POST /generateInterventions { studentId, courseId }
+ */
+exports.generateInterventions = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { studentId, courseId } = req.body
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      // Get student's assessment history
+      let query = db.collection('assessments').where('studentId', '==', studentId)
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+      
+      const assessmentsSnapshot = await query.orderBy('timestamp', 'desc').limit(20).get()
+      
+      const assessments = assessmentsSnapshot.docs.map(doc => doc.data())
+
+      if (assessments.length === 0) {
+        return res.status(200).send({
+          success: true,
+          interventions: [],
+          message: 'No assessment data available'
+        })
+      }
+
+      // Calculate dimension averages
+      const dimensionTotals = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+      assessments.forEach(a => {
+        if (a.rubricScores) {
+          Object.keys(dimensionTotals).forEach(dim => {
+            dimensionTotals[dim] += a.rubricScores[dim] || 0
+          })
+        }
+      })
+
+      const dimensionAverages = {}
+      Object.keys(dimensionTotals).forEach(dim => {
+        dimensionAverages[dim] = (dimensionTotals[dim] / assessments.length).toFixed(2)
+      })
+
+      const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
+
+      const response = await openai.chat.completions.create({
+        model: modelToUse,
+        temperature: 0.5,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an educational intervention specialist.
+Based on student performance data, suggest specific interventions.
+Return JSON array of interventions:
+[{
+  "type": "remediation|enrichment|practice|support",
+  "priority": "high|medium|low",
+  "targetDimension": "analysis|reasoning|creativity|evidence",
+  "title": "string",
+  "description": "string in Thai",
+  "activities": ["specific activity suggestions"],
+  "estimatedTime": "string",
+  "resources": ["optional resource links"]
+}]`
+          },
+          {
+            role: 'user',
+            content: `Student Performance (${assessments.length} assessments):
+Dimension Averages (out of 5):
+- Analysis: ${dimensionAverages.analysis}
+- Reasoning: ${dimensionAverages.reasoning}
+- Creativity: ${dimensionAverages.creativity}
+- Evidence: ${dimensionAverages.evidence}
+
+Suggest 3-5 targeted interventions.`
+          }
+        ]
+      })
+
+      const interventions = JSON.parse(
+        response.choices[0].message.content
+          .replace(/^```(?:json)?\s*\n?/i, '')
+          .replace(/\n?```\s*$/i, '')
+      )
+
+      return res.status(200).send({
+        success: true,
+        studentId,
+        performanceSummary: dimensionAverages,
+        assessmentCount: assessments.length,
+        interventions
+      })
+    } catch (error) {
+      console.error('Error generating interventions:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * ✅ Verify Evidence - Verify portfolio evidence authenticity
+ * POST /verifyEvidence { evidenceId, verificationCode }
+ */
+exports.verifyEvidence = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { evidenceId, verificationCode } = req.body
+
+      if (!evidenceId && !verificationCode) {
+        return res.status(400).send({ 
+          error: 'Provide either evidenceId or verificationCode' 
+        })
+      }
+
+      let evidenceDoc
+      
+      if (verificationCode) {
+        const snapshot = await db.collection('portfolioEvidence')
+          .where('verificationCode', '==', verificationCode)
+          .limit(1)
+          .get()
+        
+        if (snapshot.empty) {
+          return res.status(404).send({ 
+            success: false, 
+            verified: false,
+            error: 'Evidence not found' 
+          })
+        }
+        evidenceDoc = snapshot.docs[0]
+      } else {
+        const doc = await db.collection('portfolioEvidence').doc(evidenceId).get()
+        if (!doc.exists) {
+          return res.status(404).send({ 
+            success: false, 
+            verified: false,
+            error: 'Evidence not found' 
+          })
+        }
+        evidenceDoc = doc
+      }
+
+      const evidence = evidenceDoc.data()
+
+      // Log verification attempt
+      await db.collection('verificationLogs').add({
+        evidenceId: evidenceDoc.id,
+        verificationCode,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ip: req.ip || 'unknown'
+      })
+
+      return res.status(200).send({
+        success: true,
+        verified: true,
+        evidence: {
+          id: evidenceDoc.id,
+          studentId: evidence.studentId,
+          type: evidence.type,
+          title: evidence.title,
+          score: evidence.score,
+          createdAt: evidence.createdAt,
+          courseId: evidence.courseId,
+          courseName: evidence.courseName
+        }
+      })
+    } catch (error) {
+      console.error('Error verifying evidence:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+/**
+ * 📦 Create Evidence Pack - Bundle portfolio evidence for sharing
+ * POST /createEvidencePack { studentId, evidenceIds, title }
+ */
+exports.createEvidencePack = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { studentId, evidenceIds, title, description, isPublic } = req.body
+
+      if (!studentId || !evidenceIds || evidenceIds.length === 0) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: studentId, evidenceIds' 
+        })
+      }
+
+      // Fetch evidence documents
+      const evidencePromises = evidenceIds.map(id => 
+        db.collection('portfolioEvidence').doc(id).get()
+      )
+      const evidenceDocs = await Promise.all(evidencePromises)
+
+      const evidenceData = evidenceDocs
+        .filter(doc => doc.exists)
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+
+      if (evidenceData.length === 0) {
+        return res.status(404).send({ error: 'No valid evidence found' })
+      }
+
+      // Generate verification code
+      const verificationCode = `EP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+
+      // Create evidence pack
+      const packRef = await db.collection('evidencePacks').add({
+        studentId,
+        title: title || 'Evidence Pack',
+        description: description || '',
+        evidenceIds,
+        evidenceCount: evidenceData.length,
+        verificationCode,
+        isPublic: isPublic || false,
+        totalScore: evidenceData.reduce((sum, e) => sum + (e.score || 0), 0),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: null // Can add expiration if needed
+      })
+
+      return res.status(200).send({
+        success: true,
+        packId: packRef.id,
+        verificationCode,
+        evidenceCount: evidenceData.length,
+        shareUrl: `${req.headers.origin || ''}/portfolio/verify?code=${verificationCode}`
+      })
+    } catch (error) {
+      console.error('Error creating evidence pack:', error)
+      return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})

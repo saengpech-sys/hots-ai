@@ -45,8 +45,8 @@ const {
   getAdjustedThresholds
 } = require('../utils/gradeLevelCalibration')
 
-// Get Firestore
-const db = admin.firestore()
+// Lazy Firestore initialization (avoid calling before admin.initializeApp())
+const getDb = () => admin.firestore()
 
 /**
  * 📊 Get Fairness Audit Report
@@ -54,6 +54,7 @@ const db = admin.firestore()
  */
 exports.getFairnessReport = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       // Verify admin/teacher access
       const authHeader = req.headers.authorization
@@ -144,6 +145,7 @@ exports.submitForReview = functions.https.onRequest((req, res) => {
       return res.status(405).json({ error: 'Method not allowed' })
     }
 
+    const db = getDb()
     try {
       const { assessmentId, reason, isHighStakes, studentAppealed } = req.body
 
@@ -211,6 +213,7 @@ exports.submitForReview = functions.https.onRequest((req, res) => {
  */
 exports.getReviewQueue = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       // Verify teacher/admin access
       const authHeader = req.headers.authorization
@@ -270,6 +273,7 @@ exports.submitExpertReview = functions.https.onRequest((req, res) => {
       return res.status(405).json({ error: 'Method not allowed' })
     }
 
+    const db = getDb()
     try {
       const authHeader = req.headers.authorization
       if (!authHeader) {
@@ -349,6 +353,7 @@ exports.submitExpertReview = functions.https.onRequest((req, res) => {
  */
 exports.getValidationData = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       const authHeader = req.headers.authorization
       if (!authHeader) {
@@ -500,6 +505,7 @@ exports.getGradeCalibration = functions.https.onRequest((req, res) => {
  */
 exports.getCalibrationReport = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       const authHeader = req.headers.authorization
       if (!authHeader) {

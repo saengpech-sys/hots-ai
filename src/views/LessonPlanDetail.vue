@@ -848,12 +848,14 @@ import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
 import { doc, getDoc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'
+import { useAuthStore } from '@/stores/auth'  // 🔐 For authenticated API calls
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
 import KnowledgeSheetGeneratorModal from '@/components/KnowledgeSheetGeneratorModal.vue'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()  // 🔐 Auth store
 
 const plan = ref(null)
 const loading = ref(true)
@@ -1161,10 +1163,19 @@ async function openWorksheetGenerator() {
   generatingWorksheet.value = true
   
   try {
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+    
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
     const response = await fetch(`${functionsUrl}/generateWorksheet`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         // ข้อมูลรายวิชาและหน่วย
         courseName: plan.value.courseName || plan.value.courseTitle || '',

@@ -491,10 +491,19 @@ async function generateQuestions() {
 
   generating.value = true
   try {
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+    
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
     const response = await fetch(`${functionsUrl}/generateHOTSQuestion`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         courseId: selectedCourseId.value,
         courseName: course.courseName,
@@ -671,10 +680,19 @@ async function generateSolution(question) {
   try {
     const course = courses.value.find(c => c.id === selectedCourseId.value)
     
+    // 🔐 Get auth token for secured endpoint
+    const token = await authStore.getIdToken()
+    if (!token) {
+      throw new Error('กรุณาเข้าสู่ระบบใหม่')
+    }
+    
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
     const response = await fetch(`${functionsUrl}/generateSolution`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 🔐 Auth required
+      },
       body: JSON.stringify({
         questionId: question.id,
         question: question.question,

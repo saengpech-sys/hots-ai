@@ -131,13 +131,58 @@ export const useAuthStore = defineStore('auth', () => {
   // Sign out
   async function signOut() {
     try {
+      // 🔧 FIX: Cleanup all store listeners before signing out
+      // This prevents memory leaks and orphaned Firestore listeners
+      await cleanupAllStoreListeners()
+      
       await firebaseSignOut(auth)
       user.value = null
       userProfile.value = null
+      consentAccepted.value = false
     } catch (err) {
       console.error('Sign out error:', err)
       error.value = err.message
       throw err
+    }
+  }
+
+  /**
+   * 🔧 Cleanup all Pinia store listeners
+   * Call this before sign out to prevent orphaned listeners
+   */
+  async function cleanupAllStoreListeners() {
+    try {
+      // Import stores dynamically to avoid circular dependencies
+      const { useGamificationStore } = await import('./gamification')
+      const { useChatStore } = await import('./chat')
+      const { useNotificationStore } = await import('./notifications')
+      const { useLearningPathStore } = await import('./learningPath')
+      
+      // Call cleanup on each store if available
+      const gamificationStore = useGamificationStore()
+      if (gamificationStore.cleanup) {
+        gamificationStore.cleanup()
+      }
+      
+      const chatStore = useChatStore()
+      if (chatStore.cleanup) {
+        chatStore.cleanup()
+      }
+      
+      const notificationStore = useNotificationStore()
+      if (notificationStore.cleanup) {
+        notificationStore.cleanup()
+      }
+      
+      const learningPathStore = useLearningPathStore()
+      if (learningPathStore.cleanup) {
+        learningPathStore.cleanup()
+      }
+      
+      console.log('✅ All store listeners cleaned up')
+    } catch (err) {
+      console.warn('Warning during store cleanup:', err.message)
+      // Don't throw - cleanup errors shouldn't block sign out
     }
   }
 
@@ -285,6 +330,25 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 🔐 Get Firebase ID Token for API calls
+   * Use this for authenticated API requests to Cloud Functions
+   * @returns {Promise<string|null>} JWT token or null if not authenticated
+   */
+  async function getIdToken() {
+    try {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        console.warn('🔐 getIdToken: No current user')
+        return null
+      }
+      return await currentUser.getIdToken()
+    } catch (error) {
+      console.error('🔐 getIdToken error:', error)
+      return null
+    }
+  }
+
   return {
     user,
     userProfile,
@@ -310,6 +374,7 @@ export const useAuthStore = defineStore('auth', () => {
     updateConsents,
     acceptConsent,
     downloadUserData,
-    requestAccountDeletion
+    requestAccountDeletion,
+    getIdToken  // 🆕 For authenticated API calls
   }
 })
