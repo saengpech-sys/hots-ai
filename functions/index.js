@@ -2,7 +2,7 @@ const functions = require('firebase-functions')
 const admin = require('firebase-admin')
 const { OpenAI } = require('openai')
 const cors = require('cors')({ origin: true })
-const { calculatePoints, checkBadges, calculateStreak, BADGES } = require('./gamification')
+const { calculatePoints, calculatePointsSimple, checkBadges, calculateStreak, BADGES } = require('./gamification')
 const { defineSecret } = require('firebase-functions/params')
 
 // 🛡️ Reliability Module - เพิ่มความน่าเชื่อถือ 95%+
@@ -80,7 +80,16 @@ const {
 // 🚦 Distributed Rate Limiter (for production scale)
 const distributedRateLimiter = require('./utils/distributedRateLimiter')
 
-// 🔍 Model Drift Detector - track OpenAI model changes
+// � Circuit Breaker for OpenAI API protection
+const { CircuitBreaker, getCircuitBreaker } = require('./utils/circuitBreaker')
+const openaiCircuitBreaker = new CircuitBreaker('openai-assessment', {
+  failureThreshold: 5,       // Open after 5 failures
+  successThreshold: 2,       // Close after 2 successes
+  timeout: 30000,            // 30 seconds before half-open
+  monitoringWindow: 60000    // 1 minute window
+})
+
+// �🔍 Model Drift Detector - track OpenAI model changes
 const {
   recordModelFingerprint,
   analyzeModelDrift,
@@ -337,13 +346,36 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         weekOfTerm,          // Week 1-20
         // 🔬 PHASE 2: Grade-level calibration
         gradeLevel,          // e.g., "ม.3", "ป.6" - for grade-appropriate scoring
-        subject              // e.g., "วิทยาศาสตร์", "ภาษาไทย"
+        subject,             // e.g., "วิทยาศาสตร์", "ภาษาไทย"
+        // 🆕 IDEMPOTENCY: Prevent duplicate submissions
+        idempotencyKey       // Client-generated unique key per submission attempt
       } = req.body
 
       // Validate input
       if (!studentId || !sessionId || !studentAnswer) {
         return res.status(400).send({ 
           error: 'Missing required fields: studentId, sessionId, studentAnswer' 
+        })
+      }
+
+      // 🆕 IDEMPOTENCY CHECK: Prevent duplicate submissions from network retries
+      const effectiveIdempotencyKey = idempotencyKey || `${sessionId}_${questionId || 'general'}_${Date.now()}`
+      
+      // Check if this request was already processed
+      const existingAssessment = await db.collection('assessments')
+        .where('idempotencyKey', '==', effectiveIdempotencyKey)
+        .limit(1)
+        .get()
+      
+      if (!existingAssessment.empty) {
+        console.log(`🔄 Idempotent request detected: ${effectiveIdempotencyKey}`)
+        const cachedResult = existingAssessment.docs[0]
+        return res.status(200).json({
+          success: true,
+          cached: true,
+          id: cachedResult.id,
+          result: cachedResult.data(),
+          message: 'Assessment already processed (duplicate request)'
         })
       }
 
@@ -579,7 +611,53 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       // Get model from config or env - Default to gpt-4o-mini (locked version recommended)
       const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
-      // 🛡️ RELIABILITY: Execute OpenAI call with retry mechanism
+      // � CIRCUIT BREAKER: Check if OpenAI service is healthy before calling
+      if (!openaiCircuitBreaker.canExecute()) {
+        console.warn('🔌 Circuit breaker OPEN - using fallback immediately')
+        
+        const circuitState = openaiCircuitBreaker.getState()
+        
+        // Log circuit breaker trip
+        await logReliabilityEvent(db, {
+          type: 'CIRCUIT_BREAKER_OPEN',
+          studentId,
+          sessionId,
+          circuitState,
+          message: 'OpenAI circuit breaker is open, using fallback'
+        })
+        
+        // Use fallback assessment
+        const fallbackResult = getFallbackAssessment(studentAnswer, 'OpenAI service temporarily unavailable (circuit breaker)')
+        
+        const fallbackData = {
+          sessionId,
+          studentId,
+          courseId: courseId || null,
+          questionId: questionId || null,
+          questionContext: questionContext || 'General HOTS Assessment',
+          rawAnswer: studentAnswer,
+          rubricScores: fallbackResult.rubricScores,
+          overallScore: Object.values(fallbackResult.rubricScores).reduce((a, b) => a + b, 0),
+          feedbackText: fallbackResult.feedback,
+          isFallback: true,
+          fallbackReason: 'circuit_breaker_open',
+          circuitState: circuitState.state,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          reliabilityScore: 15
+        }
+        
+        const fallbackRef = await db.collection('assessments').add(fallbackData)
+        
+        return res.status(503).json({
+          success: true,
+          id: fallbackRef.id,
+          result: fallbackData,
+          warning: 'Service temporarily degraded - using fallback scoring',
+          retryAfter: Math.ceil(openaiCircuitBreaker.config.timeout / 1000)
+        })
+      }
+
+      // 🛡️ RELIABILITY: Execute OpenAI call with retry mechanism + circuit breaker tracking
       let responseText, completion
       const aiCallResult = await executeWithRetry(async () => {
         const result = await openai.chat.completions.create({
@@ -605,13 +683,17 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       if (!aiCallResult.success) {
         console.error('OpenAI call failed after retries:', aiCallResult.errors)
         
+        // 🔌 Record failure with circuit breaker
+        openaiCircuitBreaker.recordFailure(aiCallResult.errors[aiCallResult.errors.length - 1] || new Error('Unknown AI error'))
+        
         // Log reliability event
         await logReliabilityEvent(db, {
           type: 'AI_CALL_FAILED',
           studentId,
           sessionId,
           errors: aiCallResult.errors,
-          attempts: aiCallResult.attempts
+          attempts: aiCallResult.attempts,
+          circuitState: openaiCircuitBreaker.getState().state
         })
         
         // Use fallback assessment
@@ -647,7 +729,10 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       completion = aiCallResult.result
       responseText = completion.choices[0].message.content
       
-      // 🔬 PHASE 2: Store raw response for audit trail
+      // � Record success with circuit breaker
+      openaiCircuitBreaker.recordSuccess()
+      
+      // �🔬 PHASE 2: Store raw response for audit trail
       const rawAIResponse = responseText
 
       // 🛡️ RELIABILITY: Use safe parser with schema validation
@@ -1054,6 +1139,9 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           majorRevisions: revisionMetrics.majorRevisions || 0
         } : null,
         
+        // 🆕 IDEMPOTENCY: Store key to prevent duplicate processing
+        idempotencyKey: effectiveIdempotencyKey,
+        
         // Assessment context (RQ1: Effectiveness)
         assessmentContext: {
           assessmentType: assessmentType || 'formative',  // pretest | posttest | formative
@@ -1079,7 +1167,117 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         }
       }
 
-      const assessmentRef = await db.collection('assessments').add(assessmentData)
+      // 🆕 ATOMIC BATCH WRITE: All critical writes in single transaction
+      // This prevents data desync between assessments and studentProgress
+      const batch = db.batch()
+      
+      // 1️⃣ Create assessment document
+      const assessmentRef = db.collection('assessments').doc()
+      batch.set(assessmentRef, assessmentData)
+      
+      // 2️⃣ Update session document
+      batch.update(sessionRef, {
+        messageCount: admin.firestore.FieldValue.increment(1),
+        lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+      
+      // 3️⃣ Prepare studentProgress update (if courseId exists)
+      let progressUpdateData = null
+      let pointsEarned = 0
+      let newBadges = []
+      
+      if (courseId) {
+        const progressRef = db.collection('studentProgress').doc(`${studentId}_${courseId}`)
+        const progressDoc = await progressRef.get()
+        
+        // Calculate points
+        pointsEarned = calculatePointsSimple(assessmentData)
+        
+        // Calculate passed LOs
+        const passedLOs = loAssessment?.passedLOs || []
+        
+        if (progressDoc.exists) {
+          const currentData = progressDoc.data()
+          const currentPassed = currentData.passedLOs || []
+          const updatedPassedLOs = [...new Set([...currentPassed, ...passedLOs])]
+          
+          // Calculate streak
+          const currentDate = new Date().toISOString()
+          const streakUpdate = calculateStreak(currentData.lastActiveDate, currentDate)
+          
+          progressUpdateData = {
+            passedLOs: updatedPassedLOs,
+            totalPassed: updatedPassedLOs.length,
+            lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
+            assessmentCount: admin.firestore.FieldValue.increment(1),
+            totalPoints: admin.firestore.FieldValue.increment(pointsEarned),
+            lastActiveDate: currentDate
+          }
+          
+          // Add streak data if applicable
+          if (streakUpdate && streakUpdate.increment) {
+            progressUpdateData.currentStreak = admin.firestore.FieldValue.increment(1)
+            const newStreak = (currentData.currentStreak || 0) + 1
+            if (newStreak > (currentData.maxStreak || 0)) {
+              progressUpdateData.maxStreak = newStreak
+            }
+          }
+          
+          batch.update(progressRef, progressUpdateData)
+          
+          // Check for badges (after batch commit we'll handle this)
+          const courseDoc = await db.collection('courses').doc(courseId).get()
+          const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
+          newBadges = checkBadges({
+            ...currentData,
+            totalPassed: updatedPassedLOs.length,
+            totalPoints: (currentData.totalPoints || 0) + pointsEarned,
+            currentStreak: streakUpdate?.increment ? (currentData.currentStreak || 0) + 1 : currentData.currentStreak
+          }, totalLOs)
+          
+        } else {
+          // Create new progress document
+          progressUpdateData = {
+            studentId,
+            courseId,
+            passedLOs: passedLOs,
+            totalPassed: passedLOs.length,
+            lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
+            assessmentCount: 1,
+            totalPoints: pointsEarned,
+            currentStreak: 1,
+            maxStreak: 1,
+            lastActiveDate: new Date().toISOString(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          }
+          batch.set(progressRef, progressUpdateData)
+        }
+      }
+      
+      // 🔒 COMMIT ATOMIC BATCH - All or nothing
+      try {
+        await batch.commit()
+        console.log(`✅ Atomic batch committed: assessment=${assessmentRef.id}, points=${pointsEarned}`)
+      } catch (batchError) {
+        console.error('❌ Atomic batch failed:', batchError)
+        return res.status(500).send({
+          error: 'Database transaction failed',
+          message: 'ไม่สามารถบันทึกผลการประเมินได้ กรุณาลองใหม่',
+          retryable: true
+        })
+      }
+      
+      // Handle badge updates asynchronously (non-critical)
+      if (newBadges.length > 0 && courseId) {
+        const progressRef = db.collection('studentProgress').doc(`${studentId}_${courseId}`)
+        const badgeIds = newBadges.map(b => b.id)
+        const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+        
+        progressRef.update({
+          badges: admin.firestore.FieldValue.arrayUnion(...badgeIds),
+          totalPoints: admin.firestore.FieldValue.increment(badgePoints)
+        }).catch(err => console.error('Badge update failed (non-critical):', err))
+      }
 
       // 🔬 PHASE 3: Track model fingerprint for drift detection (non-blocking)
       if (completion?.system_fingerprint) {
@@ -1092,33 +1290,6 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           rubricScores: assessmentData.rubricScores,
           overallScore: assessmentData.overallScore
         }).catch(err => console.error('Model fingerprint recording failed:', err))
-      }
-
-      // บันทึก Student Progress ถ้ามี LO assessment (+ Gamification)
-      if (loAssessment && loAssessment.passedLOs && loAssessment.passedLOs.length > 0) {
-        await updateStudentProgress(studentId, courseId, loAssessment.passedLOs, assessmentData)
-      } else {
-        // Update progress even without new LOs (for points and streaks)
-        await updateStudentProgress(studentId, courseId, [], assessmentData)
-      }
-
-      // Update or create session document (reuse sessionRef from earlier)
-      const latestSessionDoc = await sessionRef.get()
-      
-      if (latestSessionDoc.exists) {
-        // Update existing session
-        await sessionRef.update({
-          messageCount: admin.firestore.FieldValue.increment(1),
-          lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
-        })
-      } else {
-        // Create new session if it doesn't exist
-        await sessionRef.set({
-          studentId,
-          messageCount: 1,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
-        })
       }
 
       // 📊 RESEARCH: Log Learning Event (non-blocking)
@@ -10254,7 +10425,214 @@ exports.scheduledCleanupAuditLogs = functions.pubsub
   })
 
 // ============================================================
-// 🔬 RESEARCH DATA PIPELINE v3.0 - NEW APIs
+// � DATA RECONCILIATION FUNCTIONS
+// ============================================================
+
+/**
+ * Scheduled reconciliation for assessment-studentProgress desync
+ * Runs every 6 hours to catch and fix any data inconsistencies
+ */
+exports.scheduledReconciliation = functions.pubsub
+  .schedule('0 */6 * * *')  // Every 6 hours
+  .timeZone('Asia/Bangkok')
+  .onRun(async (context) => {
+    console.log('🔧 Starting scheduled reconciliation...')
+    
+    const stats = {
+      checked: 0,
+      fixed: 0,
+      errors: [],
+      startTime: Date.now()
+    }
+    
+    try {
+      // Get recent assessments (last 12 hours) to find potential desyncs
+      const cutoffTime = new Date(Date.now() - 12 * 60 * 60 * 1000)
+      
+      const recentAssessmentsSnap = await db.collection('assessments')
+        .where('createdAt', '>=', cutoffTime)
+        .orderBy('createdAt', 'desc')
+        .limit(500)
+        .get()
+      
+      // Group by student-course pairs
+      const studentCourseMap = new Map()
+      
+      recentAssessmentsSnap.docs.forEach(doc => {
+        const data = doc.data()
+        const key = `${data.studentId}_${data.courseId}`
+        
+        if (!studentCourseMap.has(key)) {
+          studentCourseMap.set(key, {
+            studentId: data.studentId,
+            courseId: data.courseId,
+            assessments: []
+          })
+        }
+        
+        studentCourseMap.get(key).assessments.push({
+          id: doc.id,
+          passedLOs: data.loAssessment?.passedLOs || [],
+          createdAt: data.createdAt
+        })
+      })
+      
+      console.log(`📊 Found ${studentCourseMap.size} student-course pairs to check`)
+      
+      // Verify each pair
+      for (const [key, data] of studentCourseMap) {
+        stats.checked++
+        
+        try {
+          const progressRef = db.collection('studentProgress').doc(key)
+          const progressDoc = await progressRef.get()
+          
+          // Collect all passed LOs from assessments
+          const expectedLOs = new Set()
+          data.assessments.forEach(a => {
+            a.passedLOs.forEach(lo => expectedLOs.add(lo))
+          })
+          
+          // Get ALL assessments for complete picture
+          const allAssessmentsSnap = await db.collection('assessments')
+            .where('studentId', '==', data.studentId)
+            .where('courseId', '==', data.courseId)
+            .select('loAssessment')
+            .get()
+          
+          allAssessmentsSnap.docs.forEach(doc => {
+            const los = doc.data().loAssessment?.passedLOs || []
+            los.forEach(lo => expectedLOs.add(lo))
+          })
+          
+          if (!progressDoc.exists) {
+            // Missing progress document - create it
+            await progressRef.set({
+              studentId: data.studentId,
+              courseId: data.courseId,
+              passedLOs: Array.from(expectedLOs),
+              totalPassed: expectedLOs.size,
+              assessmentCount: allAssessmentsSnap.size,
+              lastReconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              createdBy: 'reconciliation'
+            })
+            
+            stats.fixed++
+            console.log(`✅ Created missing progress for ${key}`)
+          } else {
+            // Check for mismatches
+            const storedLOs = new Set(progressDoc.data().passedLOs || [])
+            const missing = [...expectedLOs].filter(lo => !storedLOs.has(lo))
+            
+            if (missing.length > 0) {
+              // Fix the mismatch
+              await progressRef.update({
+                passedLOs: admin.firestore.FieldValue.arrayUnion(...missing),
+                totalPassed: admin.firestore.FieldValue.increment(missing.length),
+                lastReconciledAt: admin.firestore.FieldValue.serverTimestamp()
+              })
+              
+              stats.fixed++
+              console.log(`✅ Fixed ${key}: added ${missing.length} missing LOs`)
+            }
+          }
+        } catch (pairError) {
+          stats.errors.push({
+            key,
+            error: pairError.message
+          })
+        }
+      }
+      
+      // Log results
+      const duration = Date.now() - stats.startTime
+      console.log(`📊 Reconciliation completed in ${duration}ms: checked=${stats.checked}, fixed=${stats.fixed}, errors=${stats.errors.length}`)
+      
+      // Store report
+      await db.collection('systemReports').add({
+        type: 'reconciliation',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        stats,
+        durationMs: duration
+      })
+      
+      return { success: true, ...stats }
+    } catch (error) {
+      console.error('❌ Reconciliation failed:', error)
+      return { success: false, error: error.message, stats }
+    }
+  })
+
+/**
+ * Manual reconciliation trigger for specific student-course
+ * Callable by admin
+ */
+exports.triggerReconciliation = functions.https.onCall(async (data, context) => {
+  // Verify admin access
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required')
+  }
+  
+  const callerDoc = await db.collection('users').doc(context.auth.uid).get()
+  const callerRole = callerDoc.data()?.role
+  
+  if (!['teacher', 'ministry_admin', 'esa_admin', 'school_admin'].includes(callerRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin access required')
+  }
+  
+  const { studentId, courseId } = data
+  
+  if (!studentId || !courseId) {
+    throw new functions.https.HttpsError('invalid-argument', 'studentId and courseId required')
+  }
+  
+  try {
+    const key = `${studentId}_${courseId}`
+    
+    // Get all assessments
+    const assessmentsSnap = await db.collection('assessments')
+      .where('studentId', '==', studentId)
+      .where('courseId', '==', courseId)
+      .get()
+    
+    // Collect all passed LOs
+    const passedLOs = new Set()
+    let totalPoints = 0
+    
+    assessmentsSnap.docs.forEach(doc => {
+      const assessment = doc.data()
+      const los = assessment.loAssessment?.passedLOs || []
+      los.forEach(lo => passedLOs.add(lo))
+      totalPoints += calculatePointsSimple(assessment)
+    })
+    
+    // Update progress
+    const progressRef = db.collection('studentProgress').doc(key)
+    await progressRef.set({
+      studentId,
+      courseId,
+      passedLOs: Array.from(passedLOs),
+      totalPassed: passedLOs.size,
+      assessmentCount: assessmentsSnap.size,
+      totalPoints,
+      lastReconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+      reconciledBy: context.auth.uid
+    }, { merge: true })
+    
+    return {
+      success: true,
+      passedLOsCount: passedLOs.size,
+      assessmentCount: assessmentsSnap.size,
+      totalPoints
+    }
+  } catch (error) {
+    throw new functions.https.HttpsError('internal', error.message)
+  }
+})
+
+// ============================================================
+// �🔬 RESEARCH DATA PIPELINE v3.0 - NEW APIs
 // ============================================================
 
 /**

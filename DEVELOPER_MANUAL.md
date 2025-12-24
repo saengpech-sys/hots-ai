@@ -1,4 +1,4 @@
-# 📖 HOTS AI ChatLoop - Developer Manual (v5.1)
+# 📖 HOTS AI ChatLoop - Developer Manual (v5.2)
 
 > **คู่มือสำหรับนักพัฒนารุ่นต่อไป** — เอกสารนี้รวบรวมทุกสิ่งที่คุณต้องรู้เพื่อพัฒนา, Debug และ Deploy ระบบ HOTS AI ChatLoop
 
@@ -1649,7 +1649,7 @@ exports.assessAnswer = functions
 
 *Built with ❤️ for Thai Education*
 
-**Version 5.1** | **December 2025**
+**Version 5.2** | **December 2025**
 
 ---
 

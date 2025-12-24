@@ -243,6 +243,20 @@ class CircuitBreaker {
     this._transitionTo(STATES.OPEN)
     console.warn(`⚠️ Circuit ${this.name} force opened`)
   }
+
+  /**
+   * Public method to record success (for external retry mechanisms)
+   */
+  recordSuccess() {
+    this._recordSuccess()
+  }
+
+  /**
+   * Public method to record failure (for external retry mechanisms)
+   */
+  recordFailure(error) {
+    this._recordFailure(error)
+  }
 }
 
 // Singleton instances for different services

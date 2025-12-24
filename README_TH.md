@@ -6,7 +6,7 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-5.1.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
+![Version](https://img.shields.io/badge/Version-5.2.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
 ![DPA](https://img.shields.io/badge/DPA_Award-11%2F11_Passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white)
 ![Tests](https://img.shields.io/badge/Tests-123_Passed-8B5CF6?style=for-the-badge&logo=vitest&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white)
@@ -556,7 +556,7 @@ copies of the Software...
 
 ---
 
-**Version 5.1.0** · **22 ธันวาคม 2568**
+**Version 5.2.0** · **24 ธันวาคม 2568**
 
 [🌐 Website](https://hots-ai-d028b.web.app) · [📖 Docs](DOCS_TH.md) · [🐛 Issues](https://github.com/saengpech-sys/hots-ai/issues) · [💬 Discussions](https://github.com/saengpech-sys/hots-ai/discussions)
 
