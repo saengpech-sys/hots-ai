@@ -171,6 +171,26 @@ const { getLLMProvider, createChatCompletion } = require('./utils/llmProvider')
 // 📊 Quality Assurance Controller
 const qualityAssuranceController = require('./controllers/qualityAssuranceController')
 
+// 🤖 NEW: Multi-Agent Assessment System (C10 Research Grade)
+const {
+  runMultiAgentAssessment,
+  AGENT_CONFIG
+} = require('./utils/multiAgentAssessment')
+
+// 🔬 NEW: Reliability Ecosystem (Golden Dataset, Bias Detection)
+const {
+  GoldenDatasetManager,
+  BiasDetectionSystem,
+  DriftDetectionSystem,
+  ReliabilityEcosystem
+} = require('./utils/reliabilityEcosystem')
+
+// 📈 NEW: Learning Trajectory Analytics
+const {
+  LearningTrajectoryAnalyzer,
+  SEMDataExporter
+} = require('./utils/learningTrajectory')
+
 admin.initializeApp()
 const db = admin.firestore()
 
@@ -11862,6 +11882,490 @@ exports.createEvidencePack = functions.https.onRequest(async (req, res) => {
     } catch (error) {
       console.error('Error creating evidence pack:', error)
       return res.status(500).send({ success: false, error: error.message })
+    }
+  })
+})
+
+// =============================================================================
+// 🤖 MULTI-AGENT ASSESSMENT SYSTEM (C10 Research Grade)
+// =============================================================================
+
+/**
+ * 🤖 Multi-Agent Assessment - Professional-grade HOTS assessment
+ * Uses 6 specialized agents for maximum accuracy
+ * POST /assessAnswerMultiAgent { studentAnswer, question, context }
+ */
+exports.assessAnswerMultiAgent = functions.runWith({ 
+  secrets: [openaiApiKey],
+  timeoutSeconds: 300,
+  memory: '1GB'
+}).https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const { studentAnswer, question, context, studentId, sessionId } = req.body
+
+      if (!studentAnswer || !question) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: studentAnswer, question' 
+        })
+      }
+
+      // Initialize OpenAI
+      const openai = new OpenAI({ apiKey: openaiApiKey.value() })
+
+      // Run multi-agent assessment
+      const result = await runMultiAgentAssessment(
+        openai,
+        studentAnswer,
+        question,
+        context || {}
+      )
+
+      // Log for research
+      if (studentId) {
+        await logLearningEvent({
+          studentId,
+          eventType: 'MULTI_AGENT_ASSESSMENT',
+          data: {
+            questionId: question.id || 'unknown',
+            totalScore: result.finalAssessment?.totalScore,
+            agentScores: result.agentResults,
+            confidence: result.finalAssessment?.confidence,
+            processingTime: result.processingTime
+          }
+        })
+      }
+
+      return res.status(200).send({
+        success: true,
+        assessment: result.finalAssessment,
+        agentDetails: result.agentResults,
+        adversarialReview: result.adversarialReview,
+        consensusProcess: result.consensusProcess,
+        confidence: result.finalAssessment?.confidence,
+        processingTime: result.processingTime
+      })
+    } catch (error) {
+      console.error('Multi-agent assessment error:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+// =============================================================================
+// 📈 LEARNING TRAJECTORY ANALYTICS
+// =============================================================================
+
+/**
+ * 📈 Get Student Learning Trajectory - Deep analysis of learning path
+ * GET /getStudentTrajectory?studentId=xxx&courseId=yyy
+ */
+exports.getStudentTrajectory = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'GET' && req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      const studentId = req.query.studentId || req.body?.studentId
+      const courseId = req.query.courseId || req.body?.courseId
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      // Fetch assessments for trajectory analysis
+      let query = db.collection('assessments')
+        .where('studentId', '==', studentId)
+        .orderBy('createdAt', 'asc')
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+
+      const snapshot = await query.limit(500).get()
+      
+      if (snapshot.empty) {
+        return res.status(200).send({
+          success: true,
+          trajectory: null,
+          message: 'No assessments found for trajectory analysis'
+        })
+      }
+
+      const assessments = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || new Date()
+      }))
+
+      // Initialize analyzer and compute trajectory
+      const analyzer = new LearningTrajectoryAnalyzer(studentId)
+      const trajectory = analyzer.analyzeTrajectory(assessments)
+
+      return res.status(200).send({
+        success: true,
+        trajectory: {
+          studentId,
+          assessmentCount: assessments.length,
+          ...trajectory
+        }
+      })
+    } catch (error) {
+      console.error('Error getting trajectory:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 📊 Export SEM-Ready Data - For structural equation modeling
+ * POST /exportSEMData { courseId, minAssessments, kAnonymityThreshold }
+ */
+exports.exportSEMData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { 
+        courseId, 
+        minAssessments = 3, 
+        kAnonymityThreshold = 5 
+      } = req.body
+
+      // Fetch students with enough assessments
+      const studentsQuery = await db.collection('users')
+        .where('role', '==', 'student')
+        .get()
+
+      const studentTrajectories = []
+
+      for (const studentDoc of studentsQuery.docs) {
+        const studentId = studentDoc.id
+        
+        let assessmentQuery = db.collection('assessments')
+          .where('studentId', '==', studentId)
+          .orderBy('createdAt', 'asc')
+        
+        if (courseId) {
+          assessmentQuery = assessmentQuery.where('courseId', '==', courseId)
+        }
+
+        const assessmentsSnap = await assessmentQuery.limit(200).get()
+        
+        if (assessmentsSnap.size >= minAssessments) {
+          const assessments = assessmentsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || new Date()
+          }))
+
+          const analyzer = new LearningTrajectoryAnalyzer(studentId)
+          const trajectory = analyzer.analyzeTrajectory(assessments)
+          
+          studentTrajectories.push({
+            studentId,
+            studentData: studentDoc.data(),
+            trajectory,
+            assessmentCount: assessments.length
+          })
+        }
+      }
+
+      // Export to SEM format with k-anonymity
+      const exporter = new SEMDataExporter()
+      const semData = exporter.exportForSEM(studentTrajectories, {
+        kAnonymityThreshold,
+        includeRawScores: false
+      })
+
+      return res.status(200).send({
+        success: true,
+        data: semData,
+        studentCount: studentTrajectories.length,
+        exportedAt: new Date().toISOString()
+      })
+    } catch (error) {
+      console.error('Error exporting SEM data:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+// =============================================================================
+// 🔬 RELIABILITY ECOSYSTEM (Golden Dataset, Bias, Drift)
+// =============================================================================
+
+/**
+ * 🎯 Get Golden Dataset Stats - For research validation
+ * GET /getGoldenDatasetStats
+ */
+exports.getGoldenDatasetStats = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const goldenManager = new GoldenDatasetManager(db)
+      const stats = await goldenManager.getDatasetStats()
+
+      return res.status(200).send({
+        success: true,
+        stats
+      })
+    } catch (error) {
+      console.error('Error getting golden dataset stats:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * ➕ Add to Golden Dataset - Expert-validated sample
+ * POST /addGoldenSample { assessmentId, expertScores, expertId }
+ */
+exports.addGoldenSample = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { assessmentId, expertScores, expertId, notes } = req.body
+
+      if (!assessmentId || !expertScores) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: assessmentId, expertScores' 
+        })
+      }
+
+      // Fetch original assessment
+      const assessmentDoc = await db.collection('assessments').doc(assessmentId).get()
+      if (!assessmentDoc.exists) {
+        return res.status(404).send({ error: 'Assessment not found' })
+      }
+
+      const assessment = assessmentDoc.data()
+
+      const goldenManager = new GoldenDatasetManager(db)
+      const result = await goldenManager.addSample({
+        originalAssessmentId: assessmentId,
+        studentAnswer: assessment.studentAnswer,
+        question: assessment.question,
+        aiScores: assessment.rubricScores,
+        expertScores,
+        expertId: expertId || auth.uid,
+        notes,
+        metadata: {
+          courseId: assessment.courseId,
+          gradeLevel: assessment.gradeLevel
+        }
+      })
+
+      return res.status(200).send({
+        success: true,
+        sampleId: result.id,
+        message: 'Sample added to golden dataset'
+      })
+    } catch (error) {
+      console.error('Error adding golden sample:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 🔍 Run Bias Detection - Check for systematic biases
+ * POST /runBiasDetection { assessmentIds }
+ */
+exports.runBiasDetection = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { courseId, limit = 100 } = req.body
+
+      // Fetch recent assessments
+      let query = db.collection('assessments')
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+
+      const snapshot = await query.get()
+      const assessments = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      const biasDetector = new BiasDetectionSystem()
+      const biasReport = biasDetector.analyzeForBias(assessments)
+
+      // Save report
+      await db.collection('biasReports').add({
+        ...biasReport,
+        courseId,
+        assessmentCount: assessments.length,
+        analyzedBy: auth.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        report: biasReport
+      })
+    } catch (error) {
+      console.error('Error running bias detection:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 📊 Get Expert Validation Dashboard Data
+ * GET /getExpertValidationData
+ */
+exports.getExpertValidationData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      // Get golden dataset stats
+      const goldenSnapshot = await db.collection('goldenDataset')
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get()
+
+      const goldenSamples = goldenSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      // Calculate IRR if we have expert validations
+      let irrMetrics = null
+      if (goldenSamples.length >= 10) {
+        const aiScores = goldenSamples.map(s => s.aiScores)
+        const expertScores = goldenSamples.map(s => s.expertScores)
+        
+        // Calculate for each dimension
+        const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+        irrMetrics = {}
+        
+        for (const dim of dimensions) {
+          const aiDim = aiScores.map(s => s[dim] || 0)
+          const expertDim = expertScores.map(s => s[dim] || 0)
+          
+          irrMetrics[dim] = {
+            pearson: calculatePearsonCorrelation(aiDim, expertDim),
+            mae: calculateMAE(aiDim, expertDim),
+            weightedKappa: calculateWeightedKappa(aiDim, expertDim)
+          }
+        }
+
+        // Overall
+        const aiTotal = aiScores.map(s => 
+          (s.analysis || 0) + (s.reasoning || 0) + (s.creativity || 0) + (s.evidence || 0)
+        )
+        const expertTotal = expertScores.map(s => 
+          (s.analysis || 0) + (s.reasoning || 0) + (s.creativity || 0) + (s.evidence || 0)
+        )
+        
+        irrMetrics.overall = {
+          pearson: calculatePearsonCorrelation(aiTotal, expertTotal),
+          mae: calculateMAE(aiTotal, expertTotal),
+          icc: calculateICC(aiTotal.map((ai, i) => [ai, expertTotal[i]]))
+        }
+      }
+
+      // Get recent bias reports
+      const biasSnapshot = await db.collection('biasReports')
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get()
+
+      const biasReports = biasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      // Get pending validations (assessments needing expert review)
+      const pendingSnapshot = await db.collection('assessments')
+        .where('needsExpertReview', '==', true)
+        .orderBy('createdAt', 'desc')
+        .limit(20)
+        .get()
+
+      const pendingValidations = pendingSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      return res.status(200).send({
+        success: true,
+        data: {
+          goldenDataset: {
+            totalSamples: goldenSamples.length,
+            samples: goldenSamples.slice(0, 10)
+          },
+          irrMetrics,
+          biasReports,
+          pendingValidations,
+          publicationReadiness: irrMetrics?.overall?.icc?.value > 0.75 
+            ? 'Ready' 
+            : irrMetrics?.overall?.icc?.value > 0.6 
+              ? 'Moderate' 
+              : 'Needs Improvement'
+        }
+      })
+    } catch (error) {
+      console.error('Error getting expert validation data:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
     }
   })
 })

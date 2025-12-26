@@ -208,6 +208,14 @@
             </div>
             <span class="badge-new">NEW</span>
           </button>
+          <button @click="$router.push('/research/expert-validation-dashboard')" class="action-btn highlight-research">
+            <span class="action-icon">🎯</span>
+            <div class="action-text">
+              <strong>Expert Validation Dashboard</strong>
+              <small>Golden Dataset, Bias Detection, Publication Ready</small>
+            </div>
+            <span class="badge-new">C10</span>
+          </button>
           <!-- Admin Tools Section -->
           <div class="action-divider">🛠️ Admin Tools</div>
           <button @click="$router.push('/admin/system-check')" class="action-btn highlight-admin">

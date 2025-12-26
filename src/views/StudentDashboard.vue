@@ -213,6 +213,10 @@
               <span class="action-icon">📈</span>
               <span class="action-label">ความคืบหน้า LO</span>
             </button>
+            <button @click="$router.push('/learning-trajectory')" class="action-btn highlight-new">
+              <span class="action-icon">📊</span>
+              <span class="action-label">วิถีการเรียนรู้</span>
+            </button>
             <button @click="$router.push('/leaderboard')" class="action-btn">
               <span class="action-icon">🏆</span>
               <span class="action-label">ลีดเดอร์บอร์ด</span>

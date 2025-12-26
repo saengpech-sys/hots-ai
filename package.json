@@ -14,6 +14,7 @@
     "functions:deploy": "cd functions && npm run deploy"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "firebase": "^10.9.0",
     "marked": "^17.0.0",
     "pinia": "^2.1.7",

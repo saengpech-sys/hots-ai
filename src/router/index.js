@@ -340,6 +340,24 @@ const routes = [
     component: () => import('@/views/AITeacherComparison.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
+  {
+    path: '/research/expert-validation-dashboard',
+    name: 'ExpertValidationDashboard',
+    component: () => import('@/views/ExpertValidationDashboard.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/learning-trajectory',
+    name: 'LearningTrajectory',
+    component: () => import('@/views/LearningTrajectoryView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/learning-trajectory/:studentId',
+    name: 'LearningTrajectoryStudent',
+    component: () => import('@/views/LearningTrajectoryView.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
   
   // ==========================================
   // Learning Social Network Routes

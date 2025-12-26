@@ -1,5 +1,5 @@
 /**
- * 🎯 Adaptive Scaffolding Module
+ * 🎯 Adaptive Scaffolding Module (Enhanced for C10 Research)
  * 
  * ระบบ Scaffolding อัจฉริยะที่ปรับตามจุดอ่อนเฉพาะมิติ
  * อิงทฤษฎี Vygotsky's Zone of Proximal Development
@@ -9,11 +9,16 @@
  * 2. Progressive hint levels (implicit → explicit)
  * 3. Adaptive difficulty adjustment
  * 4. Metacognitive prompts
+ * 5. 🔴 NEW: Scaffolding Effectiveness Tracking (Research Grade)
+ * 6. 🔴 NEW: Metacognitive Prompting System
+ * 7. 🔴 NEW: Strategy Comparison Analytics
  * 
  * References:
  * - Vygotsky, L. S. (1978). Mind in Society
  * - Wood, Bruner & Ross (1976). Role of tutoring in problem solving
  * - Puntambekar & Hubscher (2005). Tools for Scaffolding
+ * - Schraw & Dennison (1994). Metacognitive Awareness Inventory
+ * - Flavell (1979). Metacognition and cognitive monitoring
  */
 
 /**
@@ -424,4 +429,584 @@ module.exports = {
   formatScaffoldingMessage,
   analyzeScaffoldingEffectiveness,
   getScaffoldingStatistics
+}
+
+// =====================================================
+// 🔴 NEW: Enhanced Metacognitive Scaffolding System
+// =====================================================
+
+/**
+ * 🧠 Metacognitive Scaffolding Strategies
+ * Based on Schraw & Dennison (1994) MAI Framework
+ */
+const METACOGNITIVE_STRATEGIES = {
+  declarative: {
+    name: 'Declarative Knowledge',
+    thai: 'ความรู้เชิงประกาศ',
+    description: 'Knowledge about self as learner and factors affecting performance',
+    prompts: [
+      'ลองคิดดูว่าตัวเองรู้อะไรเกี่ยวกับเรื่องนี้บ้าง?',
+      'คำถามนี้เกี่ยวข้องกับความรู้เรื่องอะไรที่เคยเรียนมา?',
+      'ตัวเองถนัดการคิดแบบไหนมากที่สุด?'
+    ]
+  },
+  procedural: {
+    name: 'Procedural Knowledge',
+    thai: 'ความรู้เชิงกระบวนการ',
+    description: 'Knowledge about strategies and procedures',
+    prompts: [
+      'จะใช้วิธีคิดแบบไหนในการตอบคำถามนี้?',
+      'มีขั้นตอนอะไรบ้างที่ควรทำก่อน-หลัง?',
+      'เคยใช้วิธีนี้กับโจทย์แบบนี้ได้ผลไหม?'
+    ]
+  },
+  conditional: {
+    name: 'Conditional Knowledge',
+    thai: 'ความรู้เชิงเงื่อนไข',
+    description: 'Knowledge about when and why to use strategies',
+    prompts: [
+      'ทำไมถึงเลือกใช้วิธีนี้? มีวิธีอื่นที่ดีกว่าไหม?',
+      'ถ้าวิธีนี้ไม่ได้ผล จะลองทำอะไรต่อ?',
+      'สถานการณ์แบบไหนที่วิธีนี้จะเหมาะที่สุด?'
+    ]
+  },
+  planning: {
+    name: 'Planning',
+    thai: 'การวางแผน',
+    description: 'Goal setting and resource allocation before learning',
+    prompts: [
+      'ก่อนตอบ ลองวางแผนว่าจะพูดถึงอะไรบ้าง?',
+      'คำตอบที่ดีควรมีกี่ส่วน? แต่ละส่วนคืออะไร?',
+      'จะเรียงลำดับความคิดอย่างไรให้ชัดเจน?'
+    ]
+  },
+  monitoring: {
+    name: 'Monitoring',
+    thai: 'การตรวจสอบ',
+    description: 'Awareness of comprehension and task performance',
+    prompts: [
+      'ตอนนี้คำตอบครบถ้วนหรือยัง? ขาดอะไรอีก?',
+      'ส่วนไหนของคำตอบที่ยังไม่มั่นใจ?',
+      'ถ้าอ่านคำตอบตัวเองอีกครั้ง ตรงไหนที่ยังไม่ชัด?'
+    ]
+  },
+  evaluation: {
+    name: 'Evaluation',
+    thai: 'การประเมิน',
+    description: 'Appraisal of products and processes of learning',
+    prompts: [
+      'คำตอบนี้ตอบโจทย์ที่ถามหรือเปล่า?',
+      'ถ้าให้คะแนนตัวเอง จะให้เท่าไร? เพราะอะไร?',
+      'ถ้าจะตอบใหม่ จะปรับปรุงตรงไหนบ้าง?'
+    ]
+  }
+}
+
+/**
+ * 🎯 Scaffolding Strategy Types for Research Comparison
+ */
+const SCAFFOLDING_STRATEGY_TYPES = {
+  METACOGNITIVE: 'metacognitive',      // Based on METACOGNITIVE_STRATEGIES
+  MODELING: 'modeling',                 // Show example of thinking process
+  QUESTIONING: 'questioning',           // Socratic questioning
+  HINTING: 'hinting',                   // Progressive hints
+  STRUCTURING: 'structuring',           // Provide structure/framework
+  FEEDBACK: 'feedback'                  // Direct feedback on errors
+}
+
+/**
+ * 🔬 Generate Metacognitive Scaffolding
+ * Specifically designed to promote metacognition
+ * 
+ * @param {Object} assessmentResult - Current assessment
+ * @param {string} targetDimension - Dimension to scaffold
+ * @param {Object} studentProfile - Optional student profile
+ * @returns {Object} Metacognitive scaffolding
+ */
+function generateMetacognitiveScaffolding(assessmentResult, targetDimension, studentProfile = null) {
+  const { rubricScores } = assessmentResult
+  const score = rubricScores[targetDimension] || 0
+  
+  // Select metacognitive strategy based on dimension and score
+  let strategyType
+  if (score <= 1) {
+    strategyType = 'declarative' // Start with what they know
+  } else if (score <= 2) {
+    strategyType = 'procedural' // Focus on how to approach
+  } else if (score <= 3) {
+    strategyType = 'monitoring' // Help them check their work
+  } else {
+    strategyType = 'evaluation' // Refine and improve
+  }
+  
+  const strategy = METACOGNITIVE_STRATEGIES[strategyType]
+  const selectedPrompt = strategy.prompts[Math.floor(Math.random() * strategy.prompts.length)]
+  
+  // Customize based on dimension
+  const dimensionContext = getDimensionMetacognitiveContext(targetDimension)
+  
+  return {
+    strategyType: SCAFFOLDING_STRATEGY_TYPES.METACOGNITIVE,
+    metacognitiveCategory: strategyType,
+    categoryName: strategy.name,
+    categoryNameThai: strategy.thai,
+    prompt: selectedPrompt,
+    dimensionContext,
+    targetDimension,
+    targetScore: score,
+    theoreticalBasis: 'Schraw & Dennison (1994) MAI Framework',
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      strategyDescription: strategy.description
+    }
+  }
+}
+
+/**
+ * Get dimension-specific metacognitive context
+ */
+function getDimensionMetacognitiveContext(dimension) {
+  const contexts = {
+    analysis: {
+      focus: 'การแยกแยะและจัดโครงสร้าง',
+      metacognitiveGoal: 'ให้ตระหนักถึงส่วนประกอบและความสัมพันธ์',
+      selfQuestions: [
+        'ฉันแยกประเด็นครบหรือยัง?',
+        'ฉันเห็นความสัมพันธ์ระหว่างส่วนต่างๆ ไหม?'
+      ]
+    },
+    reasoning: {
+      focus: 'การให้เหตุผลและตรรกะ',
+      metacognitiveGoal: 'ให้ตรวจสอบความสมเหตุสมผล',
+      selfQuestions: [
+        'เหตุผลของฉันต่อเนื่องกันไหม?',
+        'ข้อสรุปของฉันสอดคล้องกับเหตุผลไหม?'
+      ]
+    },
+    creativity: {
+      focus: 'ความคิดสร้างสรรค์และมุมมองใหม่',
+      metacognitiveGoal: 'ให้สำรวจความเป็นไปได้ที่หลากหลาย',
+      selfQuestions: [
+        'ฉันคิดนอกกรอบหรือยัง?',
+        'มีมุมมองอื่นที่ยังไม่ได้ลองไหม?'
+      ]
+    },
+    evidence: {
+      focus: 'การใช้หลักฐานและตัวอย่าง',
+      metacognitiveGoal: 'ให้ตรวจสอบความน่าเชื่อถือของหลักฐาน',
+      selfQuestions: [
+        'ฉันมีหลักฐานสนับสนุนเพียงพอไหม?',
+        'ตัวอย่างที่ยกมาตรงประเด็นไหม?'
+      ]
+    }
+  }
+  
+  return contexts[dimension] || contexts.analysis
+}
+
+/**
+ * 📊 Scaffolding Effectiveness Tracker
+ * Track and analyze which scaffolding strategies work best
+ */
+class ScaffoldingEffectivenessTracker {
+  constructor(db) {
+    this.db = db
+    this.collection = 'scaffoldingEffectiveness'
+  }
+  
+  /**
+   * Log a scaffolding event with before/after scores
+   * @param {Object} data - Scaffolding event data
+   */
+  async logScaffoldingEvent(data) {
+    const {
+      studentId,
+      sessionId,
+      questionId,
+      courseId,
+      strategyType,           // SCAFFOLDING_STRATEGY_TYPES
+      scaffoldingLevel,       // SCAFFOLDING_LEVELS
+      targetDimension,
+      beforeScores,           // { analysis, reasoning, creativity, evidence }
+      afterScores,            // { analysis, reasoning, creativity, evidence }
+      scaffoldingContent,     // The actual scaffolding message
+      responseTime,           // Time taken to respond after scaffolding (ms)
+      attemptNumber,
+      gradeLevel,
+      metadata = {}
+    } = data
+    
+    // Calculate improvements
+    const improvements = this.calculateImprovements(beforeScores, afterScores, targetDimension)
+    
+    const event = {
+      studentId,
+      sessionId,
+      questionId,
+      courseId,
+      strategyType,
+      scaffoldingLevel,
+      targetDimension,
+      beforeScores,
+      afterScores,
+      improvements,
+      scaffoldingContent,
+      responseTime,
+      attemptNumber,
+      gradeLevel,
+      metadata: {
+        ...metadata,
+        loggedAt: new Date().toISOString()
+      }
+    }
+    
+    try {
+      const docRef = await this.db.collection(this.collection).add(event)
+      return { success: true, eventId: docRef.id, improvements }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+  
+  /**
+   * Calculate improvements from scaffolding
+   */
+  calculateImprovements(beforeScores, afterScores, targetDimension) {
+    const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+    const improvements = {
+      byDimension: {},
+      targetImprovement: 0,
+      totalImprovement: 0,
+      wasEffective: false,
+      reachedThreshold: false
+    }
+    
+    let totalBefore = 0
+    let totalAfter = 0
+    
+    for (const dim of dimensions) {
+      const before = beforeScores[dim] || 0
+      const after = afterScores[dim] || 0
+      const change = after - before
+      
+      improvements.byDimension[dim] = {
+        before,
+        after,
+        change,
+        improved: change > 0,
+        reachedThreshold: after >= 3
+      }
+      
+      if (dim === targetDimension) {
+        improvements.targetImprovement = change
+        improvements.reachedThreshold = after >= 3
+      }
+      
+      totalBefore += before
+      totalAfter += after
+    }
+    
+    improvements.totalImprovement = totalAfter - totalBefore
+    improvements.wasEffective = improvements.targetImprovement > 0
+    improvements.effectivenessScore = this.calculateEffectivenessScore(improvements)
+    
+    return improvements
+  }
+  
+  /**
+   * Calculate effectiveness score (0-100)
+   */
+  calculateEffectivenessScore(improvements) {
+    let score = 0
+    
+    // Target dimension improvement (max 50 points)
+    if (improvements.targetImprovement > 0) {
+      score += Math.min(50, improvements.targetImprovement * 20)
+    }
+    
+    // Reached threshold bonus (25 points)
+    if (improvements.reachedThreshold) {
+      score += 25
+    }
+    
+    // Total improvement bonus (max 25 points)
+    if (improvements.totalImprovement > 0) {
+      score += Math.min(25, improvements.totalImprovement * 5)
+    }
+    
+    return Math.min(100, score)
+  }
+  
+  /**
+   * Analyze strategy effectiveness for research
+   */
+  async analyzeStrategyEffectiveness(options = {}) {
+    const {
+      strategyType = null,     // Filter by strategy type
+      dimension = null,        // Filter by target dimension
+      gradeLevel = null,       // Filter by grade level
+      courseId = null,         // Filter by course
+      startDate = null,
+      endDate = null
+    } = options
+    
+    let query = this.db.collection(this.collection)
+    
+    // Apply filters
+    if (strategyType) query = query.where('strategyType', '==', strategyType)
+    if (dimension) query = query.where('targetDimension', '==', dimension)
+    if (gradeLevel) query = query.where('gradeLevel', '==', gradeLevel)
+    if (courseId) query = query.where('courseId', '==', courseId)
+    
+    const snapshot = await query.get()
+    const events = []
+    
+    snapshot.forEach(doc => {
+      const data = doc.data()
+      // Date filtering
+      if (startDate && new Date(data.metadata?.loggedAt) < startDate) return
+      if (endDate && new Date(data.metadata?.loggedAt) > endDate) return
+      events.push(data)
+    })
+    
+    if (events.length === 0) {
+      return { success: false, error: 'No scaffolding events found' }
+    }
+    
+    // Analyze by strategy type
+    const byStrategy = this.aggregateByField(events, 'strategyType')
+    
+    // Analyze by dimension
+    const byDimension = this.aggregateByField(events, 'targetDimension')
+    
+    // Analyze by scaffolding level
+    const byLevel = this.aggregateByField(events, 'scaffoldingLevel')
+    
+    // Analyze by grade level
+    const byGrade = this.aggregateByField(events, 'gradeLevel')
+    
+    // Find best performing strategies
+    const bestStrategies = this.findBestStrategies(byStrategy)
+    
+    return {
+      success: true,
+      totalEvents: events.length,
+      analysis: {
+        byStrategy,
+        byDimension,
+        byLevel,
+        byGrade
+      },
+      bestStrategies,
+      recommendations: this.generateStrategyRecommendations(byStrategy, byDimension),
+      researchFindings: this.generateResearchFindings(events, byStrategy),
+      generatedAt: new Date().toISOString()
+    }
+  }
+  
+  /**
+   * Aggregate events by a specific field
+   */
+  aggregateByField(events, field) {
+    const groups = {}
+    
+    for (const event of events) {
+      const key = event[field] || 'unknown'
+      
+      if (!groups[key]) {
+        groups[key] = {
+          count: 0,
+          totalEffectiveness: 0,
+          totalTargetImprovement: 0,
+          totalOverallImprovement: 0,
+          successCount: 0,
+          thresholdReachedCount: 0
+        }
+      }
+      
+      const g = groups[key]
+      const imp = event.improvements || {}
+      
+      g.count++
+      g.totalEffectiveness += imp.effectivenessScore || 0
+      g.totalTargetImprovement += imp.targetImprovement || 0
+      g.totalOverallImprovement += imp.totalImprovement || 0
+      if (imp.wasEffective) g.successCount++
+      if (imp.reachedThreshold) g.thresholdReachedCount++
+    }
+    
+    // Calculate averages
+    for (const key of Object.keys(groups)) {
+      const g = groups[key]
+      g.avgEffectiveness = Math.round((g.totalEffectiveness / g.count) * 100) / 100
+      g.avgTargetImprovement = Math.round((g.totalTargetImprovement / g.count) * 100) / 100
+      g.avgOverallImprovement = Math.round((g.totalOverallImprovement / g.count) * 100) / 100
+      g.successRate = Math.round((g.successCount / g.count) * 100)
+      g.thresholdRate = Math.round((g.thresholdReachedCount / g.count) * 100)
+    }
+    
+    return groups
+  }
+  
+  /**
+   * Find best performing strategies
+   */
+  findBestStrategies(byStrategy) {
+    const ranked = Object.entries(byStrategy)
+      .map(([strategy, stats]) => ({
+        strategy,
+        ...stats,
+        // Composite score: effectiveness + success rate + threshold rate
+        compositeScore: (stats.avgEffectiveness / 100 * 0.4) + 
+                       (stats.successRate / 100 * 0.3) + 
+                       (stats.thresholdRate / 100 * 0.3)
+      }))
+      .filter(s => s.count >= 5) // Minimum sample size
+      .sort((a, b) => b.compositeScore - a.compositeScore)
+    
+    return ranked.map((r, i) => ({
+      rank: i + 1,
+      strategy: r.strategy,
+      compositeScore: Math.round(r.compositeScore * 100),
+      avgEffectiveness: r.avgEffectiveness,
+      successRate: r.successRate,
+      thresholdRate: r.thresholdRate,
+      sampleSize: r.count
+    }))
+  }
+  
+  /**
+   * Generate strategy recommendations
+   */
+  generateStrategyRecommendations(byStrategy, byDimension) {
+    const recommendations = []
+    
+    // Find best strategy overall
+    const bestOverall = Object.entries(byStrategy)
+      .filter(([, s]) => s.count >= 5)
+      .sort(([, a], [, b]) => b.avgEffectiveness - a.avgEffectiveness)[0]
+    
+    if (bestOverall) {
+      recommendations.push({
+        type: 'BEST_OVERALL',
+        strategy: bestOverall[0],
+        effectiveness: bestOverall[1].avgEffectiveness,
+        message: `"${bestOverall[0]}" strategy shows highest effectiveness (${bestOverall[1].avgEffectiveness}%)`
+      })
+    }
+    
+    // Find best strategy per dimension
+    for (const [dim, stats] of Object.entries(byDimension)) {
+      if (stats.count >= 5 && stats.avgEffectiveness > 50) {
+        recommendations.push({
+          type: 'DIMENSION_SPECIFIC',
+          dimension: dim,
+          effectiveness: stats.avgEffectiveness,
+          message: `For "${dim}" dimension: ${stats.successRate}% success rate`
+        })
+      }
+    }
+    
+    // Identify underperforming strategies
+    const underperformers = Object.entries(byStrategy)
+      .filter(([, s]) => s.count >= 5 && s.avgEffectiveness < 30)
+    
+    for (const [strategy, stats] of underperformers) {
+      recommendations.push({
+        type: 'NEEDS_IMPROVEMENT',
+        strategy,
+        effectiveness: stats.avgEffectiveness,
+        message: `"${strategy}" strategy underperforming (${stats.avgEffectiveness}%). Consider revision.`
+      })
+    }
+    
+    return recommendations
+  }
+  
+  /**
+   * Generate research findings from data
+   */
+  generateResearchFindings(events, byStrategy) {
+    const findings = {
+      summary: '',
+      keyFindings: [],
+      statisticalSummary: {}
+    }
+    
+    // Overall statistics
+    const totalEvents = events.length
+    const effectiveEvents = events.filter(e => e.improvements?.wasEffective).length
+    const overallSuccessRate = Math.round((effectiveEvents / totalEvents) * 100)
+    
+    findings.statisticalSummary = {
+      n: totalEvents,
+      successRate: overallSuccessRate,
+      avgImprovement: Math.round(
+        events.reduce((sum, e) => sum + (e.improvements?.targetImprovement || 0), 0) / totalEvents * 100
+      ) / 100
+    }
+    
+    // Key finding 1: Overall effectiveness
+    findings.keyFindings.push({
+      finding: `AI Scaffolding ส่งผลให้คะแนน HOTS เพิ่มขึ้นใน ${overallSuccessRate}% ของกรณี (N=${totalEvents})`,
+      significance: overallSuccessRate > 50 ? 'positive' : 'needs_attention'
+    })
+    
+    // Key finding 2: Best strategy
+    const strategies = Object.entries(byStrategy).filter(([, s]) => s.count >= 5)
+    if (strategies.length > 1) {
+      const best = strategies.sort(([, a], [, b]) => b.avgEffectiveness - a.avgEffectiveness)[0]
+      const worst = strategies.sort(([, a], [, b]) => a.avgEffectiveness - b.avgEffectiveness)[0]
+      
+      if (best && worst && best[0] !== worst[0]) {
+        findings.keyFindings.push({
+          finding: `กลยุทธ์ "${best[0]}" มีประสิทธิผลสูงกว่า "${worst[0]}" อย่างมีนัยสำคัญ (${best[1].avgEffectiveness}% vs ${worst[1].avgEffectiveness}%)`,
+          significance: 'comparative'
+        })
+      }
+    }
+    
+    // Key finding 3: Metacognitive vs others
+    const metacog = byStrategy['metacognitive']
+    const modeling = byStrategy['modeling']
+    
+    if (metacog && modeling && metacog.count >= 5 && modeling.count >= 5) {
+      const comparison = metacog.avgEffectiveness > modeling.avgEffectiveness 
+        ? 'Metacognitive prompting มีประสิทธิผลสูงกว่า Modeling'
+        : 'Modeling มีประสิทธิผลสูงกว่า Metacognitive prompting'
+      
+      findings.keyFindings.push({
+        finding: comparison,
+        significance: 'research_implication',
+        data: {
+          metacognitive: metacog.avgEffectiveness,
+          modeling: modeling.avgEffectiveness
+        }
+      })
+    }
+    
+    // Generate summary
+    findings.summary = `จากการวิเคราะห์ Scaffolding ${totalEvents} ครั้ง พบว่ามีอัตราความสำเร็จ ${overallSuccessRate}% ` +
+      `โดยกลยุทธ์ที่มีประสิทธิผลสูงสุดคือ ${strategies[0]?.[0] || 'N/A'}`
+    
+    return findings
+  }
+}
+
+// Export enhanced modules
+module.exports = {
+  SCAFFOLDING_LEVELS,
+  DIMENSION_STRATEGIES,
+  identifyWeakDimensions,
+  generateAdaptiveScaffolding,
+  formatScaffoldingMessage,
+  analyzeScaffoldingEffectiveness,
+  getScaffoldingStatistics,
+  
+  // New exports for C10 research
+  METACOGNITIVE_STRATEGIES,
+  SCAFFOLDING_STRATEGY_TYPES,
+  generateMetacognitiveScaffolding,
+  getDimensionMetacognitiveContext,
+  ScaffoldingEffectivenessTracker
 }
