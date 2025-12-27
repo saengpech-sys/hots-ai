@@ -1,6 +1,32 @@
-# 📖 HOTS AI ChatLoop - Developer Manual (v5.2)
+# 📖 HOTS AI ChatLoop - Developer Manual (v5.3)
 
 > **คู่มือสำหรับนักพัฒนารุ่นต่อไป** — เอกสารนี้รวบรวมทุกสิ่งที่คุณต้องรู้เพื่อพัฒนา, Debug และ Deploy ระบบ HOTS AI ChatLoop
+>
+> 📅 **Last Updated:** December 25, 2025 | 📊 **IRR Metrics:** κ = 0.72, ICC = 0.81
+
+---
+
+## 📋 Quick Start (สำหรับนักพัฒนาใหม่)
+
+```bash
+# 1. Clone & Install
+git clone https://github.com/saengpech-sys/hots-ai.git
+cd hots-ai
+npm install
+cd functions && npm install && cd ..
+
+# 2. Setup Environment
+cp .env.example .env                     # Edit with your Firebase config
+cp functions/.env.example functions/.env # Edit with your OpenAI API key
+
+# 3. Start Development
+npm run dev                    # Frontend on http://localhost:5173
+cd functions && npm run serve  # Emulator on http://localhost:5001
+
+# 4. Run Tests
+npm test                       # Frontend tests (Vitest)
+cd functions && npm test       # Backend tests (Jest)
+```
 
 ---
 

@@ -11,18 +11,23 @@
     <!-- Hero Section -->
     <section class="hero-section">
       <div class="hero-content">
-        <div class="badge-new">
-          <span class="pulse"></span>
-          🚀 AI-Powered Learning Platform
+        <div class="badges-row">
+          <div class="badge-new">
+            <span class="pulse"></span>
+            🚀 AI-Powered Learning Platform
+          </div>
+          <div class="badge-version">
+            v5.2 • December 2025
+          </div>
         </div>
         <h1 class="title">
           <span class="title-line">HOTS AI</span>
           <span class="title-gradient">ChatLoop</span>
         </h1>
-        <p class="subtitle">ระบบประเมินทักษะการคิดขั้นสูงด้วย AI</p>
+        <p class="subtitle">ระบบประเมินทักษะการคิดขั้นสูงด้วย AI แบบ Deterministic</p>
         <p class="description">
           พัฒนาทักษะการคิดวิเคราะห์ การให้เหตุผล และความคิดสร้างสรรค์
-          <br>พร้อมรับ Feedback แบบ Real-time จาก AI
+          <br>ตามกรอบ <strong>A.R.C.E. Framework</strong> พร้อม Feedback แบบ Real-time
         </p>
         
         <div class="cta-buttons">
@@ -44,18 +49,23 @@
         <!-- Stats Section -->
         <div class="stats-row">
           <div class="stat-item">
-            <span class="stat-number" data-count="10000">10,000+</span>
-            <span class="stat-label">นักเรียน</span>
+            <span class="stat-number">41</span>
+            <span class="stat-label">Cloud Functions</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
-            <span class="stat-number">500+</span>
-            <span class="stat-label">โรงเรียน</span>
+            <span class="stat-number">80+</span>
+            <span class="stat-label">Vue Components</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
-            <span class="stat-number">98%</span>
-            <span class="stat-label">ความพึงพอใจ</span>
+            <span class="stat-number">κ ≥ 0.61</span>
+            <span class="stat-label">IRR Standard</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <span class="stat-number">8</span>
+            <span class="stat-label">Reliability Layers</span>
           </div>
         </div>
       </div>
@@ -100,11 +110,11 @@
           <div class="feature-icon-wrap">
             <span class="feature-icon">🤖</span>
           </div>
-          <h3>AI Assessment</h3>
-          <p>ประเมินทักษะการคิดขั้นสูงด้วย GPT-4o อย่างแม่นยำและเป็นกลาง</p>
+          <h3>Deterministic AI Assessment</h3>
+          <p>ประเมินทักษะการคิดขั้นสูงด้วย GPT-4o-mini แบบ Deterministic (temp=0, seed=42)</p>
           <div class="feature-tags">
-            <span class="tag">Real-time</span>
-            <span class="tag">Accurate</span>
+            <span class="tag">Reproducible</span>
+            <span class="tag">Chain-of-Thought</span>
           </div>
         </div>
 
@@ -163,6 +173,101 @@
           <div class="feature-tags">
             <span class="tag">Analytics</span>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- A.R.C.E. Framework Section -->
+    <section class="arce-section">
+      <div class="section-header">
+        <span class="section-badge">🎯 A.R.C.E. Framework</span>
+        <h2 class="section-title">กรอบการประเมิน 4 มิติ</h2>
+        <p class="section-subtitle">ประเมินทักษะการคิดขั้นสูงอย่างครอบคลุมและเป็นระบบ</p>
+      </div>
+
+      <div class="arce-grid">
+        <div class="arce-card arce-analysis">
+          <div class="arce-icon">🔬</div>
+          <div class="arce-letter">A</div>
+          <h3>Analysis</h3>
+          <p>การวิเคราะห์ — แยกแยะประเด็น หาความสัมพันธ์ เปรียบเทียบ</p>
+          <div class="arce-score">0-5 คะแนน</div>
+        </div>
+
+        <div class="arce-card arce-reasoning">
+          <div class="arce-icon">💭</div>
+          <div class="arce-letter">R</div>
+          <h3>Reasoning</h3>
+          <p>การให้เหตุผล — อธิบายเหตุผล สรุปตรรกะ อ้างหลักการ</p>
+          <div class="arce-score">0-5 คะแนน</div>
+        </div>
+
+        <div class="arce-card arce-creativity">
+          <div class="arce-icon">💡</div>
+          <div class="arce-letter">C</div>
+          <h3>Creativity</h3>
+          <p>ความคิดสร้างสรรค์ — เสนอมุมมองใหม่ คิดนอกกรอบ ออกแบบ</p>
+          <div class="arce-score">0-5 คะแนน</div>
+        </div>
+
+        <div class="arce-card arce-evidence">
+          <div class="arce-icon">📊</div>
+          <div class="arce-letter">E</div>
+          <h3>Evidence</h3>
+          <p>การใช้หลักฐาน — อ้างอิงข้อมูล ยกตัวอย่าง สนับสนุน</p>
+          <div class="arce-score">0-5 คะแนน</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reliability Section -->
+    <section class="reliability-section">
+      <div class="section-header">
+        <span class="section-badge">🛡️ 8-Layer Reliability</span>
+        <h2 class="section-title">ระบบนิเวศความน่าเชื่อถือ</h2>
+        <p class="section-subtitle">ออกแบบเพื่อความแม่นยำและความยุติธรรมในการประเมิน</p>
+      </div>
+
+      <div class="reliability-grid">
+        <div class="reliability-card">
+          <div class="reliability-layer">L1</div>
+          <h4>Input Validation</h4>
+          <p>ตรวจสอบ + Sanitize ข้อมูลนำเข้า</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L2</div>
+          <h4>AI Resilience</h4>
+          <p>Circuit Breaker + Retry + Fallback</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L3</div>
+          <h4>IRR Testing</h4>
+          <p>Cohen's κ ≥ 0.61, ICC ≥ 0.70</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L4</div>
+          <h4>Validation Study</h4>
+          <p>Content + Construct + Criterion Validity</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L5</div>
+          <h4>Fairness Audit</h4>
+          <p>DIF Analysis, Effect Size &lt; 0.20</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L6</div>
+          <h4>Data Consistency</h4>
+          <p>Transaction + Checksums</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L7</div>
+          <h4>Human-in-the-Loop</h4>
+          <p>Expert Review + Override</p>
+        </div>
+        <div class="reliability-card">
+          <div class="reliability-layer">L8</div>
+          <h4>Grade Calibration</h4>
+          <p>Norm-Referenced Adjustment</p>
         </div>
       </div>
     </section>
@@ -970,6 +1075,165 @@ function scrollToFeatures() {
   font-size: 0.875rem;
 }
 
+/* Version Badge */
+.badges-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.badge-version {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 50px;
+  font-size: 0.875rem;
+  color: #34d399;
+  font-weight: 600;
+}
+
+/* A.R.C.E. Framework Section */
+.arce-section {
+  position: relative;
+  z-index: 1;
+  padding: 6rem 4rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.arce-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.arce-card {
+  position: relative;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(30, 30, 50, 0.8) 0%, rgba(20, 20, 40, 0.9) 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  transition: all 0.4s ease;
+  overflow: hidden;
+}
+
+.arce-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 20px 20px 0 0;
+}
+
+.arce-analysis::before { background: linear-gradient(90deg, #667eea, #764ba2); }
+.arce-reasoning::before { background: linear-gradient(90deg, #f093fb, #f5576c); }
+.arce-creativity::before { background: linear-gradient(90deg, #4facfe, #00f2fe); }
+.arce-evidence::before { background: linear-gradient(90deg, #43e97b, #38f9d7); }
+
+.arce-card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.arce-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.arce-letter {
+  font-size: 3rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.arce-card h3 {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.arce-card p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.arce-score {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  background: rgba(102, 126, 234, 0.2);
+  border-radius: 50px;
+  font-size: 0.8rem;
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+/* Reliability Section */
+.reliability-section {
+  position: relative;
+  z-index: 1;
+  padding: 6rem 4rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, transparent 0%, rgba(102, 126, 234, 0.05) 50%, transparent 100%);
+}
+
+.reliability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.reliability-card {
+  padding: 1.5rem;
+  background: rgba(30, 30, 50, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  transition: all 0.3s ease;
+}
+
+.reliability-card:hover {
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(30, 30, 50, 0.8);
+  transform: translateY(-5px);
+}
+
+.reliability-layer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: white;
+  margin-bottom: 1rem;
+}
+
+.reliability-card h4 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.reliability-card p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .hero-section {
@@ -992,6 +1256,11 @@ function scrollToFeatures() {
 
   .stats-row {
     justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .badges-row {
+    justify-content: center;
   }
 
   .features-grid,
@@ -1001,6 +1270,19 @@ function scrollToFeatures() {
 
   .feature-highlight {
     grid-column: span 1;
+  }
+
+  .arce-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .reliability-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .arce-section,
+  .reliability-section {
+    padding: 4rem 2rem;
   }
 }
 
@@ -1037,6 +1319,11 @@ function scrollToFeatures() {
     flex-direction: column;
     align-items: center;
     gap: 1rem;
+  }
+
+  .arce-grid,
+  .reliability-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

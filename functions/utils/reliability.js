@@ -250,6 +250,7 @@ async function executeWithRetry(fn, options = {}) {
 /**
  * 🆘 Fallback Assessment (when AI completely fails)
  * ใช้เมื่อ AI ไม่สามารถประเมินได้
+ * P3 Enhancement: แยกคะแนนตามมิติ แทนการให้คะแนนเท่ากันทุกมิติ
  */
 function getFallbackAssessment(studentAnswer, reason = 'AI service unavailable') {
   // Simple heuristic-based scoring as fallback
@@ -257,25 +258,48 @@ function getFallbackAssessment(studentAnswer, reason = 'AI service unavailable')
   const charCount = studentAnswer.length
   const hasNumbers = /\d/.test(studentAnswer)
   const hasBullets = /[•\-\d\.]/.test(studentAnswer)
+  const hasListStructure = /\n\s*[\-\•\d]/m.test(studentAnswer) || /[ก-ฮ]\)/m.test(studentAnswer)
+  const hasComparison = /มากกว่า|น้อยกว่า|เปรียบเทียบ|แตกต่าง|เหมือน|ต่างจาก/i.test(studentAnswer)
+  const hasReasonWords = /เพราะ|ดังนั้น|เนื่องจาก|ส่งผล|ทำให้|จึง|ถ้า.*แล้ว/i.test(studentAnswer)
+  const hasSpecificExample = /ตัวอย่างเช่น|เช่น|อาทิ|ได้แก่|\d+%|\d+\s*(คน|บาท|ปี|เมตร)/i.test(studentAnswer)
   
-  // Very basic scoring based on length and structure
-  let baseScore = 1 // Minimum for submitting something
+  // Base scores for each dimension (differentiated heuristics)
+  let analysisScore = 1
+  let reasoningScore = 1
+  let creativityScore = 1
+  let evidenceScore = 1
   
-  if (wordCount >= 20) baseScore += 0.5
-  if (wordCount >= 50) baseScore += 0.5
-  if (charCount >= 100) baseScore += 0.5
-  if (hasNumbers) baseScore += 0.25
-  if (hasBullets) baseScore += 0.25
+  // Analysis: structure, segmentation, comparison
+  if (wordCount >= 20) analysisScore += 0.3
+  if (wordCount >= 50) analysisScore += 0.3
+  if (hasListStructure) analysisScore += 0.4
+  if (hasComparison) analysisScore += 0.5
+  analysisScore = Math.min(2.5, analysisScore)
   
-  baseScore = Math.min(2.5, baseScore) // Cap at 2.5 for fallback
+  // Reasoning: logical connectors, if-then structures
+  if (hasReasonWords) reasoningScore += 0.6
+  if (wordCount >= 30) reasoningScore += 0.3
+  if (charCount >= 150) reasoningScore += 0.3
+  reasoningScore = Math.min(2.5, reasoningScore)
+  
+  // Creativity: hardest to detect, keep conservative
+  if (wordCount >= 50) creativityScore += 0.3
+  if (charCount >= 200) creativityScore += 0.2
+  creativityScore = Math.min(2.0, creativityScore) // Lower cap for creativity
+  
+  // Evidence: specific examples, numbers, citations
+  if (hasNumbers) evidenceScore += 0.5
+  if (hasSpecificExample) evidenceScore += 0.6
+  if (hasBullets && wordCount >= 30) evidenceScore += 0.4
+  evidenceScore = Math.min(2.5, evidenceScore)
   
   return {
-    feedback: `⚠️ **ระบบประเมินชั่วคราว**\n\nขออภัย ระบบ AI ไม่สามารถประเมินคำตอบของคุณได้ในขณะนี้ (${reason})\n\nระบบได้ให้คะแนนเบื้องต้นตามความยาวและโครงสร้างของคำตอบ กรุณาลองส่งคำตอบใหม่อีกครั้งในภายหลังเพื่อรับ feedback ที่ละเอียดขึ้น`,
+    feedback: `⚠️ **ระบบประเมินชั่วคราว**\n\nขออภัย ระบบ AI ไม่สามารถประเมินคำตอบของคุณได้ในขณะนี้ (${reason})\n\nระบบได้ให้คะแนนเบื้องต้นตามโครงสร้างและหลักฐานที่พบในคำตอบ กรุณาลองส่งคำตอบใหม่อีกครั้งในภายหลังเพื่อรับ feedback ที่ละเอียดขึ้น\n\n📌 หมายเหตุ: คะแนน Creativity ถูกจำกัดไว้ที่ 2.0 เนื่องจากระบบสำรองไม่สามารถประเมินความแปลกใหม่ได้อย่างแม่นยำ`,
     rubricScores: {
-      analysis: baseScore,
-      reasoning: baseScore,
-      creativity: baseScore,
-      evidence: baseScore
+      analysis: Math.round(analysisScore * 10) / 10,
+      reasoning: Math.round(reasoningScore * 10) / 10,
+      creativity: Math.round(creativityScore * 10) / 10,
+      evidence: Math.round(evidenceScore * 10) / 10
     },
     suggestions: [
       'กรุณาลองส่งคำตอบใหม่อีกครั้งในภายหลัง',
@@ -287,7 +311,7 @@ function getFallbackAssessment(studentAnswer, reason = 'AI service unavailable')
     isFallback: true,
     fallbackReason: reason,
     confidence: 0,
-    confidenceReason: 'Fallback scoring - AI unavailable'
+    confidenceReason: 'Fallback scoring - AI unavailable (differentiated heuristics applied)'
   }
 }
 

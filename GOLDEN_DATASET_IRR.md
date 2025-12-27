@@ -2,9 +2,13 @@
 
 <div align="center">
 
-**Version 3.0** | **Last Updated: December 21, 2025**
+**Version 3.1** | **Last Updated: December 25, 2025**
 
 *ชุดข้อมูลมาตรฐานสำหรับการทดสอบความน่าเชื่อถือระหว่างผู้ประเมิน (AI vs Expert)*
+
+[![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72%20(Substantial)-success)](./docs/04_RESEARCH_METHODOLOGY.md)
+[![ICC](https://img.shields.io/badge/ICC-0.81%20(Excellent)-purple)](./RELIABILITY_ECOSYSTEM.md)
+[![Golden Items](https://img.shields.io/badge/Golden%20Items-20%20Items-blue)](./GOLDEN_DATASET_IRR.md)
 
 </div>
 

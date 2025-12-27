@@ -6,8 +6,9 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-5.2.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
+![Version](https://img.shields.io/badge/Version-5.3.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
 ![DPA](https://img.shields.io/badge/DPA_Award-11%2F11_Passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white)
+![IRR](https://img.shields.io/badge/Cohen's_κ-0.72-success?style=for-the-badge)
 ![Tests](https://img.shields.io/badge/Tests-123_Passed-8B5CF6?style=for-the-badge&logo=vitest&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white)
 ![Firebase](https://img.shields.io/badge/Firebase-Cloud-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)

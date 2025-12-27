@@ -641,6 +641,21 @@ watch(selectedCourseId, async (newCourseId) => {
   }
 })
 
+// ⭐ P1 Fix: Watch actualPassedLOs from gamification store for real-time sync
+// When teacher edits LO via AdminLOManager, this will trigger recommendation refresh
+watch(
+  () => gamificationStore.actualPassedLOs,
+  async (newLOs, oldLOs) => {
+    // Only refresh if LOs actually changed and we have a selected course
+    if (selectedCourseId.value && 
+        JSON.stringify(newLOs) !== JSON.stringify(oldLOs)) {
+      console.log('[StudentDashboard] actualPassedLOs changed, refreshing recommendations')
+      await loadRecommendations()
+    }
+  },
+  { deep: true }
+)
+
 onUnmounted(() => {
   // Clean up realtime listeners
   gamificationStore.cleanup()

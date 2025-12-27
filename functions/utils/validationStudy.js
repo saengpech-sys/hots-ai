@@ -433,8 +433,15 @@ function calculateCronbachsAlpha(itemScores) {
   const n = itemScores.length  // Number of respondents
   const k = itemScores[0].length  // Number of items
 
-  if (n < 10 || k < 2) {
-    return { error: 'Need at least 10 respondents and 2 items' }
+  // Statistical minimum: n >= 30 for stable reliability estimates
+  // k >= 2 items required for internal consistency
+  if (n < 30 || k < 2) {
+    return { 
+      error: `Need at least 30 respondents and 2 items. Got n=${n}, k=${k}`,
+      recommendation: n >= 10 && n < 30 
+        ? 'Can compute preliminary alpha with n >= 10, but results may be unstable'
+        : 'Sample too small for reliability analysis'
+    }
   }
 
   // Calculate item variances

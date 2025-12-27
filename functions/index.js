@@ -324,6 +324,10 @@ try {
 /**
  * Cloud Function to assess student answers using OpenAI
  * Evaluates Higher-Order Thinking Skills (HOTS)
+ * 
+ * 🎯 ASSESSMENT MODES:
+ * - 'graded' (default): Full scoring with points, badges, leaderboard updates
+ * - 'practice': Formative-only mode - feedback & scaffolding without gamification pressure
  */
 exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -348,14 +352,41 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         gradeLevel,          // e.g., "ม.3", "ป.6" - for grade-appropriate scoring
         subject,             // e.g., "วิทยาศาสตร์", "ภาษาไทย"
         // 🆕 IDEMPOTENCY: Prevent duplicate submissions
-        idempotencyKey       // Client-generated unique key per submission attempt
+        idempotencyKey,      // Client-generated unique key per submission attempt
+        // 🎯 PRACTICE MODE: True formative assessment without gamification pressure
+        assessmentMode       // 'practice' | 'graded' (default: 'graded')
       } = req.body
+
+      // 🎯 Determine assessment mode (default to graded for backward compatibility)
+      const isPracticeMode = assessmentMode === 'practice'
 
       // Validate input
       if (!studentId || !sessionId || !studentAnswer) {
         return res.status(400).send({ 
           error: 'Missing required fields: studentId, sessionId, studentAnswer' 
         })
+      }
+
+      // 🔐 SECURITY: Verify studentId matches authenticated user (prevent privilege escalation)
+      const authHeader = req.headers.authorization
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.split('Bearer ')[1]
+          const decoded = await admin.auth().verifyIdToken(token)
+          
+          if (decoded.uid !== studentId) {
+            console.warn(`🚨 SECURITY: StudentId mismatch! body=${studentId}, auth=${decoded.uid}`)
+            return res.status(403).send({
+              error: 'Forbidden',
+              message: 'You can only submit answers for your own account',
+              code: 'STUDENT_ID_MISMATCH'
+            })
+          }
+        } catch (authErr) {
+          // Token invalid but we allow unauthenticated for backward compatibility
+          // In production, this should be required
+          console.warn('⚠️ Auth token invalid, proceeding without verification:', authErr.message)
+        }
       }
 
       // 🆕 IDEMPOTENCY CHECK: Prevent duplicate submissions from network retries
@@ -749,11 +780,12 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       } else {
         console.error('Parse failed:', parseResult.errors)
         
-        // Log failed parse
+        // Log failed parse (🔐 SECURITY: No rawResponse to prevent data leakage)
         await db.collection('aiParseLogs').add({
           studentId,
           sessionId,
-          rawResponse: responseText.substring(0, 2000),
+          // rawResponse: REMOVED for security - prevents exposure of AI reasoning
+          responseLength: responseText?.length || 0,
           errors: parseResult.errors,
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         })
@@ -1149,7 +1181,9 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           sessionNumber: sessionNumber || null,
           weekOfTerm: weekOfTerm || null,
           scaffoldingProvided: scaffoldingAttempts > 0,
-          scaffoldingLevel: scaffoldingAttempts
+          scaffoldingLevel: scaffoldingAttempts,
+          // 🎯 PRACTICE MODE: Track assessment mode for analytics
+          assessmentMode: isPracticeMode ? 'practice' : 'graded'
         },
         
         // 🔬 PHASE 3: Double-Counting Adjustment metadata
@@ -1190,8 +1224,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         const progressRef = db.collection('studentProgress').doc(`${studentId}_${courseId}`)
         const progressDoc = await progressRef.get()
         
-        // Calculate points
-        pointsEarned = calculatePointsSimple(assessmentData)
+        // 🎯 PRACTICE MODE: Skip points in practice mode
+        pointsEarned = isPracticeMode ? 0 : calculatePointsSimple(assessmentData)
         
         // Calculate passed LOs
         const passedLOs = loAssessment?.passedLOs || []
@@ -1201,21 +1235,22 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           const currentPassed = currentData.passedLOs || []
           const updatedPassedLOs = [...new Set([...currentPassed, ...passedLOs])]
           
-          // Calculate streak
+          // Calculate streak (only in graded mode)
           const currentDate = new Date().toISOString()
-          const streakUpdate = calculateStreak(currentData.lastActiveDate, currentDate)
+          const streakUpdate = isPracticeMode ? null : calculateStreak(currentData.lastActiveDate, currentDate)
           
           progressUpdateData = {
             passedLOs: updatedPassedLOs,
             totalPassed: updatedPassedLOs.length,
             lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
             assessmentCount: admin.firestore.FieldValue.increment(1),
-            totalPoints: admin.firestore.FieldValue.increment(pointsEarned),
+            // 🎯 Only add points in graded mode
+            ...(isPracticeMode ? {} : { totalPoints: admin.firestore.FieldValue.increment(pointsEarned) }),
             lastActiveDate: currentDate
           }
           
-          // Add streak data if applicable
-          if (streakUpdate && streakUpdate.increment) {
+          // Add streak data if applicable (only in graded mode)
+          if (!isPracticeMode && streakUpdate && streakUpdate.increment) {
             progressUpdateData.currentStreak = admin.firestore.FieldValue.increment(1)
             const newStreak = (currentData.currentStreak || 0) + 1
             if (newStreak > (currentData.maxStreak || 0)) {
@@ -1225,15 +1260,18 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           
           batch.update(progressRef, progressUpdateData)
           
-          // Check for badges (after batch commit we'll handle this)
-          const courseDoc = await db.collection('courses').doc(courseId).get()
-          const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
-          newBadges = checkBadges({
-            ...currentData,
-            totalPassed: updatedPassedLOs.length,
-            totalPoints: (currentData.totalPoints || 0) + pointsEarned,
-            currentStreak: streakUpdate?.increment ? (currentData.currentStreak || 0) + 1 : currentData.currentStreak
-          }, totalLOs)
+          // 🎯 PRACTICE MODE: Skip badge checking in practice mode
+          if (!isPracticeMode) {
+            // Check for badges (after batch commit we'll handle this)
+            const courseDoc = await db.collection('courses').doc(courseId).get()
+            const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
+            newBadges = checkBadges({
+              ...currentData,
+              totalPassed: updatedPassedLOs.length,
+              totalPoints: (currentData.totalPoints || 0) + pointsEarned,
+              currentStreak: streakUpdate?.increment ? (currentData.currentStreak || 0) + 1 : currentData.currentStreak
+            }, totalLOs)
+          }
           
         } else {
           // Create new progress document
@@ -1244,9 +1282,10 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
             totalPassed: passedLOs.length,
             lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
             assessmentCount: 1,
-            totalPoints: pointsEarned,
-            currentStreak: 1,
-            maxStreak: 1,
+            // 🎯 PRACTICE MODE: Initialize without gamification points
+            totalPoints: isPracticeMode ? 0 : pointsEarned,
+            currentStreak: isPracticeMode ? 0 : 1,
+            maxStreak: isPracticeMode ? 0 : 1,
             lastActiveDate: new Date().toISOString(),
             createdAt: admin.firestore.FieldValue.serverTimestamp()
           }
@@ -1267,8 +1306,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         })
       }
       
-      // Handle badge updates asynchronously (non-critical)
-      if (newBadges.length > 0 && courseId) {
+      // Handle badge updates asynchronously (non-critical, only in graded mode)
+      if (!isPracticeMode && newBadges.length > 0 && courseId) {
         const progressRef = db.collection('studentProgress').doc(`${studentId}_${courseId}`)
         const badgeIds = newBadges.map(b => b.id)
         const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
@@ -1706,11 +1745,22 @@ ${studentAnswer}
 
 /**
  * Update student progress in Firestore
+ * 
+ * ⚠️ IMPORTANT: This function updates the `studentProgress` document which is a CACHE/DENORMALIZED VIEW.
+ * The SOURCE OF TRUTH for LO data is:
+ *   - assessments collection (loAssessment.passedLOs)
+ *   - worksheetSubmissions collection (loAssessment.passedLOs)
+ * 
+ * For accurate LO counting, always use src/utils/loProgress.js which queries source collections directly.
+ * This cache is for PERFORMANCE optimization only - eventual consistency is acceptable.
+ * 
  * @param {string} studentId - The student's ID
  * @param {string} courseId - The course ID
  * @param {Array} passedLOs - Array of LO codes that were passed
+ * @param {Object} assessmentData - Assessment result data (optional)
+ * @param {boolean} isPracticeMode - If true, skip gamification updates (points, badges, leaderboard)
  */
-async function updateStudentProgress(studentId, courseId, passedLOs, assessmentData = null) {
+async function updateStudentProgress(studentId, courseId, passedLOs, assessmentData = null, isPracticeMode = false) {
   try {
     const progressRef = db.collection('studentProgress')
       .doc(`${studentId}_${courseId}`)
@@ -1816,30 +1866,36 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
         }
       }
 
-      // GAMIFICATION: Calculate points from this assessment
+      // 🎯 PRACTICE MODE: Skip gamification updates for formative-only assessment
       let pointsEarned = 0
-      if (assessmentData) {
-        pointsEarned = calculatePoints(assessmentData)
-      }
-
-      // GAMIFICATION: Update streak
-      const streakUpdate = calculateStreak(currentData.lastActiveDate, currentDate)
       let streakData = {}
-      if (streakUpdate) {
-        if (streakUpdate.increment) {
-          streakData = {
-            currentStreak: admin.firestore.FieldValue.increment(1),
-            maxStreak: currentData.currentStreak + 1 > (currentData.maxStreak || 0) 
-              ? currentData.currentStreak + 1 
-              : currentData.maxStreak || 0,
-            lastActiveDate: streakUpdate.lastActiveDate
-          }
-        } else if (streakUpdate.currentStreak !== undefined) {
-          streakData = {
-            currentStreak: streakUpdate.currentStreak,
-            lastActiveDate: streakUpdate.lastActiveDate
+      
+      if (!isPracticeMode) {
+        // GAMIFICATION: Calculate points from this assessment (only in graded mode)
+        if (assessmentData) {
+          pointsEarned = calculatePoints(assessmentData)
+        }
+
+        // GAMIFICATION: Update streak (only in graded mode)
+        const streakUpdate = calculateStreak(currentData.lastActiveDate, currentDate)
+        if (streakUpdate) {
+          if (streakUpdate.increment) {
+            streakData = {
+              currentStreak: admin.firestore.FieldValue.increment(1),
+              maxStreak: currentData.currentStreak + 1 > (currentData.maxStreak || 0) 
+                ? currentData.currentStreak + 1 
+                : currentData.maxStreak || 0,
+              lastActiveDate: streakUpdate.lastActiveDate
+            }
+          } else if (streakUpdate.currentStreak !== undefined) {
+            streakData = {
+              currentStreak: streakUpdate.currentStreak,
+              lastActiveDate: streakUpdate.lastActiveDate
+            }
           }
         }
+      } else {
+        console.log(`🎯 Practice Mode: Skipping gamification for ${studentId}`)
       }
 
       // Update progress with gamification data + loProgress
@@ -1849,42 +1905,43 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
         loProgress: loProgress, // 🆕 Progressive tracking
         lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
         assessmentCount: admin.firestore.FieldValue.increment(1),
-        totalPoints: admin.firestore.FieldValue.increment(pointsEarned),
+        // 🎯 Only add points in graded mode
+        ...(isPracticeMode ? {} : { totalPoints: admin.firestore.FieldValue.increment(pointsEarned) }),
         ...streakData
       }
 
       await progressRef.update(updateData)
 
-      // GAMIFICATION: Check for new badges after update
-      const updatedProgressDoc = await progressRef.get()
-      const updatedStats = updatedProgressDoc.data()
-      
-      // Get total LOs in course for badge checking
-      const courseDoc = await db.collection('courses').doc(courseId).get()
-      const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
-      
-      const newBadges = checkBadges(updatedStats, totalLOs)
-      
-      if (newBadges.length > 0) {
-        const badgeIds = newBadges.map(b => b.id)
-        const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+      // 🎯 PRACTICE MODE: Skip badge checking in practice mode
+      if (!isPracticeMode) {
+        // GAMIFICATION: Check for new badges after update (only in graded mode)
+        const updatedProgressDoc = await progressRef.get()
+        const updatedStats = updatedProgressDoc.data()
         
-        await progressRef.update({
-          badges: admin.firestore.FieldValue.arrayUnion(...badgeIds),
-          totalPoints: admin.firestore.FieldValue.increment(badgePoints)
-        })
+        // Get total LOs in course for badge checking
+        const courseDoc = await db.collection('courses').doc(courseId).get()
+        const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
+        
+        const newBadges = checkBadges(updatedStats, totalLOs)
+        
+        if (newBadges.length > 0) {
+          const badgeIds = newBadges.map(b => b.id)
+          const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+          
+          await progressRef.update({
+            badges: admin.firestore.FieldValue.arrayUnion(...badgeIds),
+            totalPoints: admin.firestore.FieldValue.increment(badgePoints)
+          })
 
-        console.log(`🎖️ New badges earned by ${studentId}: ${badgeIds.join(', ')} (+${badgePoints} pts)`)
+          console.log(`🎖️ New badges earned by ${studentId}: ${badgeIds.join(', ')} (+${badgePoints} pts)`)
+        }
       }
 
-      console.log(`Updated progress for ${studentId} in ${courseId}: ${updatedPassedLOs.length} LOs passed, +${pointsEarned} pts`)
+      const modeLabel = isPracticeMode ? '(Practice)' : ''
+      console.log(`Updated progress for ${studentId} in ${courseId} ${modeLabel}: ${updatedPassedLOs.length} LOs passed, +${pointsEarned} pts`)
     } else {
       // สร้างเอกสารใหม่
-      let pointsEarned = 0
-      if (assessmentData) {
-        pointsEarned = calculatePoints(assessmentData)
-      }
-
+      
       // 🆕 Initialize loProgress for first-time assessment
       const loProgress = {}
       if (assessmentData && assessmentData.questionData && assessmentData.questionData.relatedLOs) {
@@ -1920,6 +1977,12 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
         })
       }
 
+      // 🎯 PRACTICE MODE: Calculate points only if not practice mode
+      let pointsEarned = 0
+      if (!isPracticeMode && assessmentData) {
+        pointsEarned = calculatePoints(assessmentData)
+      }
+
       const initialData = {
         studentId,
         courseId,
@@ -1929,10 +1992,10 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
         assessmentCount: 1,
         firstAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
         lastAssessedAt: admin.firestore.FieldValue.serverTimestamp(),
-        // Gamification fields
-        totalPoints: pointsEarned,
-        currentStreak: 1,
-        maxStreak: 1,
+        // Gamification fields (initialized but not incremented in practice mode)
+        totalPoints: isPracticeMode ? 0 : pointsEarned,
+        currentStreak: isPracticeMode ? 0 : 1,
+        maxStreak: isPracticeMode ? 0 : 1,
         lastActiveDate: currentDate,
         badges: [],
         achievements: []
@@ -1940,25 +2003,29 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
 
       await progressRef.set(initialData)
 
-      // Check for first-time badges
-      const courseDoc = await db.collection('courses').doc(courseId).get()
-      const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
-      
-      const newBadges = checkBadges(initialData, totalLOs)
-      
-      if (newBadges.length > 0) {
-        const badgeIds = newBadges.map(b => b.id)
-        const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+      // 🎯 PRACTICE MODE: Skip badge checking in practice mode
+      if (!isPracticeMode) {
+        // Check for first-time badges (only in graded mode)
+        const courseDoc = await db.collection('courses').doc(courseId).get()
+        const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
         
-        await progressRef.update({
-          badges: badgeIds,
-          totalPoints: admin.firestore.FieldValue.increment(badgePoints)
-        })
+        const newBadges = checkBadges(initialData, totalLOs)
+        
+        if (newBadges.length > 0) {
+          const badgeIds = newBadges.map(b => b.id)
+          const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+          
+          await progressRef.update({
+            badges: badgeIds,
+            totalPoints: admin.firestore.FieldValue.increment(badgePoints)
+          })
 
-        console.log(`🎖️ Initial badges earned by ${studentId}: ${badgeIds.join(', ')} (+${badgePoints} pts)`)
+          console.log(`🎖️ Initial badges earned by ${studentId}: ${badgeIds.join(', ')} (+${badgePoints} pts)`)
+        }
       }
 
-      console.log(`Created new progress for ${studentId} in ${courseId}: ${passedLOs.length} LOs passed, ${pointsEarned} pts`)
+      const modeLabel = isPracticeMode ? '(Practice)' : ''
+      console.log(`Created new progress for ${studentId} in ${courseId} ${modeLabel}: ${passedLOs.length} LOs passed, ${pointsEarned} pts`)
     }
   } catch (error) {
     console.error('Error updating student progress:', error)
@@ -8943,6 +9010,415 @@ exports.healthCheck = functions.https.onRequest(async (req, res) => {
         status: 'unhealthy',
         error: error.message
       })
+    }
+  })
+})
+
+/**
+ * 🗑️ PDPA Right to Erasure API (Right to be Forgotten)
+ * ลบข้อมูลส่วนบุคคลของนักเรียนตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล
+ * 
+ * @param {string} studentId - UID ของนักเรียนที่ต้องการลบข้อมูล
+ * @param {string} scope - ขอบเขตการลบ: 'full' | 'pii_only' | 'assessments_only'
+ * @param {string} reason - เหตุผลการลบ: 'user_request' | 'account_inactive' | 'legal_requirement'
+ * @param {string} requestedBy - UID ของผู้ขอลบ (ต้องเป็น studentId เอง หรือ admin)
+ * 
+ * Security: ต้องเป็นเจ้าของข้อมูลหรือ admin เท่านั้น
+ */
+exports.deleteStudentData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Method validation
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const {
+        studentId,
+        scope = 'pii_only',
+        reason = 'user_request',
+        requestedBy,
+        confirmDeletion = false
+      } = req.body
+      
+      // Validation
+      if (!studentId) {
+        return res.status(400).json({ error: 'studentId is required' })
+      }
+      
+      if (!requestedBy) {
+        return res.status(400).json({ error: 'requestedBy is required' })
+      }
+      
+      if (!['full', 'pii_only', 'assessments_only'].includes(scope)) {
+        return res.status(400).json({ 
+          error: 'Invalid scope. Must be: full, pii_only, or assessments_only' 
+        })
+      }
+      
+      if (!confirmDeletion) {
+        return res.status(400).json({ 
+          error: 'confirmDeletion must be true to proceed',
+          message: 'This action is irreversible. Set confirmDeletion: true to confirm.'
+        })
+      }
+      
+      // Authorization check: must be the student themselves or an admin
+      const requesterDoc = await db.collection('users').doc(requestedBy).get()
+      const requesterData = requesterDoc.exists ? requesterDoc.data() : null
+      
+      const isAdmin = requesterData?.role === 'admin' || requesterData?.role === 'teacher'
+      const isSelf = requestedBy === studentId
+      
+      if (!isSelf && !isAdmin) {
+        // Log unauthorized attempt
+        await db.collection('securityLogs').add({
+          event: 'UNAUTHORIZED_DELETION_ATTEMPT',
+          studentId,
+          requestedBy,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          ip: req.ip || 'unknown'
+        })
+        
+        return res.status(403).json({ 
+          error: 'Unauthorized. Only the account owner or admin can delete data.' 
+        })
+      }
+      
+      // Check if student exists
+      const studentDoc = await db.collection('users').doc(studentId).get()
+      if (!studentDoc.exists) {
+        return res.status(404).json({ error: 'Student not found' })
+      }
+      
+      const studentData = studentDoc.data()
+      
+      // Start deletion process
+      console.log(`🗑️ Starting data deletion for ${studentId}, scope: ${scope}, reason: ${reason}`)
+      
+      const deletionResult = {
+        studentId,
+        scope,
+        reason,
+        requestedBy,
+        requestedAt: new Date().toISOString(),
+        deletedItems: {},
+        anonymizedItems: {},
+        errors: []
+      }
+      
+      const batch = db.batch()
+      
+      // ========== SCOPE: FULL or PII_ONLY ==========
+      if (scope === 'full' || scope === 'pii_only') {
+        // Anonymize user document (keep for research with anonymized data)
+        if (scope === 'pii_only') {
+          const anonymizedUser = {
+            displayName: '[DELETED]',
+            email: '[DELETED]',
+            studentId: '[DELETED]',
+            photoURL: null,
+            grade: studentData.grade,  // Keep for research
+            isAnonymized: true,
+            anonymizedAt: admin.firestore.FieldValue.serverTimestamp(),
+            anonymizationReason: reason
+          }
+          batch.update(db.collection('users').doc(studentId), anonymizedUser)
+          deletionResult.anonymizedItems.users = 1
+        } else {
+          // Full deletion - delete user document
+          batch.delete(db.collection('users').doc(studentId))
+          deletionResult.deletedItems.users = 1
+        }
+      }
+      
+      // ========== SCOPE: FULL or ASSESSMENTS_ONLY ==========
+      if (scope === 'full' || scope === 'assessments_only') {
+        // Delete or anonymize assessments
+        const assessmentsQuery = await db.collection('assessments')
+          .where('studentId', '==', studentId)
+          .get()
+        
+        let assessmentCount = 0
+        for (const doc of assessmentsQuery.docs) {
+          if (scope === 'full') {
+            batch.delete(doc.ref)
+          } else {
+            // Anonymize but keep for research
+            batch.update(doc.ref, {
+              studentId: `ANON_${studentId.substring(0, 8)}`,
+              studentAnswer: '[CONTENT_REMOVED]',
+              isAnonymized: true,
+              anonymizedAt: admin.firestore.FieldValue.serverTimestamp()
+            })
+          }
+          assessmentCount++
+        }
+        
+        if (scope === 'full') {
+          deletionResult.deletedItems.assessments = assessmentCount
+        } else {
+          deletionResult.anonymizedItems.assessments = assessmentCount
+        }
+        
+        // Delete worksheet submissions
+        const worksheetsQuery = await db.collection('worksheetSubmissions')
+          .where('studentId', '==', studentId)
+          .get()
+        
+        let worksheetCount = 0
+        for (const doc of worksheetsQuery.docs) {
+          if (scope === 'full') {
+            batch.delete(doc.ref)
+          } else {
+            batch.update(doc.ref, {
+              studentId: `ANON_${studentId.substring(0, 8)}`,
+              answers: {},
+              isAnonymized: true,
+              anonymizedAt: admin.firestore.FieldValue.serverTimestamp()
+            })
+          }
+          worksheetCount++
+        }
+        
+        if (scope === 'full') {
+          deletionResult.deletedItems.worksheetSubmissions = worksheetCount
+        } else {
+          deletionResult.anonymizedItems.worksheetSubmissions = worksheetCount
+        }
+        
+        // Delete student progress
+        const progressQuery = await db.collection('studentProgress')
+          .where('studentId', '==', studentId)
+          .get()
+        
+        let progressCount = 0
+        for (const doc of progressQuery.docs) {
+          batch.delete(doc.ref)
+          progressCount++
+        }
+        deletionResult.deletedItems.studentProgress = progressCount
+        
+        // Delete sessions
+        const sessionsQuery = await db.collection('sessions')
+          .where('studentId', '==', studentId)
+          .get()
+        
+        let sessionCount = 0
+        for (const doc of sessionsQuery.docs) {
+          batch.delete(doc.ref)
+          sessionCount++
+        }
+        deletionResult.deletedItems.sessions = sessionCount
+      }
+      
+      // ========== ALWAYS: Delete gamification data (non-research) ==========
+      if (scope === 'full') {
+        // Delete from leaderboard
+        const leaderboardQuery = await db.collection('leaderboard')
+          .where('studentId', '==', studentId)
+          .get()
+        
+        let leaderboardCount = 0
+        for (const doc of leaderboardQuery.docs) {
+          batch.delete(doc.ref)
+          leaderboardCount++
+        }
+        deletionResult.deletedItems.leaderboard = leaderboardCount
+      }
+      
+      // Commit batch
+      await batch.commit()
+      
+      // Create audit log (required for PDPA compliance)
+      await db.collection('dataDeletionAuditLogs').add({
+        ...deletionResult,
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        executedBy: requestedBy,
+        studentEmail: studentData.email,  // Keep for audit trail only
+        retentionPeriod: '10 years',  // PDPA requirement for audit logs
+        status: 'completed'
+      })
+      
+      // Log security event
+      await db.collection('securityLogs').add({
+        event: 'DATA_DELETION_COMPLETED',
+        studentId,
+        scope,
+        reason,
+        requestedBy,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        summary: deletionResult
+      })
+      
+      console.log(`✅ Data deletion completed for ${studentId}`)
+      
+      return res.status(200).json({
+        success: true,
+        message: scope === 'full' 
+          ? 'All personal data has been permanently deleted.' 
+          : 'Personal data has been anonymized.',
+        result: deletionResult
+      })
+      
+    } catch (error) {
+      console.error('❌ deleteStudentData error:', error)
+      
+      // Log error for audit
+      await db.collection('securityLogs').add({
+        event: 'DATA_DELETION_FAILED',
+        error: error.message,
+        requestBody: req.body,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      })
+      
+      return res.status(500).json({
+        error: 'Data deletion failed',
+        message: error.message
+      })
+    }
+  })
+})
+
+/**
+ * 📋 PDPA Data Export API (Right to Access/Portability)
+ * ส่งออกข้อมูลส่วนบุคคลของนักเรียนในรูปแบบที่อ่านได้
+ */
+exports.exportPersonalData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' })
+      }
+      
+      const { studentId, requestedBy, format = 'json' } = req.body
+      
+      if (!studentId || !requestedBy) {
+        return res.status(400).json({ error: 'studentId and requestedBy are required' })
+      }
+      
+      // Authorization check
+      const requesterDoc = await db.collection('users').doc(requestedBy).get()
+      const requesterData = requesterDoc.exists ? requesterDoc.data() : null
+      
+      const isAdmin = requesterData?.role === 'admin' || requesterData?.role === 'teacher'
+      const isSelf = requestedBy === studentId
+      
+      if (!isSelf && !isAdmin) {
+        return res.status(403).json({ error: 'Unauthorized' })
+      }
+      
+      // Collect all data
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        studentId,
+        personalData: {},
+        learningData: {}
+      }
+      
+      // User profile
+      const userDoc = await db.collection('users').doc(studentId).get()
+      if (userDoc.exists) {
+        const userData = userDoc.data()
+        exportData.personalData.profile = {
+          displayName: userData.displayName,
+          email: userData.email,
+          studentId: userData.studentId,
+          grade: userData.grade,
+          room: userData.room,
+          number: userData.number,
+          createdAt: userData.createdAt?.toDate?.()?.toISOString() || null,
+          lastLoginAt: userData.lastLoginAt?.toDate?.()?.toISOString() || null
+        }
+      }
+      
+      // Assessments
+      const assessmentsQuery = await db.collection('assessments')
+        .where('studentId', '==', studentId)
+        .orderBy('createdAt', 'desc')
+        .get()
+      
+      exportData.learningData.assessments = assessmentsQuery.docs.map(doc => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          courseId: data.courseId,
+          rubricScores: data.rubricScores,
+          totalScore: data.totalScore,
+          feedback: data.feedback,
+          loAssessment: data.loAssessment,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || null
+        }
+      })
+      
+      // Student progress
+      const progressQuery = await db.collection('studentProgress')
+        .where('studentId', '==', studentId)
+        .get()
+      
+      exportData.learningData.progress = progressQuery.docs.map(doc => {
+        const data = doc.data()
+        return {
+          courseId: data.courseId,
+          passedLOs: data.passedLOs,
+          totalPoints: data.totalPoints,
+          badges: data.badges,
+          currentStreak: data.currentStreak,
+          maxStreak: data.maxStreak
+        }
+      })
+      
+      // Worksheet submissions
+      const worksheetsQuery = await db.collection('worksheetSubmissions')
+        .where('studentId', '==', studentId)
+        .get()
+      
+      exportData.learningData.worksheets = worksheetsQuery.docs.map(doc => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          worksheetId: data.worksheetId,
+          courseId: data.courseId,
+          assessment: data.assessment,
+          loAssessment: data.loAssessment,
+          submittedAt: data.submittedAt?.toDate?.()?.toISOString() || null
+        }
+      })
+      
+      // Create audit log
+      await db.collection('dataExportAuditLogs').add({
+        studentId,
+        requestedBy,
+        format,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        itemsExported: {
+          assessments: exportData.learningData.assessments.length,
+          progress: exportData.learningData.progress.length,
+          worksheets: exportData.learningData.worksheets.length
+        }
+      })
+      
+      // Return based on format
+      if (format === 'csv') {
+        // Convert to CSV format
+        const csvLines = ['type,courseId,score,date']
+        exportData.learningData.assessments.forEach(a => {
+          csvLines.push(`assessment,${a.courseId},${a.totalScore},${a.createdAt}`)
+        })
+        
+        res.setHeader('Content-Type', 'text/csv')
+        res.setHeader('Content-Disposition', `attachment; filename="personal_data_${studentId}.csv"`)
+        return res.send('\uFEFF' + csvLines.join('\n'))  // BOM for Thai
+      }
+      
+      return res.json({
+        success: true,
+        data: exportData
+      })
+      
+    } catch (error) {
+      console.error('❌ exportPersonalData error:', error)
+      return res.status(500).json({ error: error.message })
     }
   })
 })

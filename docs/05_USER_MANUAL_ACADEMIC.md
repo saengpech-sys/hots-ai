@@ -12,7 +12,9 @@
 ![Interpretation](https://img.shields.io/badge/Score-Interpretation-8B5CF6?style=for-the-badge)
 
 **Academic Documentation Suite — บทที่ 5**  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568
+**เวอร์ชัน 5.3** | **ปรับปรุงล่าสุด:** ธันวาคม 2568
+
+**เอกสารก่อนหน้า:** [04_RESEARCH_METHODOLOGY.md](./04_RESEARCH_METHODOLOGY.md) | **เอกสารถัดไป:** [ALGORITHMIC_ALIGNMENT_AUDIT.md](./ALGORITHMIC_ALIGNMENT_AUDIT.md)
 
 </div>
 

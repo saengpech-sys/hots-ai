@@ -1090,11 +1090,27 @@ async function exportKAnonymousData(db, courseId, options = {}) {
       })
     }
     
-    // Calculate k-anonymity check
-    const uniquePatterns = new Set(records.map(r => 
-      `${r.studentId}_${r.timestampISO}_${r.scoreOverall}`
-    ))
-    const isKAnonymous = records.length / uniquePatterns.size >= k
+    // Calculate k-anonymity check (proper equivalence class verification)
+    // K-anonymity requires EVERY equivalence class to have >= k members
+    const quasiIdentifierKeys = ['studentGrade', 'timestampISO']
+    const equivalenceClasses = {}
+    records.forEach(r => {
+      const key = quasiIdentifierKeys.map(qi => r[qi] || 'NULL').join('|')
+      if (!equivalenceClasses[key]) equivalenceClasses[key] = []
+      equivalenceClasses[key].push(r)
+    })
+    
+    // Check if ALL equivalence classes have >= k members
+    const classSizes = Object.values(equivalenceClasses).map(c => c.length)
+    const minClassSize = Math.min(...classSizes)
+    const isKAnonymous = minClassSize >= k
+    const kAnonymityDetails = {
+      totalClasses: Object.keys(equivalenceClasses).length,
+      minClassSize,
+      maxClassSize: Math.max(...classSizes),
+      avgClassSize: Math.round((records.length / Object.keys(equivalenceClasses).length) * 100) / 100,
+      violatingClasses: classSizes.filter(s => s < k).length
+    }
     
     // Format output
     if (format === 'csv') {
@@ -1110,7 +1126,9 @@ async function exportKAnonymousData(db, courseId, options = {}) {
         recordCount: records.length,
         isKAnonymous,
         kValue: k,
-        level
+        kAnonymityDetails,
+        level,
+        warning: !isKAnonymous ? `⚠️ K-Anonymity violated: ${kAnonymityDetails.violatingClasses} classes have < ${k} members (min: ${minClassSize})` : null
       }
     }
     
@@ -1121,7 +1139,9 @@ async function exportKAnonymousData(db, courseId, options = {}) {
       recordCount: records.length,
       isKAnonymous,
       kValue: k,
-      level
+      kAnonymityDetails,
+      level,
+      warning: !isKAnonymous ? `⚠️ K-Anonymity violated: ${kAnonymityDetails.violatingClasses} classes have < ${k} members (min: ${minClassSize})` : null
     }
   } catch (error) {
     console.error('Error exporting k-anonymous data:', error)

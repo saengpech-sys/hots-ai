@@ -121,10 +121,14 @@ const props = defineProps({
   post: {
     type: Object,
     required: true
+  },
+  followingIds: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['react', 'comment', 'share', 'edit', 'delete', 'deleteComment'])
+const emit = defineEmits(['react', 'comment', 'share', 'edit', 'delete', 'deleteComment', 'follow-changed'])
 
 const authStore = useAuthStore()
 
@@ -250,6 +254,8 @@ async function toggleFollow() {
         await deleteDoc(doc(db, 'following', docSnap.id))
       }
       isFollowing.value = false
+      // Emit to parent to update followingIds
+      emit('follow-changed', props.post.authorId, false)
     } else {
       // Follow
       await addDoc(collection(db, 'following'), {
@@ -260,6 +266,8 @@ async function toggleFollow() {
         createdAt: serverTimestamp()
       })
       isFollowing.value = true
+      // Emit to parent to update followingIds
+      emit('follow-changed', props.post.authorId, true)
     }
   } catch (error) {
     console.error('Error toggling follow:', error)
@@ -364,7 +372,8 @@ function closeMenu() {
 async function toggleComments() {
   showComments.value = !showComments.value
   
-  if (showComments.value && comments.value.length === 0) {
+  if (showComments.value) {
+    // Always reload comments when opening to get latest
     await loadComments()
   }
 }
@@ -405,28 +414,44 @@ function handleReaction() {
   }, 500)
 }
 
-function submitComment() {
+async function submitComment() {
   if (!commentText.value.trim()) return
   
   const parentId = replyingTo.value?.id || null
+  const text = commentText.value.trim()
   
-  const newComment = {
-    id: 'temp-' + Date.now().toString(),
-    authorId: authStore.user.uid,
-    authorName: authStore.user.displayName,
-    authorPhoto: authStore.user.photoURL,
-    content: commentText.value,
-    createdAt: new Date(),
-    parentId: parentId
-  }
-  
-  // Optimistic update
-  comments.value.push(newComment)
-  
-  // Emit with parentId for proper nesting
-  emit('comment', props.post.id, commentText.value, parentId)
+  // Clear input immediately for better UX
   commentText.value = ''
   replyingTo.value = null
+  
+  try {
+    // Add comment directly to Firestore
+    const newComment = {
+      postId: props.post.id,
+      authorId: authStore.user.uid,
+      authorName: authStore.user.displayName || 'ผู้ใช้',
+      authorPhoto: authStore.user.photoURL,
+      content: text,
+      parentId: parentId,
+      createdAt: serverTimestamp()
+    }
+    
+    await addDoc(collection(db, 'comments'), newComment)
+    
+    // Update post comment count in Firestore
+    await updateDoc(doc(db, 'posts', props.post.id), {
+      commentCount: increment(1)
+    })
+    
+    // Emit to parent to update local count
+    emit('comment', props.post.id, text, parentId)
+    
+    // Reload comments to get the new one with proper ID
+    await loadComments()
+  } catch (error) {
+    console.error('Error submitting comment:', error)
+    alert('เกิดข้อผิดพลาดในการส่งความคิดเห็น')
+  }
 }
 
 function replyToComment(comment) {

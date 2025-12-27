@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**Version 2.0** | **Assessment Date: December 21, 2025**
+[![DPA Score](https://img.shields.io/badge/DPA%20Score-11%2F11%20(100%25)-gold)](./README.md)
+[![Kappa](https://img.shields.io/badge/Cohen's%20κ-0.72-success)](./GOLDEN_DATASET_IRR.md)
+[![PDPA](https://img.shields.io/badge/PDPA-Compliant-blue)](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
+
+**Version 2.1** | **Assessment Date: December 25, 2025**
 
 *รายการตรวจสอบระบบ HOTS AI ChatLoop สำหรับการประกวดรางวัล DPA*
+
+**Related:** [DOCS.md](./DOCS.md) | [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) | [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md)
 
 </div>
 

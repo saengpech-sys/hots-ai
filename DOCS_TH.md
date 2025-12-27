@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 5.2** | **อัปเดตล่าสุด: 22 ธันวาคม 2568**
+[![Version](https://img.shields.io/badge/เวอร์ชัน-5.3.0-blue)](https://github.com/saengpech-sys/hots-ai)
+[![Cloud Functions](https://img.shields.io/badge/Cloud%20Functions-48-orange)](./functions/)
+[![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72-success)](./GOLDEN_DATASET_IRR.md)
+
+**เวอร์ชัน 5.3** | **อัปเดตล่าสุด: 25 ธันวาคม 2568**
 
 *คู่มือทางเทคนิคสำหรับนักพัฒนา นักวิจัย และผู้ดูแลระบบ*
+
+**เอกสารที่เกี่ยวข้อง:** [DOCS.md](./DOCS.md) (English) | [DEVELOPER_MANUAL.md](./DEVELOPER_MANUAL.md) | [README_TH.md](./README_TH.md)
 
 </div>
 
@@ -49,13 +55,14 @@
 
 | ตัวชี้วัด | จำนวน | หมายเหตุ |
 |----------|-------|----------|
-| Vue Components | 80+ | รวม 45+ หน้าหลัก |
-| Cloud Functions | 41 | HTTP + Scheduled + Triggers |
-| โค้ด Backend | 9,200+ บรรทัด | สถาปัตยกรรม Modular |
+| Vue Components | 80+ | รวม 57+ หน้าหลัก |
+| Cloud Functions | 48 | HTTP + Scheduled + Triggers (25 integrated, 23 standalone) |
+| โค้ด Backend | 11,800+ บรรทัด | สถาปัตยกรรม Modular พร้อม controllers/services/utils |
 | Firestore Collections | 25+ | Schema ปกติ |
 | กรณีทดสอบ | 123 | 48 backend + 75 frontend |
 | Routes | 45+ | ควบคุมสิทธิ์ตาม Role |
 | Pinia Stores | 8 | auth, chat, gamification, theme, lessonPlan, learningPath, notifications, dashboard |
+| Utility Modules | 20+ | aiParser, rateLimiter, circuitBreaker, etc. |
 
 ### ตารางอ้างอิงด่วน A.R.C.E.
 

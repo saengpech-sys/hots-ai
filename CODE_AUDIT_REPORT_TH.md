@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 2.0** | **ตรวจสอบเมื่อ: 21 ธันวาคม 2568**
+[![Functions](https://img.shields.io/badge/Cloud%20Functions-48-orange)](./functions/)
+[![Integrated](https://img.shields.io/badge/รวมแล้ว-25%20(52%25)-success)](./functions/index.js)
+[![Tests](https://img.shields.io/badge/ทดสอบ-123%20ผ่าน-blue)](./functions/__tests__/)
+
+**เวอร์ชัน 2.1** | **ตรวจสอบเมื่อ: 25 ธันวาคม 2568**
 
 *รายงานการตรวจสอบ Cloud Functions และสถาปัตยกรรม Backend*
+
+**เอกสารที่เกี่ยวข้อง:** [CODE_AUDIT_REPORT.md](./CODE_AUDIT_REPORT.md) (English) | [DOCS.md](./DOCS.md)
 
 </div>
 

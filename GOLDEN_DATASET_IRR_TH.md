@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 1.2** | **สร้างเมื่อ: 21 ธันวาคม 2568**
+[![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72%20(ดี)-success)](./GOLDEN_DATASET_IRR.md)
+[![ICC](https://img.shields.io/badge/ICC-0.81%20(ดีเยี่ยม)-blue)](./GOLDEN_DATASET_IRR.md)
+[![Golden Items](https://img.shields.io/badge/Golden%20Items-20-gold)](#4-ชุดข้อมูลมาตรฐาน-20-รายการ)
+
+**เวอร์ชัน 3.1** | **อัปเดตล่าสุด: 25 ธันวาคม 2568**
 
 *ชุดข้อมูล 20 รายการสำหรับทดสอบความน่าเชื่อถือระหว่างผู้ประเมิน*
+
+**เอกสารที่เกี่ยวข้อง:** [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) (English) | [RELIABILITY_ECOSYSTEM_TH.md](./RELIABILITY_ECOSYSTEM_TH.md)
 
 </div>
 

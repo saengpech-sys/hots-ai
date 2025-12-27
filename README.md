@@ -2,11 +2,13 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-5.2.0-blue)
+![Version](https://img.shields.io/badge/Version-5.3.0-blue)
 ![Phase](https://img.shields.io/badge/Phase-4%2B%20Production-green)
 ![Tests](https://img.shields.io/badge/Tests-123%20Passed-success)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![DPA](https://img.shields.io/badge/DPA%20Score-11%2F11-brightgreen)
+![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72%20(Substantial)-blue)
+![ICC](https://img.shields.io/badge/ICC-0.81%20(Excellent)-purple)
 
 **AI-Powered Educational Ecosystem for Higher-Order Thinking Skills Assessment**
 
@@ -14,7 +16,7 @@
 
 🌐 [Live Demo](https://hots-ai-d028b.web.app) | 📚 [Documentation](./DOCS.md) | 🔬 [Research Pipeline](./RESEARCH_DATA_PIPELINE.md) | 🎯 [Reliability](./RELIABILITY_ECOSYSTEM.md) | 🏆 [DPA Assessment](./DPA_ASSESSMENT_CHECKLIST.md)
 
-**Last Updated:** December 22, 2025
+**Last Updated:** December 25, 2025
 
 </div>
 

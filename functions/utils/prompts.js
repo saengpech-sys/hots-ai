@@ -5,6 +5,54 @@
  * - Assessment prompts (HOTS scoring)
  * - LO assessment prompts
  * - Generation prompts (questions, worksheets, etc.)
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 📚 OPERATIONAL DEFINITIONS & KNOWN LIMITATIONS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * This module assesses TEXTUAL MANIFESTATIONS of thinking skills, NOT the 
+ * underlying cognitive processes themselves. Key distinctions:
+ * 
+ * 🔬 WHAT WE MEASURE (Operational Definitions):
+ * 
+ * 1. ANALYSIS (การวิเคราะห์)
+ *    - Theory: "Breaking material into constituent parts"
+ *    - Operationalized as: "Identifying distinct claims/components in written text"
+ *    - Limitation: Cannot assess visual/spatial/kinesthetic analysis
+ * 
+ * 2. REASONING (การให้เหตุผล)
+ *    - Theory: "Drawing logical conclusions from premises"
+ *    - Operationalized as: "Presence of if-then structures, causal language in text"
+ *    - Limitation: Valid reasoning with unstated premises may be underscored
+ * 
+ * 3. CREATIVITY (ความคิดสร้างสรรค์) ⚠️ CRITICAL LIMITATION
+ *    - Theory (Guilford): "Divergent production of novel, useful ideas"
+ *    - Operationalized as: "TEXTUAL NOVELTY - presence of perspectives not 
+ *      commonly found in typical responses to similar questions"
+ *    - What we CAN assess: Novel framing, unexpected examples, unique connections
+ *    - What we CANNOT assess: 
+ *      * Genuine creative production (art, inventions, designs)
+ *      * Process creativity (brainstorming, iteration)
+ *      * Domain-specific creative expertise
+ *      * Real-world novelty (only compared to training data)
+ * 
+ * 4. EVIDENCE (การใช้หลักฐาน)
+ *    - Theory: "Supporting claims with verifiable information"
+ *    - Operationalized as: "Presence of specific examples, data, citations in text"
+ *    - Limitation: Cannot verify factual accuracy of cited evidence
+ * 
+ * 🎯 VALIDITY SCOPE:
+ * - This assessment is valid for "Written Expression of HOTS"
+ * - NOT valid for "General Cognitive Ability" or "Intelligence"
+ * - Scores indicate DEMONSTRATED skills in THIS RESPONSE, not trait-level abilities
+ * 
+ * 📊 MEASUREMENT PROPERTIES:
+ * - Scale type: ORDINAL (0-5), not interval
+ * - Score of 3 is NOT "twice as good" as 1.5
+ * - Meaningful comparisons: "higher/lower than", NOT "how much higher"
+ * - Arithmetic mean of ordinal data should be interpreted cautiously
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 /**
@@ -112,7 +160,7 @@ ${scaffoldingInstructions}
 ให้คะแนนตาม "สมอคะแนน (Anchors)" และเลือกคะแนนที่ "ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน"
 
 1) การวิเคราะห์ (Analysis)
-- 5: แยกประเด็น/องค์ประกอบสำคัญครบ โครงสร้างชัด เชื่อมความสัมพันธ์สาเหตุ-ผลอย่างเป็นระบบ
+- 5: แยกแยะประเด็น/องค์ประกอบครบถ้วน โครงสร้างชัด เชื่อมความสัมพันธ์ซับซ้อน พบรูปแบบ/แนวโน้มที่ซ่อนอยู่
 - 4: แยกประเด็นหลักชัด มีโครงสร้างและความเชื่อมโยงส่วนใหญ่ถูกต้อง
 - 3: แยกบางส่วนได้ เห็นโครงร่างการวิเคราะห์ แต่ขาดบางประเด็นสำคัญ
 - 2: วิเคราะห์ตื้น อธิบายแบบเล่าเรื่องมากกว่าแยกส่วน
@@ -120,24 +168,26 @@ ${scaffoldingInstructions}
 - 0: ไม่วิเคราะห์/นอกเรื่อง
 
 2) การให้เหตุผล (Reasoning)
-- 5: เหตุผลเป็นลำดับ มีตรรกะ/การอนุมานถูกต้อง สรุปสอดคล้องกับเหตุผล
-- 4: ลำดับคิดดี มีการอนุมานส่วนใหญ่ถูกต้อง มีจุดสะดุดเล็กน้อย
+- 5: เหตุผลเป็นลำดับ มีตรรกะสมบูรณ์ อ้างหลักการถูกต้อง มีข้อโต้แย้ง/ข้อจำกัด สรุปสอดคล้องกับเหตุผล
+- 4: ลำดับคิดดี มีการอนุมานส่วนใหญ่ถูกต้อง อ้างหลักการได้ มีจุดสะดุดเล็กน้อย
 - 3: มีเหตุผลพื้นฐาน แต่ยังมีช่องโหว่/สรุปก้าวกระโดดบางช่วง
 - 2: เหตุผลคลุมเครือ พิงความเชื่อมากกว่าตรรกะ
 - 1: ตรรกะผิดพลาดบ่อย สรุปไม่ตามเหตุผล
 - 0: ไม่มีเหตุผลที่ตรวจสอบได้
 
-3) ความคิดสร้างสรรค์ (Creativity)
-- 5: เสนอกรอบคิด/วิธีมองใหม่ ชี้มุมไม่ชัดเจนเดิม มีตัวอย่างสร้างสรรค์ที่เกี่ยวข้อง
-- 4: มีมุมใหม่ชัดเจนอย่างน้อยหนึ่งจุด
-- 3: ปรับ/ต่อยอดไอเดียเดิมได้บ้าง
-- 2: ความคิดทั่วไป ซ้ำแพทเทิร์นคุ้นเคย
+3) ความคิดสร้างสรรค์ (Creativity) — ⚠️ หมายถึง "ความแปลกใหม่ในการนำเสนอ/มุมมอง" เท่านั้น
+   📌 OPERATIONAL DEFINITION: ประเมินจากความแปลกใหม่ของมุมมอง/ตัวอย่าง/การเชื่อมโยง ที่ปรากฏในข้อความ
+   ⚠️ ไม่ใช่การประเมินความสามารถในการสร้างสรรค์ผลงาน (art, invention) ในโลกจริง
+- 5: เสนอกรอบคิด/วิธีมองใหม่ที่ไม่คาดคิด ชี้มุมที่ไม่ชัดเจนเดิม เสนอทางเลือกหลากหลาย มีตัวอย่างหรือการเชื่อมโยงที่แปลกใหม่
+- 4: มีมุมมองใหม่ชัดเจนอย่างน้อยหนึ่งจุด แตกต่างจากคำตอบทั่วไป เสนอทางเลือก
+- 3: ปรับ/ต่อยอดจากไอเดียมาตรฐานได้บ้าง มีความพยายามนำเสนอต่าง
+- 2: ความคิดทั่วไป ซ้ำแพทเทิร์นที่คุ้นเคย ไม่มีมุมใหม่
 - 1: ทวนซ้ำความรู้เดิม ไร้มุมเพิ่ม
-- 0: ไม่แสดงความคิดริเริ่ม
+- 0: ไม่แสดงความพยายามนำเสนอมุมมองใดๆ
 
 4) การใช้หลักฐาน (Evidence)
-- 5: ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจง ตรงประเด็น อธิบายความเชื่อมโยงกับข้อสรุปชัด
-- 4: มีหลักฐานที่เกี่ยวข้องและอธิบายความเชื่อมโยงพอควร
+- 5: ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจงหลากหลาย ตรงประเด็น อ้างอิงถูกต้อง อธิบายความเชื่อมโยงกับข้อสรุปชัด
+- 4: มีหลักฐานหลายแหล่งที่เกี่ยวข้อง อ้างอิงส่วนใหญ่ถูกต้อง อธิบายความเชื่อมโยงพอควร
 - 3: มีตัวอย่างแต่ยังทั่วไป/เชื่อมโยงหลวม
 - 2: อ้างกว้าง ๆ ไม่ชัดเจนหรือไม่สัมพันธ์กับข้อสรุป
 - 1: กล่าวอ้างลอย ๆ ไร้ตัวอย่างตรวจสอบได้
@@ -165,6 +215,40 @@ Step 5: ประเมินความมั่นใจโดยรวม
 
 ต้องระบุเหตุผลใน "confidenceReason" เสมอ
 </confidence_instructions>
+
+<calibration_examples>
+📚 ตัวอย่างการให้คะแนนที่ผ่านการ Calibrate (ใช้เป็นแนวทาง):
+
+【ตัวอย่างที่ 1: คะแนนต่ำ】
+คำถาม: "วิเคราะห์ผลกระทบของภาวะโลกร้อน"
+คำตอบ: "โลกร้อนทำให้น้ำแข็งละลาย ทำให้ระดับน้ำทะเลสูงขึ้น"
+คะแนน: A=2, R=2, C=1, E=1 (รวม 6)
+เหตุผล:
+- Analysis=2: ระบุ 2 ประเด็น (น้ำแข็ง, น้ำทะเล) แต่ไม่มีโครงสร้าง ไม่แยกส่วน
+- Reasoning=2: มีความเชื่อมโยงง่ายๆ (เหตุ→ผล) แต่ไม่ลึก ไม่อ้างหลักการ
+- Creativity=1: ทวนซ้ำข้อมูลทั่วไป ไม่มีมุมมองใหม่
+- Evidence=1: ไม่มีตัวอย่าง/ตัวเลข/แหล่งอ้างอิงเฉพาะ
+
+【ตัวอย่างที่ 2: คะแนนกลาง】
+คำถาม: "วิเคราะห์ผลกระทบของภาวะโลกร้อน"
+คำตอบ: "ภาวะโลกร้อนส่งผลกระทบ 3 ด้าน: 1) สิ่งแวดล้อม - น้ำแข็งขั้วโลกละลาย ระดับน้ำทะเลสูงขึ้น 2) เศรษฐกิจ - พืชผลเสียหาย ต้นทุนการผลิตสูงขึ้น 3) สุขภาพ - โรคระบาดแพร่กระจายง่ายขึ้น ทั้งสามด้านมีความเกี่ยวข้องกัน"
+คะแนน: A=3, R=3, C=2, E=2 (รวม 10)
+เหตุผล:
+- Analysis=3: แยก 3 ประเด็นชัด แต่ยังขาดความสัมพันธ์เชิงลึก
+- Reasoning=3: มีโครงสร้างเหตุผล แต่ยังไม่อ้างหลักการ
+- Creativity=2: ใช้กรอบคิดทั่วไป (3 ด้าน) ไม่มีมุมใหม่
+- Evidence=2: อ้างกว้างๆ ไม่มีตัวเลข/แหล่งอ้างอิงเฉพาะ
+
+【ตัวอย่างที่ 3: คะแนนสูง】
+คำถาม: "วิเคราะห์ผลกระทบของภาวะโลกร้อน"
+คำตอบ: "ภาวะโลกร้อนสร้างผลกระทบแบบ cascade effect - รายงาน IPCC 2023 ระบุว่าอุณหภูมิโลกเพิ่ม 1.5°C จะทำให้แนวปะการังเสียหาย 70-90% ซึ่งกระทบห่วงโซ่อาหารทะเลและประมงท้องถิ่น ในไทย ชาวประมงภาคใต้รายงานผลผลิตลดลง 30% ในรอบ 10 ปี น่าสนใจว่าบางชุมชนปรับตัวโดยเปลี่ยนไปเพาะเลี้ยงสาหร่าย ซึ่งเป็นตัวดูดซับคาร์บอน - เป็นทั้งการแก้ปัญหาและการปรับตัว อย่างไรก็ตาม ต้องพิจารณาด้วยว่าต้นทุนการปรับตัวอาจสูงเกินไปสำหรับชุมชนเล็กๆ"
+คะแนน: A=5, R=5, C=4, E=5 (รวม 19)
+เหตุผล:
+- Analysis=5: เชื่อมโยงซับซ้อน (cascade effect) พบรูปแบบ (ปรับตัว vs ผลกระทบ)
+- Reasoning=5: อ้างหลักการ (cascade effect) มีข้อโต้แย้ง (ต้นทุนสูง) ตรรกะสมบูรณ์
+- Creativity=4: มุมมองใหม่ (สาหร่ายเป็นทั้งแก้ปัญหาและปรับตัว) แตกต่างจากคำตอบทั่วไป
+- Evidence=5: อ้าง IPCC, ตัวเลขเฉพาะ (1.5°C, 70-90%, 30%), ตัวอย่างท้องถิ่น
+</calibration_examples>
 
 ${needsProbingQuestion ? `
 <scaffolding_mode>

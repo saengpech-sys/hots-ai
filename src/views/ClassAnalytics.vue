@@ -300,6 +300,50 @@ const averageOverallScore = computed(() => {
   return avg.toFixed(2)
 })
 
+// Calculate median from student scores (more robust than mean for ordinal data)
+const medianOverallScore = computed(() => {
+  const studentPerf = dashboardStore.studentPerformance
+  if (!studentPerf || Object.keys(studentPerf).length === 0) return '0.00'
+  
+  const scores = Object.values(studentPerf)
+    .map(s => s.averageScore || 0)
+    .filter(s => s > 0)
+    .sort((a, b) => a - b)
+  
+  if (scores.length === 0) return '0.00'
+  
+  const mid = Math.floor(scores.length / 2)
+  const median = scores.length % 2 === 0
+    ? (scores[mid - 1] + scores[mid]) / 2
+    : scores[mid]
+  
+  return median.toFixed(2)
+})
+
+// Calculate IQR (Interquartile Range) for score spread
+const scoreIQR = computed(() => {
+  const studentPerf = dashboardStore.studentPerformance
+  if (!studentPerf || Object.keys(studentPerf).length < 4) return null
+  
+  const scores = Object.values(studentPerf)
+    .map(s => s.averageScore || 0)
+    .filter(s => s > 0)
+    .sort((a, b) => a - b)
+  
+  if (scores.length < 4) return null
+  
+  const q1Index = Math.floor(scores.length * 0.25)
+  const q3Index = Math.floor(scores.length * 0.75)
+  const q1 = scores[q1Index]
+  const q3 = scores[q3Index]
+  
+  return {
+    q1: q1.toFixed(2),
+    q3: q3.toFixed(2),
+    iqr: (q3 - q1).toFixed(2)
+  }
+})
+
 const sortedLoMastery = computed(() => {
   const entries = Object.entries(dashboardStore.loMastery)
   return Object.fromEntries(entries.sort((a, b) => b[1] - a[1]))

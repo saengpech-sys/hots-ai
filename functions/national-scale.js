@@ -1,6 +1,8 @@
 /**
  * HOTS AI ChatLoop - National Scale Functions
  * Organization Management, Curriculum Sync, Portfolio Generation
+ * 
+ * 🔐 SECURITY: All endpoints require authentication and role verification
  */
 
 const functions = require('firebase-functions')
@@ -9,15 +11,131 @@ const cors = require('cors')({ origin: true })
 
 const db = admin.firestore()
 
+// ==================== SECURITY HELPERS ====================
+
+/**
+ * 🔐 Verify Ministry Admin role (highest privilege)
+ */
+async function verifyMinistryAdmin(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Missing auth token', code: 'AUTH_MISSING' })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    const userDoc = await db.collection('users').doc(decoded.uid).get()
+    const role = userDoc.data()?.role
+    
+    if (role !== 'ministry_admin') {
+      console.warn(`🚨 RBAC: User ${decoded.uid} (role: ${role}) attempted ministry-only action`)
+      res.status(403).send({ error: 'Forbidden', message: 'Ministry Admin access required', code: 'INSUFFICIENT_ROLE' })
+      return null
+    }
+    
+    return { uid: decoded.uid, role, email: decoded.email }
+  } catch (err) {
+    console.error('🔐 Auth verification failed:', err.message)
+    res.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired token', code: 'TOKEN_INVALID' })
+    return null
+  }
+}
+
+/**
+ * 🔐 Verify ESA Admin or higher role
+ */
+async function verifyESAAdmin(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Missing auth token' })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    const userDoc = await db.collection('users').doc(decoded.uid).get()
+    const userData = userDoc.data()
+    const role = userData?.role
+    
+    const allowedRoles = ['esa_admin', 'ministry_admin']
+    if (!allowedRoles.includes(role)) {
+      res.status(403).send({ error: 'Forbidden', message: 'ESA Admin or higher access required' })
+      return null
+    }
+    
+    return { uid: decoded.uid, role, email: decoded.email, esaId: userData?.esaId }
+  } catch (err) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' })
+    return null
+  }
+}
+
+/**
+ * 🔐 Verify School Admin or higher role
+ */
+async function verifySchoolAdmin(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Missing auth token' })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    const userDoc = await db.collection('users').doc(decoded.uid).get()
+    const userData = userDoc.data()
+    const role = userData?.role
+    
+    const allowedRoles = ['school_admin', 'esa_admin', 'ministry_admin']
+    if (!allowedRoles.includes(role)) {
+      res.status(403).send({ error: 'Forbidden', message: 'School Admin or higher access required' })
+      return null
+    }
+    
+    return { uid: decoded.uid, role, email: decoded.email, schoolId: userData?.schoolId, esaId: userData?.esaId }
+  } catch (err) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' })
+    return null
+  }
+}
+
+/**
+ * 🔐 Verify authenticated user (any role)
+ */
+async function verifyAuthenticated(req, res) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Authentication required' })
+    return null
+  }
+  
+  try {
+    const token = authHeader.split('Bearer ')[1]
+    const decoded = await admin.auth().verifyIdToken(token)
+    return { uid: decoded.uid, email: decoded.email }
+  } catch (err) {
+    res.status(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' })
+    return null
+  }
+}
+
 // ==================== ORGANIZATION MANAGEMENT ====================
 
 /**
  * Create a new organization (School, ESA, or Ministry)
- * Ministry Admin only
+ * 🔐 Ministry Admin only
  */
 exports.createOrganization = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify Ministry Admin role
+      const auth = await verifyMinistryAdmin(req, res)
+      if (!auth) return  // Response already sent
+      
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
@@ -64,10 +182,15 @@ exports.createOrganization = functions.https.onRequest(async (req, res) => {
 
 /**
  * Get organization hierarchy (tree structure)
+ * 🔐 ESA Admin or higher
  */
 exports.getOrganizationHierarchy = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify ESA Admin or higher role
+      const auth = await verifyESAAdmin(req, res)
+      if (!auth) return
+      
       const { orgId, type } = req.query
 
       let query = db.collection('organizations')
@@ -101,11 +224,16 @@ exports.getOrganizationHierarchy = functions.https.onRequest(async (req, res) =>
 // ==================== MASTER CURRICULUM MANAGEMENT ====================
 
 /**
- * Create Master Curriculum (Ministry Admin only)
+ * Create Master Curriculum
+ * 🔐 Ministry Admin only
  */
 exports.createMasterCurriculum = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify Ministry Admin role
+      const auth = await verifyMinistryAdmin(req, res)
+      if (!auth) return
+      
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
       }
@@ -161,10 +289,17 @@ exports.createMasterCurriculum = functions.https.onRequest(async (req, res) => {
 
 /**
  * Get Master Curriculums by grade/subject
+ * Auth: Any authenticated user (teachers/students can read curriculums)
  */
 exports.getMasterCurriculums = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // Basic auth - must be logged in
+      const authResult = await verifyAuthenticated(req)
+      if (!authResult.authenticated) {
+        return res.status(401).send({ error: 'Authentication required' })
+      }
+
       const { gradeLevel, subjectCode } = req.query
 
       let query = db.collection('master_curriculums').where('isActive', '==', true)
@@ -199,14 +334,30 @@ exports.getMasterCurriculums = functions.https.onRequest(async (req, res) => {
 
 /**
  * Generate Student Portfolio (aggregated data)
+ * 🔐 School Admin+ or self (student viewing own portfolio)
  */
 exports.generateStudentPortfolio = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify authenticated
+      const auth = await verifyAuthenticated(req, res)
+      if (!auth) return
+      
       const { studentId } = req.query
 
       if (!studentId) {
         return res.status(400).send({ error: 'Missing studentId' })
+      }
+      
+      // 🔐 SECURITY: Students can only view their own portfolio
+      // Admins can view any portfolio
+      const userDoc = await db.collection('users').doc(auth.uid).get()
+      const userRole = userDoc.data()?.role
+      const isAdmin = ['school_admin', 'esa_admin', 'ministry_admin', 'teacher'].includes(userRole)
+      
+      if (!isAdmin && auth.uid !== studentId) {
+        console.warn(`🚨 Portfolio access denied: ${auth.uid} tried to access ${studentId}`)
+        return res.status(403).send({ error: 'Forbidden', message: 'You can only view your own portfolio' })
       }
 
       // Get student data
@@ -318,14 +469,28 @@ exports.generateStudentPortfolio = functions.https.onRequest(async (req, res) =>
 
 /**
  * Export Portfolio as JSON (for university integration)
+ * 🔐 School Admin+ or self
  */
 exports.exportPortfolio = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify authenticated
+      const auth = await verifyAuthenticated(req, res)
+      if (!auth) return
+      
       const { studentId, format } = req.query
 
       if (!studentId) {
         return res.status(400).send({ error: 'Missing studentId' })
+      }
+      
+      // 🔐 SECURITY: Students can only export their own portfolio
+      const userDoc = await db.collection('users').doc(auth.uid).get()
+      const userRole = userDoc.data()?.role
+      const isAdmin = ['school_admin', 'esa_admin', 'ministry_admin', 'teacher'].includes(userRole)
+      
+      if (!isAdmin && auth.uid !== studentId) {
+        return res.status(403).send({ error: 'Forbidden', message: 'You can only export your own portfolio' })
       }
 
       const portfolioId = `portfolio_${studentId}`
@@ -358,14 +523,26 @@ exports.exportPortfolio = functions.https.onRequest(async (req, res) => {
 
 /**
  * Get School Analytics
+ * 🔐 School Admin or higher (must have access to the school)
  */
 exports.getSchoolAnalytics = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
+      // 🔐 SECURITY: Verify School Admin or higher
+      const auth = await verifySchoolAdmin(req, res)
+      if (!auth) return
+      
       const { schoolId, academicYear, gradeLevel } = req.query
 
       if (!schoolId) {
         return res.status(400).send({ error: 'Missing schoolId' })
+      }
+      
+      // 🔐 SECURITY: School admins can only view their own school
+      // ESA/Ministry admins can view any school
+      if (auth.role === 'school_admin' && auth.schoolId !== schoolId) {
+        console.warn(`🚨 School analytics access denied: ${auth.uid} (school: ${auth.schoolId}) tried to access ${schoolId}`)
+        return res.status(403).send({ error: 'Forbidden', message: 'You can only view analytics for your own school' })
       }
 
       let query = db.collection('assessments').where('schoolId', '==', schoolId)

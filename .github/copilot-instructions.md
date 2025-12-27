@@ -1,200 +1,455 @@
-# HOTS AI ChatLoop - AI Coding Agent Instructions
+# 🧠 HOTS AI ChatLoop — Advanced Copilot Instructions v5.3
 
-## Project Overview
-Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions. Now includes Electronic Worksheets, Lesson Plans, and National Scale features.
+> **Deterministic AI-Powered Higher-Order Thinking Skills Assessment System**  
+> Production-grade educational platform with 11,800+ lines backend, 80+ Vue components  
+> **Thai National-Scale Educational Technology** — Supporting ป.4-ม.6 (Grades 4-12)
 
-## 🗺️ Navigation & Access
-**Complete Guide**: See [NAVIGATION_GUIDE.md](../NAVIGATION_GUIDE.md)
+---
 
-### Student Features (9 Menus)
-All accessible from `/student` Dashboard Quick Actions:
-- 🚀 `/chat` - Start Assessment (Primary highlighted button)
-- 🏫 `/learning-rooms` - Learning activity rooms (✨ NEW - Worksheets)
-- 📈 `/my-progress` - LO Progress tracking
-- 📊 `/progress-analytics` - Detailed analytics
-- 🎯 `/adaptive-learning` - Personalized paths
-- 🎯 `/goal-setting` - Set learning goals
-- 🏆 `/leaderboard` - Compete with peers
-- 🗺️ `/progress-map` - LO visualization
-- 👤 `/profile` - User profile
+## 📋 Quick Reference Card
 
-### Teacher Features (12 Menus)
-All accessible from `/teacher` Dashboard Quick Actions:
-- 📚 `/courses` - Course management
-- 💡 `/questions` - Question bank
-- 📊 `/class-analytics` - Class overview
-- 🎯 `/lo-reports` - LO reports
-- 🔮 `/teacher-analytics` - AI Predictions
-- 📡 `/realtime-monitor` - Live monitoring
-- 📝 `/lesson-plans` - Lesson plan management (✨ NEW - 5E + A.R.C.E.)
-- 📋 `/teacher/worksheets` - Electronic worksheets (✨ NEW)
-- 📊 `/teacher/worksheet-reports` - Worksheet reports (✨ NEW)
-- 📖 `/micro-lessons` - Lesson management
-- 📚 `/micro-lesson-library` - Lesson library
-- 👥 `/student-detail/:id` - Student details
+| Aspect | Value |
+|--------|-------|
+| **Stack** | Vue 3.4 + Vite 5 + Pinia → Firebase Functions (Node.js 20) → OpenAI GPT-4o-mini |
+| **AI Model** | `gpt-4o-mini-2024-07-18` with `temperature: 0`, `seed: 42` (deterministic) |
+| **Framework** | A.R.C.E. (Analysis, Reasoning, Creativity, Evidence) — 4 dimensions, 0-5 each |
+| **Backend** | 11,800+ lines in `functions/index.js` + modular controllers/utils |
+| **Security** | 820+ lines Firestore rules, role-based access, copy-paste prevention |
+| **IRR Metrics** | Cohen's κ = 0.72 (Substantial), ICC = 0.81 (Excellent), DPA Score 11/11 |
+| **Coverage** | 48 Cloud Functions, 57+ Vue views, 123 test cases |
 
-## Architecture & Data Flow
+---
 
-### Tech Stack
-- **Frontend**: Vue 3.4 + Vite 5 + Pinia (Composition API pattern)
-- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20)
-- **AI**: OpenAI GPT-4o-mini (switched from gpt-4o for cost savings)
-- **Deployment**: Firebase Hosting + Functions
+## 🏗️ Architecture Overview
 
-### Critical Flow: Student Answer Assessment
-1. Student types answer in `ChatView.vue` (copy-paste blocked)
-2. Confirmation dialog validates minimum 20 characters + debounce (2s)
-3. `chat.js` store calls Cloud Function `assessAnswer` via HTTPS
-4. Function sends to OpenAI with structured prompt (`createAssessmentPrompt`)
-5. AI returns JSON with `rubricScores` (0-5 per dimension) + feedback
-6. **Markdown wrapper cleaning**: GPT-4o-mini wraps JSON in ```json blocks - must strip before `JSON.parse()`
-7. Function saves to `assessments` collection, updates `studentProgress` for LO tracking
-8. Frontend receives real-time update via Firestore listeners
+### Directory Structure (Critical Paths)
+```
+functions/                        # ⚡ Cloud Functions Backend (Node.js 20)
+├── index.js                      # 11,800+ lines - Main entry, exports all Cloud Functions
+├── controllers/                  # HTTP handlers - request/response logic
+│   ├── assessmentController.js   # Student answer assessment flow
+│   ├── generationController.js   # AI content generation (questions, LOs, solutions)
+│   ├── worksheetController.js    # Electronic worksheet CRUD + submission
+│   ├── researchController.js     # Research data export & IRR calculation
+│   ├── gamificationController.js # Points, badges, leaderboard
+│   ├── qualityAssuranceController.js # HITL review queue
+│   ├── knowledgeSheetController.js   # Knowledge sheet generation
+│   └── systemController.js       # Health check, diagnostics
+├── services/
+│   └── assessmentService.js      # Core AI assessment logic, LO evaluation
+├── utils/                        # 🔧 Utilities & Helpers
+│   ├── prompts.js               # ⭐ All OpenAI prompts (Chain-of-Thought)
+│   ├── aiParser.js              # ⭐ JSON cleaning, tolerance bands
+│   ├── loAssessment.js          # Learning Outcomes evaluation logic
+│   ├── reliability.js           # Retry, fallback, schema validation
+│   ├── rateLimiter.js           # Per-user rate limiting (memory-based)
+│   ├── distributedRateLimiter.js # Distributed rate limiting (Firestore-backed)
+│   ├── circuitBreaker.js        # OpenAI API protection
+│   ├── aiDetection.js           # AI-generated content detection
+│   ├── interRaterReliability.js # IRR metrics (Cohen's κ, ICC, MAE)
+│   ├── adaptiveScaffolding.js   # Progressive hint system
+│   ├── gradeLevelCalibration.js # Grade-specific anchors (ป.4-6, ม.1-3, ม.4-6)
+│   ├── fairnessAudit.js         # Bias detection, DIF analysis
+│   ├── humanInTheLoop.js        # HITL review queue management
+│   ├── dataConsistency.js       # Atomic transactions, data sync
+│   ├── modelDriftDetector.js    # OpenAI model fingerprint tracking
+│   └── llmProvider.js           # Centralized LLM configuration
+├── __tests__/                   # Jest test suites
+└── national-scale.js            # Ministry → ESA → School hierarchy
 
-### Key Collections Schema
-```javascript
-// users: role-based (student/teacher), includes studentId (5 digits), grade, room, number, section
-// courses: teacher-owned, contains learningOutcomes[] with {code, description}
-// questions: courseId-linked, has hasSolution flag (excludes from student pool)
-// sessions: tracks active chats, messageCount
-// messages: sessionId-linked, references assessmentId
-// assessments: stores rubricScores{analysis, reasoning, creativity, evidence}, loAssessment{passedLOs[], analysis}
-// studentProgress: {studentId}_${courseId} doc tracking cumulative passedLOs[]
+src/                             # 📱 Vue 3 Frontend
+├── stores/                      # Pinia state (8 stores)
+│   ├── auth.js                  # Google Auth + role checking
+│   ├── chat.js                  # Session + smart question selection
+│   ├── gamification.js          # Points, badges, streaks, levels
+│   ├── lessonPlan.js            # 5E lesson plan management
+│   ├── theme.js                 # Dark mode toggle
+│   ├── notifications.js         # Toast messages
+│   ├── dashboard.js             # Teacher dashboard data
+│   └── learningPath.js          # Adaptive learning paths
+├── views/                       # 57+ Vue pages
+│   ├── ChatView.vue             # ⭐ Main assessment interface
+│   ├── WorksheetResult.vue      # Worksheet results + LO display
+│   ├── TeacherWorksheets.vue    # Teacher worksheet management
+│   ├── AdminLOManager.vue       # Admin LO editing interface
+│   ├── LOReports.vue            # LO heatmap reports
+│   ├── ClassAnalytics.vue       # Class analytics dashboard
+│   └── ...                      # 50+ more views
+├── components/                  # Reusable UI components
+├── utils/
+│   ├── loProgress.js            # ⭐ Standard LO aggregation (Set-based)
+│   ├── antiCheat.js             # Client-side integrity checks
+│   └── errorHandler.js          # Thai error messages
+├── composables/                 # Vue composables
+├── router/                      # Vue Router with guards
+└── firebase/                    # Firebase configuration
 ```
 
-## Critical Conventions
+### Data Flow: Student Assessment
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────────┐
+│ ChatView.vue│───▶│ chat.js store│───▶│ assessAnswer    │───▶│ OpenAI API   │
+│ (copy-paste │    │ (validation) │    │ Cloud Function  │    │ GPT-4o-mini  │
+│  blocked)   │    └──────────────┘    └─────────────────┘    └──────────────┘
+└─────────────┘                               │                       │
+                                              │  ┌─────────────────┐  │
+                                              │◀─│ aiParser.js     │◀─┘
+                                              │  │ (clean markdown)│
+                                              ▼  └─────────────────┘
+                                   ┌─────────────────────┐
+                                   │ Firestore           │
+                                   │ • assessments       │
+                                   │ • studentProgress   │
+                                   │ • learningEvents    │
+                                   └─────────────────────┘
+```
 
-### 1. AI Response Handling Pattern
-**ALWAYS clean markdown wrappers from GPT responses before parsing:**
+---
+
+## 🔧 Critical Code Patterns
+
+### 1. AI Response Parsing (MANDATORY)
+GPT-4o-mini wraps JSON in markdown blocks. **Always use `aiParser.js`:**
 ```javascript
-let cleanedText = responseText.trim()
-if (cleanedText.startsWith('```')) {
-  cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-  cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+// ✅ CORRECT - Use utility function
+const { cleanAIResponse, safeParseJSON } = require('./utils/aiParser')
+const { success, data, error } = safeParseJSON(responseText, {
+  maxRetries: 2,
+  fallback: getFallbackAssessment()
+})
+
+// ❌ WRONG - Never do this
+const result = JSON.parse(responseText) // Will fail on ```json blocks
+```
+
+### 2. OpenAI Call Pattern (With Circuit Breaker)
+```javascript
+const { CircuitBreaker } = require('./utils/circuitBreaker')
+const circuitBreaker = new CircuitBreaker('openai-assessment', {
+  failureThreshold: 5,
+  timeout: 30000
+})
+
+// Execute with protection
+const response = await circuitBreaker.execute(async () => {
+  return openai.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: 0,  // Deterministic
+    seed: 42,        // Reproducible
+    messages: [...]
+  })
+})
+```
+
+### 3. Prompt Engineering (Chain-of-Thought)
+All prompts use structured XML tags for clarity and injection prevention:
+```javascript
+// From functions/utils/prompts.js
+const prompt = `
+<system_instruction>
+ประเมินคำตอบปลายเปิดของนักเรียนอย่างเป็นกลาง
+ใช้ Chain-of-Thought reasoning ก่อนให้คะแนน
+</system_instruction>
+
+<student_answer>${sanitizeStudentInput(answer)}</student_answer>
+
+<output_schema>
+{
+  "chainOfThought": "...",
+  "rubricScores": { "analysis": 0-5, "reasoning": 0-5, ... },
+  "aiConfidence": 0-100,
+  "feedback": "..."
 }
-const result = JSON.parse(cleanedText)
+</output_schema>
+`
 ```
-Applied in: `assessAnswer`, `generateLearningOutcomes`, `generateHOTSQuestion`, `generateSolution`
 
-### 2. Learning Outcomes (LO) System
-- Questions tagged with `relatedLOs: ["LO1", "LO3"]`
-- Smart question selection prioritizes weak LOs (from `studentProgress`)
-- Questions with `hasSolution: true` are EXCLUDED from student pool (teacher exam keys)
-- LO assessment requires: content match + skill level + HOTS score ≥3 for relevant dimension
-
-### 3. Security & Copy-Paste Prevention
-Client-side: `@paste.prevent`, `@copy.prevent`, `@cut.prevent`, `@contextmenu.prevent` on textareas
-Server-side: Detection heuristics in `detectCopyPaste()` (unusual spacing, long words, mixed scripts)
-
-### 4. Firestore Security Pattern
+### 4. Firestore Security Rules Pattern
 ```javascript
+// firestore.rules (820+ lines)
 function isTeacher() {
   return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
 }
+
+function isOwner(studentId) {
+  return request.auth.uid == studentId || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId == studentId;
+}
+
+match /assessments/{docId} {
+  allow read: if isOwner(resource.data.studentId) || isTeacher();
+  allow write: if false; // Server-only writes
+}
 ```
-Teacher-only: courses, questions, reports, full student data
-Student: own data + session messages + assessments
 
-### 5. State Management (Pinia)
-- `auth.js`: Google Sign-In, user profile with role checking
-- `chat.js`: Session lifecycle, message streaming, question selection algorithm
-- `theme.js`: Dark mode toggle with localStorage persistence
-- `gamification.js`: Points, badges, streaks, leaderboard
-- `learningPath.js`: Adaptive learning path management
-- `lessonPlan.js`: Lesson plan CRUD and AI generation
-- `notifications.js`: Toast and badge notifications
-- `dashboard.js`: Aggregated student data for teachers
+### 5. Rate Limiting (Multi-layer)
+```javascript
+// Layer 1: IP-based (quick rejection)
+const ipResult = checkIPRateLimit(ip, 'assessment') // 60/min
 
-## Development Workflow
+// Layer 2: User-based (Firestore-backed)
+const userResult = await checkUserRateLimit(db, studentId, 'assessment') // 20/5min
 
-### Setup & Build
+// Layer 3: Circuit breaker (OpenAI protection)
+if (circuitBreaker.isOpen()) {
+  return res.status(503).send({ error: 'Service temporarily unavailable' })
+}
+```
+
+---
+
+## 📊 A.R.C.E. Framework Implementation
+
+### Scoring Rubric (0-5 per dimension)
+| Score | Level | Description |
+|-------|-------|-------------|
+| 0 | ไม่แสดง | No evidence of skill |
+| 1 | เริ่มต้น | Basic attempt, major gaps |
+| 2 | กำลังพัฒนา | Some understanding, inconsistent |
+| 3 | ผ่านเกณฑ์ | Meets expectations, minor issues |
+| 4 | ดี | Clear demonstration, thorough |
+| 5 | ยอดเยี่ยม | Exceptional, insightful, creative |
+
+### LO Assessment Logic
+```javascript
+// From functions/utils/loAssessment.js
+function assessLearningOutcomes(rubricScores, questionLOs, answer) {
+  const passedLOs = []
+  
+  for (const lo of questionLOs) {
+    const relevantDimension = mapLOToDimension(lo) // e.g., "LO1" → "analysis"
+    const score = rubricScores[relevantDimension]
+    
+    if (score >= 3) { // Threshold for passing
+      passedLOs.push(lo)
+    }
+  }
+  
+  return { passedLOs, analysis: '...' }
+}
+```
+
+### LO Aggregation Logic (Audited ✅)
+> **De-duplication**: ใช้ `Set()` รวม LO จากทุกแหล่ง — ไม่นับซ้ำ
+
+```javascript
+// From src/utils/loProgress.js — STANDARD LO COUNTING
+export async function getStudentPassedLOs(studentUid, courseId) {
+  const passedLOsSet = new Set()  // ⭐ De-duplication via Set
+  
+  // Source 1: Chat Assessments
+  const assessmentSnap = await getDocs(query(
+    collection(db, 'assessments'),
+    where('studentId', '==', studentUid),
+    where('courseId', '==', courseId)
+  ))
+  assessmentSnap.forEach(doc => {
+    doc.data().loAssessment?.passedLOs?.forEach(lo => passedLOsSet.add(lo))
+  })
+  
+  // Source 2: Worksheet Submissions
+  const worksheetSnap = await getDocs(query(
+    collection(db, 'worksheetSubmissions'),
+    where('studentId', '==', studentUid),
+    where('courseId', '==', courseId)
+  ))
+  worksheetSnap.forEach(doc => {
+    doc.data().loAssessment?.passedLOs?.forEach(lo => passedLOsSet.add(lo))
+  })
+  
+  return Array.from(passedLOsSet).sort()  // Unique + Sorted
+}
+```
+
+#### Calculation Example
+| Source | passedLOs | After Set.add() |
+|--------|-----------|-----------------|
+| Chat Assessment | `["LO1", "LO2"]` | `{LO1, LO2}` |
+| Worksheet | `["LO2", "LO3"]` | `{LO1, LO2, LO3}` |
+| **Final Result** | — | **3 unique LOs** ✅ |
+
+#### Passing Criteria (3-Layer Enforcement)
+```
+Layer 1: AI Prompt (prompts.js)
+  → "มิติ HOTS ที่เกี่ยวข้อง ต้องมีคะแนนอย่างน้อย 3/5"
+
+Layer 2: Backend Logic (loAssessment.js)
+  → if (score >= 3) { earnedScore += score }
+
+Layer 3: Admin Override (AdminLOManager.vue)
+  → arrayUnion(loCode) + manuallyModified: true
+```
+
+---
+
+## 🛡️ Security Checklist
+
+### Copy-Paste Prevention (Client-side)
+```vue
+<!-- ChatView.vue -->
+<textarea
+  @paste.prevent="handlePasteAttempt"
+  @copy.prevent
+  @cut.prevent
+  @contextmenu.prevent
+  @dragover.prevent
+  @drop.prevent
+/>
+```
+
+### Input Sanitization (Server-side)
+```javascript
+// Always sanitize before prompt injection
+const { sanitizeStudentInput } = require('./utils/prompts')
+const safeAnswer = sanitizeStudentInput(rawAnswer, 3000)
+  .replace(/```/g, "'''")           // Escape code blocks
+  .replace(/<\/?[a-zA-Z_][^>]*>/g, '') // Remove XML tags
+```
+
+### AI Content Detection
+```javascript
+const { comprehensiveAIDetection } = require('./utils/aiDetection')
+const result = comprehensiveAIDetection(answer, typingFingerprint)
+if (result.isLikelyAI && result.confidence > 0.7) {
+  // Log but don't block (pedagogical approach)
+  await db.collection('aiDetectionLogs').add({ ... })
+}
+```
+
+---
+
+## 🔬 Research & Reliability Features
+
+### Inter-Rater Reliability (IRR)
+```javascript
+const { comprehensiveIRRAnalysis } = require('./utils/interRaterReliability')
+const irr = comprehensiveIRRAnalysis(humanScores, aiScores)
+// Returns: { cohensKappa, weightedKappa, icc, mae, meetsPublicationStandard }
+```
+
+### Model Drift Detection
+```javascript
+const { analyzeModelDrift } = require('./utils/modelDriftDetector')
+// Tracks OpenAI model fingerprints over time
+// Alerts if reproducibility drops below threshold
+```
+
+### Research Data Export
+```javascript
+const { exportKAnonymousData } = require('./utils/researchData')
+// Exports data with k-anonymity guarantees
+// Removes PII, generalizes quasi-identifiers
+```
+
+---
+
+## 📝 Common Development Tasks
+
+### Add New Cloud Function
+```javascript
+// 1. In functions/index.js
+exports.myNewFunction = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Your logic here
+      // Use aiParser.js for AI responses
+      // Use rateLimiter for protection
+    } catch (error) {
+      console.error('Error:', error)
+      res.status(500).send({ error: error.message })
+    }
+  })
+})
+
+// 2. Deploy
+// cd functions && npm run deploy -- --only functions:myNewFunction
+```
+
+### Add New Vue View
+```javascript
+// 1. Create src/views/MyView.vue with Composition API
+// 2. Add route in src/router/index.js
+{
+  path: '/my-view',
+  name: 'MyView',
+  component: () => import('@/views/MyView.vue'),
+  meta: { requiresAuth: true, role: 'teacher' }
+}
+
+// 3. Add navigation in relevant dashboard
+```
+
+### Modify AI Assessment Prompt
+```javascript
+// Edit functions/utils/prompts.js → createAssessmentPrompt()
+// Keep structured output schema
+// Test with multiple edge cases
+// Check IRR metrics after changes
+```
+
+---
+
+## ⚠️ Anti-Patterns (NEVER DO)
+
+| ❌ Anti-Pattern | ✅ Correct Approach |
+|----------------|---------------------|
+| `JSON.parse(aiResponse)` directly | Use `safeParseJSON()` from aiParser.js |
+| Multiple `where()` + `orderBy()` without index | Create composite index in firestore.indexes.json |
+| `usageCount = usageCount + 1` | Use `FieldValue.increment(1)` |
+| Send `hasSolution: true` questions to students | Filter in question selection query |
+| Thai CSV without BOM | `'\uFEFF' + csvContent` |
+| Hardcode `gpt-4o` model | Use `process.env.OPENAI_MODEL` (gpt-4o-mini) |
+| Skip rate limiting on new endpoints | Always wrap with `checkUserRateLimit()` |
+
+---
+
+## 🗂️ Key Files Quick Reference
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `functions/index.js` | 11,800+ | Main Cloud Functions entry |
+| `functions/utils/prompts.js` | 300 | All AI prompts with CoT |
+| `functions/utils/aiParser.js` | 300 | Response cleaning + parsing |
+| `functions/utils/loAssessment.js` | 250 | LO evaluation + passing criteria |
+| `functions/utils/reliability.js` | 400+ | Retry, fallback, validation |
+| `functions/controllers/assessmentController.js` | 300 | Assessment HTTP handler |
+| `src/utils/loProgress.js` | 590 | ⭐ Standard LO aggregation (Set-based) |
+| `src/stores/chat.js` | 600+ | Session + question selection |
+| `src/views/ChatView.vue` | 1000+ | Main student interface |
+| `src/views/AdminLOManager.vue` | 1270+ | Teacher LO editing interface |
+| `firestore.rules` | 820+ | Security rules |
+| `firestore.indexes.json` | - | Composite indexes |
+
+---
+
+## 🚀 Deployment Commands
+
 ```bash
-# Frontend dev server (port 5173)
-npm run dev
+# Development
+npm run dev                    # Frontend on :5173
+cd functions && npm run serve  # Emulator on :5001
 
-# Build for production
-npm run build
+# Production
+npm run build                  # Build frontend
+firebase deploy                # Deploy all
+firebase deploy --only functions:assessAnswer  # Single function
+firebase deploy --only firestore:rules         # Rules only
 
-# Functions local emulator
-cd functions && npm run serve
-
-# Deploy everything
-firebase deploy  # or --only hosting|functions|firestore
+# Debugging
+firebase functions:log --only assessAnswer     # View logs
+firebase emulators:start                       # Full local stack
 ```
 
-### Environment Variables
-- Frontend: `.env` → `VITE_FIREBASE_*` + `VITE_FUNCTIONS_URL`
-- Functions: `functions/.env` → `OPENAI_API_KEY=sk-...`, `OPENAI_MODEL=gpt-4o-mini`
+---
 
-### Common Tasks
-**Add new Cloud Function:**
-1. Export in `functions/index.js`: `exports.functionName = functions.https.onRequest(...)`
-2. Add CORS wrapper: `return cors(req, res, async () => {...})`
-3. Clean GPT responses before JSON.parse
-4. Deploy: `cd functions && npm run deploy`
+## 🔗 Related Documentation
 
-**Add new view:**
-1. Create `src/views/NewView.vue`
-2. Add route in `src/router/index.js` with meta: `{requiresAuth: true, role: 'student'|'teacher'}`
-3. Import in component: `import { useAuthStore } from '@/stores/auth'`
+- [DOCS.md](../DOCS.md) — Complete technical documentation
+- [RELIABILITY_ECOSYSTEM.md](../RELIABILITY_ECOSYSTEM.md) — 95%+ reliability design
+- [RESEARCH_DATA_PIPELINE.md](../RESEARCH_DATA_PIPELINE.md) — Research export guide
+- [DPA_ASSESSMENT_CHECKLIST.md](../DPA_ASSESSMENT_CHECKLIST.md) — Data protection compliance
+- [docs/03_SYSTEM_ARCHITECTURE.md](../docs/03_SYSTEM_ARCHITECTURE.md) — Detailed architecture
 
-**Modify AI prompt:**
-Edit `createAssessmentPrompt()` in `functions/index.js`. Keep structured JSON schema in prompt.
+---
 
-### Debugging
-- Functions logs: `firebase functions:log` or Firebase Console
-- Firestore issues: Check `firestore.rules` and composite index requirements
-- AI errors: Verify OPENAI_API_KEY, check quota, inspect response text before parse
-
-## Project-Specific Patterns
-
-### Confirmation Dialog Pattern (ChatView.vue)
-Three-step send: length check (≥20 chars) → confirmation modal → debounce (2s). Skip for keywords "ถัดไป", "next".
-
-### CSV Export with Thai Characters
-Always use BOM for UTF-8: `const BOM = '\uFEFF'; const blob = new Blob([BOM + csvContent], {type: 'text/csv;charset=utf-8'})`
-
-### Question Selection Algorithm (chat.js)
-1. Get student's weak LOs from `studentProgress`
-2. Filter unused questions (not in session's `usedQuestionIds`)
-3. Exclude questions with `hasSolution: true`
-4. Priority 1: Questions targeting weak LOs (`relatedLOs` intersection)
-5. Priority 2: Random unused questions
-6. Fallback: Least-used question
-
-### Dark Mode Implementation
-CSS variables in `src/styles/main.css`, toggled via `.dark-mode` class on `<html>`. Theme persisted in localStorage by `theme.js` store.
-
-## Anti-Patterns to Avoid
-- ❌ Don't use `JSON.parse()` directly on OpenAI responses (markdown wrappers!)
-- ❌ Don't create Firestore queries with multiple `where()` + `orderBy()` without composite index
-- ❌ Don't update `usageCount` without increment operator: use `FieldValue.increment(1)`
-- ❌ Don't send questions with `hasSolution: true` to students
-- ❌ Don't forget BOM when exporting Thai CSV
-
-## Key Files Reference
-- `functions/index.js` (4000+ lines): All Cloud Functions, AI prompts
-- `functions/national-scale.js`: National-level analytics functions
-- `src/stores/chat.js` (600+ lines): Question selection, LO tracking logic
-- `src/stores/lessonPlan.js`: Lesson plan state management
-- `src/views/ChatView.vue`: Confirmation dialog, copy-paste blocking
-- `src/views/QuestionBank.vue`: Solution generation UI
-- `src/views/LessonPlans.vue`: Lesson plan list and management
-- `src/views/TeacherWorksheets.vue`: Worksheet management for teachers
-- `src/views/LearningRoomList.vue`: Student worksheet room listing
-- `src/views/StudentDetail.vue`: Comprehensive assessment history with export
-- `firestore.rules`: Role-based security, helper functions
-
-## Recent Major Features
-- **Electronic Worksheet System**: AI-generated worksheets with A.R.C.E. rubric scoring (Phase 4)
-- **Lesson Plan Builder**: 5E model + A.R.C.E. integration, AI generation support
-- **Learning Rooms**: Student-facing activity rooms for worksheet access
-- **Knowledge Sheets**: Unit-level content for pre-learning preparation
-- **Solution Generation System**: Teachers generate AI model answers (20/20 score) for questions
-- **Confirmation Dialog**: Anti-accidental-send with answer preview, stats, tips
-- **LO-Based Assessment**: AI evaluates which Learning Outcomes student demonstrated
-- **Smart Question Selection**: Prioritizes weak areas using student progress data
-- **National Scale**: Ministry → ESA → School hierarchy with dashboards
-
-## Model Preference
-Use **gpt-4o-mini** for all operations (15-20x cheaper than gpt-4o). Already configured in functions/.env as `OPENAI_MODEL=gpt-4o-mini`.
+**Last Updated:** December 24, 2025 | **Version:** 5.3.0

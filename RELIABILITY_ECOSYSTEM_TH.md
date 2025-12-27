@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 1.0** | **อัปเดตล่าสุด: 22 ธันวาคม 2568**
+[![Kappa](https://img.shields.io/badge/Cohen's%20κ-0.72%20(ดี)-success)](./GOLDEN_DATASET_IRR.md)
+[![ICC](https://img.shields.io/badge/ICC-0.81%20(ดีเยี่ยม)-blue)](./GOLDEN_DATASET_IRR.md)
+[![8-Layer](https://img.shields.io/badge/สถาปัตยกรรม-8%20ชั้น-purple)](#1-ปรัชญาการออกแบบระบบ)
+
+**เวอร์ชัน 1.1** | **อัปเดตล่าสุด: 25 ธันวาคม 2568**
 
 *เอกสารอธิบายห่วงโซ่เหตุผลเชิงระบบ — ความเสถียรภาพ ความแม่นยำ ความน่าเชื่อถือ*
+
+**เอกสารที่เกี่ยวข้อง:** [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) | [RELIABILITY_ECOSYSTEM.md](./RELIABILITY_ECOSYSTEM.md) (English)
 
 </div>
 

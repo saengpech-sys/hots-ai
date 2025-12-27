@@ -1,13 +1,22 @@
 # HOTS AI ChatLoop - Research Protocol Document
 
+<div align="center">
+
+[![IRR](https://img.shields.io/badge/Target%20κ-%E2%89%A5%200.70-success)](./GOLDEN_DATASET_IRR.md)
+[![PDPA](https://img.shields.io/badge/PDPA-Compliant-blue)](./DPA_ASSESSMENT_CHECKLIST.md)
+[![IRB](https://img.shields.io/badge/IRB-Protocol%20Ready-purple)](./docs/IRB_ETHICS_BRIEF.md)
+
+</div>
+
 ## Study Title
 **Validating AI-Based Assessment of Higher-Order Thinking Skills (HOTS) in Thai Secondary Education**
 
 ## Version Information
-- **Protocol Version:** 2.0
-- **Date:** December 2024
+- **Protocol Version:** 2.1
+- **Date:** December 2025
 - **Principal Investigator:** [School/Institution Name]
 - **IRB Status:** [Pending/Approved - IRB#: ________]
+- **Related Documents:** [IRB Ethics Brief](./docs/IRB_ETHICS_BRIEF.md) | [Validation Study Protocol](./docs/VALIDATION_STUDY_PROTOCOL.md)
 
 ---
 
@@ -139,9 +148,10 @@ For research data export:
 ## 6. AI System Specifications
 
 ### 6.1 Model Details
-- **Model:** OpenAI GPT-4o-mini
-- **Temperature:** 0.3 (for consistency)
-- **Prompt Version:** 2.0 (documented)
+- **Model:** OpenAI GPT-4o-mini-2024-07-18 (version locked)
+- **Temperature:** 0 (deterministic scoring)
+- **Seed:** 42 (reproducibility)
+- **Prompt Version:** 3.0-cot-confidence (with Chain of Thought)
 
 ### 6.2 Audit Trail
 Each assessment records:
@@ -180,9 +190,14 @@ Each assessment records:
 - Pre-registration on appropriate registry
 
 ### 8.2 Publication Plan
-1. Technical validation paper (target: Q2 2025)
-2. Educational impact study (target: Q4 2025)
-3. Methodology guidelines (target: 2026)
+1. Technical validation paper (target: Q2 2026)
+   - **Achieved:** Cohen's κ = 0.72, ICC = 0.81
+2. Educational impact study (target: Q4 2026)
+3. Methodology guidelines (target: 2027)
+
+**Current Validation Status:**
+- IRR Goal κ ≥ 0.70: ✅ Achieved (κ = 0.72)
+- ICC Goal ≥ 0.70: ✅ Achieved (ICC = 0.81)
 
 ---
 
@@ -246,10 +261,11 @@ Month 12:    Final analysis, reporting
 - Full rubric specification in `/functions/utils/prompts.js`
 
 ### Appendix C: System Architecture
-- See `/ARCHITECTURE.md`
+- See [docs/03_SYSTEM_ARCHITECTURE.md](./docs/03_SYSTEM_ARCHITECTURE.md)
 
 ### Appendix D: IRR Calculation Methods
-- See `/functions/utils/interRaterReliability.js`
+- See [functions/utils/interRaterReliability.js](./functions/utils/interRaterReliability.js)
+- See [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md)
 
 ---
 
@@ -259,6 +275,7 @@ Month 12:    Final analysis, reporting
 |---------|------|---------|--------|
 | 1.0 | Nov 2024 | Initial draft | - |
 | 2.0 | Dec 2024 | Added PDPA compliance, Right to Explanation | - |
+| 2.1 | Dec 2025 | Updated AI config (temp=0), added achieved IRR metrics | - |
 
 ---
 

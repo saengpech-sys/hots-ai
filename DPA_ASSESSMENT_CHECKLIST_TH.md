@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 2.1** | **ประเมินล่าสุด: 21 ธันวาคม 2568**
+[![DPA Score](https://img.shields.io/badge/DPA%20Score-11%2F11%20(100%25)-gold)](./README.md)
+[![PDPA](https://img.shields.io/badge/PDPA-สอดคล้อง-blue)](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
+[![K-Anonymity](https://img.shields.io/badge/K--Anonymity-k%3D5-purple)](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
+
+**เวอร์ชัน 2.2** | **ประเมินล่าสุด: 25 ธันวาคม 2568**
 
 *การประเมินความสอดคล้องตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562*
+
+**เอกสารที่เกี่ยวข้อง:** [DPA_ASSESSMENT_CHECKLIST.md](./DPA_ASSESSMENT_CHECKLIST.md) (English) | [PDPA Compliance](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
 
 </div>
 

@@ -12,7 +12,9 @@
 ![Uptime](https://img.shields.io/badge/Uptime-99.7%25-8B5CF6?style=for-the-badge)
 
 **Academic Documentation Suite — บทที่ 3**  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568
+**เวอร์ชัน 5.3** | **ปรับปรุงล่าสุด:** ธันวาคม 2568
+
+**เอกสารก่อนหน้า:** [02_THEORETICAL_FRAMEWORK.md](./02_THEORETICAL_FRAMEWORK.md) | **เอกสารถัดไป:** [04_RESEARCH_METHODOLOGY.md](./04_RESEARCH_METHODOLOGY.md)
 
 </div>
 

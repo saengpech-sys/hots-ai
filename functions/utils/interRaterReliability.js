@@ -302,10 +302,15 @@ function calculateICC(ratings, form = '2,1') {
 /**
  * Calculate ICC Confidence Interval
  * Using F-distribution approximation
+ * 
+ * ⚠️ NOTE: This is a simplified approximation suitable for exploratory analysis.
+ * For publication-quality confidence intervals, use R (psych::ICC) or SPSS.
+ * The approximation may deviate from exact values, especially for small n.
  */
 function calculateICCConfidenceInterval(icc, n, k, MSR, MSE) {
   // Simplified approximation for 95% CI
   // Based on Shrout & Fleiss (1979)
+  // For exact CI, recommend using R: psych::ICC(data)$results$`lower bound`
   
   const F = MSR / MSE
   const dfNum = n - 1
@@ -472,11 +477,17 @@ function comprehensiveIRRAnalysis(validations, dimension = 'total') {
   const n = aiScores.length
   const maxScore = dimension === 'total' ? 20 : 5
   
-  if (n < 5) {
+  // Statistical minimum: n >= 30 for stable IRR estimates (Sim & Wright, 2005)
+  // Recommended: n >= 100 for publication-quality research
+  if (n < 30) {
     return {
       success: false,
-      error: `Insufficient data. Need at least 5 validated assessments, got ${n}`,
-      n
+      error: `Insufficient data for reliable IRR. Need at least 30 validated assessments, got ${n}. ` +
+             `For publication-quality research, recommend n >= 100.`,
+      n,
+      recommendation: n >= 10 
+        ? 'Preliminary results possible with caution - report as pilot study'
+        : 'Sample too small for any meaningful analysis'
     }
   }
   
@@ -511,6 +522,14 @@ function comprehensiveIRRAnalysis(validations, dimension = 'total') {
     
     // Error metrics
     mae,
+    
+    // Sample size assessment
+    sampleSizeAssessment: {
+      n,
+      isAdequate: n >= 30,
+      isPublicationReady: n >= 100,
+      warning: n < 100 ? `⚠️ Sample size n=${n} is below recommended n≥100 for publication. Results should be interpreted with caution.` : null
+    },
     
     // Summary
     summary: {

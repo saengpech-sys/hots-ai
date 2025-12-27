@@ -73,20 +73,20 @@
           <!-- Assessment scores if available -->
           <div v-if="message.assessmentId && getAssessment(message.assessmentId)" class="assessment-scores">
             <div class="score-grid">
-              <div class="score-item">
-                <span class="score-label">วิเคราะห์</span>
+              <div class="score-item" :title="ARCE_TOOLTIPS.analysis">
+                <span class="score-label">🔍 วิเคราะห์</span>
                 <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.analysis }}/5</span>
               </div>
-              <div class="score-item">
-                <span class="score-label">เหตุผล</span>
+              <div class="score-item" :title="ARCE_TOOLTIPS.reasoning">
+                <span class="score-label">🧠 เหตุผล</span>
                 <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.reasoning }}/5</span>
               </div>
-              <div class="score-item">
-                <span class="score-label">สร้างสรรค์</span>
+              <div class="score-item" :title="ARCE_TOOLTIPS.creativity">
+                <span class="score-label">💡 สร้างสรรค์</span>
                 <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.creativity }}/5</span>
               </div>
-              <div class="score-item">
-                <span class="score-label">หลักฐาน</span>
+              <div class="score-item" :title="ARCE_TOOLTIPS.evidence">
+                <span class="score-label">📚 หลักฐาน</span>
                 <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.evidence }}/5</span>
               </div>
             </div>
@@ -454,6 +454,19 @@ import { useRateLimiter } from '@/composables/useRateLimiter'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 // 🆕 Anti-Cheat System
 import { TypingTracker, createTypingFingerprint, detectTextPatterns, getDeviceInfo, isMobileDevice } from '@/utils/antiCheat'
+
+/**
+ * 🎯 A.R.C.E. DIMENSION TOOLTIPS
+ * ⚠️ CRITICAL DISCLOSURE: "Creativity" measures TEXTUAL NOVELTY in written responses,
+ * NOT general creative ability. This is an intentional design decision.
+ * See: DOCS.md Section 15.1 "Ontological Limitations"
+ */
+const ARCE_TOOLTIPS = {
+  analysis: 'การวิเคราะห์: ความสามารถในการแยกแยะประเด็น หาความสัมพันธ์ และเปรียบเทียบข้อมูลในคำตอบ',
+  reasoning: 'การให้เหตุผล: ความสามารถในการอธิบายเหตุผล สรุปตรรกะ และอ้างหลักการสนับสนุน',
+  creativity: '⚠️ ความคิดสร้างสรรค์: วัด "ความแปลกใหม่ในข้อความ" (Textual Novelty) เช่น การใช้คำที่ไม่ซ้ำแบบ มุมมองใหม่ — ไม่ใช่การวัดความสามารถสร้างสรรค์โดยทั่วไป',
+  evidence: 'การใช้หลักฐาน: ความสามารถในการอ้างอิงข้อมูล ยกตัวอย่างเฉพาะเจาะจง และสนับสนุนข้อโต้แย้ง'
+}
 
 const router = useRouter()
 const route = useRoute()

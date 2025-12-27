@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**Schema Version 3.1** | **Last Updated: December 21, 2025**
+[![Schema](https://img.shields.io/badge/Schema-v3.2-blue)](./docs/VALIDATION_STUDY_PROTOCOL.md)
+[![PDPA](https://img.shields.io/badge/PDPA-Compliant-success)](./DPA_ASSESSMENT_CHECKLIST.md)
+[![K-Anonymity](https://img.shields.io/badge/K--Anonymity-k%3D5-purple)](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
+
+**Schema Version 3.2** | **Last Updated: December 25, 2025**
 
 *Comprehensive guide for exporting and analyzing research data from HOTS AI ChatLoop*
+
+**Related:** [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) | [PDPA Compliance](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md) | [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md)
 
 </div>
 

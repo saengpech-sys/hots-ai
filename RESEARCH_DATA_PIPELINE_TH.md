@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**เวอร์ชัน 3.1** | **อัปเดตล่าสุด: 21 ธันวาคม 2568**
+[![Schema](https://img.shields.io/badge/Schema-v3.2-blue)](./docs/VALIDATION_STUDY_PROTOCOL.md)
+[![PDPA](https://img.shields.io/badge/PDPA-ปฏิบัติตาม-success)](./DPA_ASSESSMENT_CHECKLIST_TH.md)
+[![K-Anonymity](https://img.shields.io/badge/K--Anonymity-k%3D5-purple)](./docs/PDPA_COMPLIANCE_AND_DATA_RETENTION.md)
+
+**เวอร์ชัน 3.2** | **อัปเดตล่าสุด: 25 ธันวาคม 2568**
 
 *คู่มือการจัดเก็บ ประมวลผล และส่งออกข้อมูลสำหรับงานวิจัย*
+
+**เอกสารที่เกี่ยวข้อง:** [RESEARCH_DATA_PIPELINE.md](./RESEARCH_DATA_PIPELINE.md) (English) | [RESEARCH_PROTOCOL.md](./RESEARCH_PROTOCOL.md)
 
 </div>
 

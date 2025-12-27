@@ -2,9 +2,13 @@
 
 <div align="center">
 
-**Version 5.2** | **Last Updated: December 22, 2025**
+**Version 5.3** | **Last Updated: December 25, 2025**
 
 *Comprehensive technical reference for developers, researchers, and system administrators*
+
+[![Version](https://img.shields.io/badge/Version-5.3.0-blue)](https://github.com/saengpech-sys/hots-ai)
+[![Cloud Functions](https://img.shields.io/badge/Cloud%20Functions-48-orange)](./functions/)
+[![Test Cases](https://img.shields.io/badge/Tests-123%20Passed-success)](./functions/__tests__/)
 
 </div>
 
@@ -49,13 +53,14 @@
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Vue Components | 80+ | Including 45+ full views |
-| Cloud Functions | 41 | HTTP + Scheduled + Triggers |
-| Backend Code | 9,200+ lines | Modular architecture |
+| Vue Components | 80+ | Including 57+ full views |
+| Cloud Functions | 48 | HTTP + Scheduled + Triggers (25 integrated, 23 standalone) |
+| Backend Code | 11,800+ lines | Modular architecture with controllers/services/utils |
 | Firestore Collections | 25+ | Normalized schema |
 | Test Cases | 123 | 48 backend + 75 frontend |
 | Routes | 45+ | Role-based access control |
 | Pinia Stores | 8 | auth, chat, gamification, theme, lessonPlan, learningPath, notifications, dashboard |
+| Utility Modules | 20+ | aiParser, rateLimiter, circuitBreaker, etc. |
 
 ### A.R.C.E. Framework Quick Reference
 
@@ -1226,6 +1231,186 @@ function meetsPublicationStandard(kappa, icc) {
 | `dataConsistency.js` | ~380 | Transaction handling |
 | `humanInTheLoop.js` | ~520 | Review queue |
 | `gradeLevelCalibration.js` | ~550 | Grade norms |
+
+---
+
+## 15. Known Limitations & Scope of Validity
+
+### ⚠️ Critical Limitations
+
+This section documents **known limitations** that users, researchers, and administrators must understand. These are not bugs—they are inherent constraints of the system's design and methodology.
+
+---
+
+### 15.1 Ontological Limitations (What We Measure)
+
+#### The Construct Validity Problem
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    WHAT WE MEASURE vs WHAT WE CLAIM                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ❌ We do NOT measure:                                                     │
+│   ├── "True" cognitive ability                                             │
+│   ├── Generalized thinking skills                                          │
+│   ├── Creative production ability (in art, design, invention)              │
+│   └── Domain expertise                                                     │
+│                                                                             │
+│   ✅ We DO measure:                                                         │
+│   ├── Written expression of HOTS in THIS specific response                 │
+│   ├── Textual indicators of analysis, reasoning, evidence use              │
+│   ├── Textual novelty (atypical phrasing/perspectives) — "Creativity"     │
+│   └── Linguistic markers of higher-order thinking                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Dimension | What Rubric Says | What We Actually Measure | Gap Risk |
+|-----------|------------------|--------------------------|----------|
+| **Analysis** | "แยกแยะประเด็น" | Text segmentation quality | Medium |
+| **Reasoning** | "อธิบายเหตุผล" | Presence of if-then structures | Medium |
+| **Creativity** | "เสนอมุมมองใหม่" | **Textual novelty only** | **HIGH** |
+| **Evidence** | "อ้างอิงข้อมูล" | Presence of specific details | Low |
+
+#### Creativity Dimension Warning
+
+> **⚠️ CRITICAL:** The "Creativity" score measures **TEXTUAL NOVELTY** in written responses—atypical phrasing, uncommon examples, and unusual perspectives in text. This is NOT a measure of creative production ability (creating art, designing products, inventing solutions).
+>
+> A student who scores 5/5 on Creativity has written an **unusually framed response**. They may or may not be "creative" in other contexts.
+
+---
+
+### 15.2 Epistemological Limitations (How We Know)
+
+#### Reliability ≠ Validity
+
+High IRR (κ ≥ 0.60) indicates AI and experts **agree on scoring**, but:
+- Experts may share systematic biases (writing style preference)
+- Agreement on wrong criteria is still high agreement
+- Construct validity requires separate validation studies
+
+#### Black Box Transparency
+
+| Component | Transparency Level | Implication |
+|-----------|-------------------|-------------|
+| Rubric definition | ✅ Open | Users can review criteria |
+| Prompt template | ✅ Open (in prompts.js) | Developers can audit |
+| Model weights | ❌ Closed (GPT-4o-mini) | Cannot explain exact decision |
+| Training data | ❌ Unknown (OpenAI) | May contain biases |
+
+**Consequence:** We can achieve deterministic output (same input → same output), but we cannot fully explain WHY the model assigns a particular score.
+
+---
+
+### 15.3 Statistical Limitations
+
+#### Ordinal Scale Issues
+
+A.R.C.E. scores (0-5) are **ordinal**, not interval:
+- The "distance" between 2→3 may differ from 3→4
+- **Arithmetic mean is technically improper** (but commonly used)
+- Effect size (Cohen's d) assumes interval data
+
+**Recommendation:** Report median and IQR alongside mean/SD. Treat mean scores as approximations.
+
+#### Sample Size Requirements
+
+| Analysis Type | Minimum n | Recommended n |
+|--------------|-----------|---------------|
+| IRR validation | 100 | 200+ |
+| Fairness audit (per group) | 30 | 50+ |
+| Effect size calculation | 30 | 50+ |
+| Factor analysis | 200 | 300+ |
+
+Results with n < minimum should be flagged as preliminary.
+
+---
+
+### 15.4 Ethical Limitations
+
+#### Formative Assessment Identity Crisis
+
+The system provides immediate scores—but **gamification** (points, badges, leaderboard) may transform formative assessment into summative:
+
+| Intent | Reality with Gamification |
+|--------|--------------------------|
+| Low-stakes practice | Competitive ranking pressure |
+| Encourage risk-taking | Penalize experimentation (low scores hurt rank) |
+| Focus on growth | Focus on performance metrics |
+
+**Mitigation:** Use `assessmentMode: 'practice'` for pure formative assessment (skips all gamification).
+
+#### Dual-Use Concern
+
+The same system could be used for:
+- ✅ **Empowerment:** Helping students practice and improve
+- ❌ **Surveillance:** Monitoring, ranking, gatekeeping without consent
+
+**Safeguard:** PDPA compliance, explicit consent, data minimization, right-to-deletion.
+
+---
+
+### 15.5 Technical Limitations
+
+| Limitation | Description | Mitigation |
+|------------|-------------|------------|
+| **Thai-only** | Model validated for Thai text only | Do not use for English/other languages without re-validation |
+| **Text-only** | Cannot assess visual, audio, kinesthetic work | Use complementary assessment methods |
+| **GPT-4o-mini dependency** | Closed-source, may change without notice | Version lock (`gpt-4o-mini-2024-07-18`), drift monitoring |
+| **Internet required** | No offline assessment | Queue system for temporary disconnection |
+| **Max 5,000 chars** | Very long answers truncated | Encourage concise responses |
+
+---
+
+### 15.6 Scope of Valid Use
+
+#### Appropriate Uses
+
+| Use Case | Appropriateness | Notes |
+|----------|-----------------|-------|
+| Formative classroom practice | ✅ Excellent | Use practice mode |
+| Student self-reflection | ✅ Good | Combined with teacher guidance |
+| Teacher diagnostic | ✅ Good | Identify struggling students |
+| Research data collection | ✅ Good | With validation study, IRR reporting |
+| Graded homework | ⚠️ Caution | Combine with teacher review |
+| Final exam scoring | ❌ Not recommended | Stakes too high for AI-only |
+| University admission | ❌ Not appropriate | Requires human judgment |
+
+#### Inappropriate Uses
+
+1. **High-stakes gatekeeping** without human oversight
+2. **Cross-language assessment** (English, Chinese, etc.)
+3. **Non-text assessment** (video, audio, physical demonstrations)
+4. **Claims about "true" cognitive ability**
+5. **Comparing students across very different contexts** without calibration
+
+---
+
+### 15.7 Required Disclosures
+
+When using this system for research or publication, disclose:
+
+```markdown
+## Limitations
+
+1. **Construct Validity:** This system measures written expression of HOTS 
+   in Thai text, not underlying cognitive ability.
+
+2. **Creativity Operationalization:** "Creativity" scores reflect textual 
+   novelty (atypical phrasing), not creative production ability.
+
+3. **Black Box Component:** GPT-4o-mini is a closed-source model; full 
+   explainability is not possible.
+
+4. **Ordinal Data:** Scores 0-5 are ordinal; arithmetic means are 
+   approximations.
+
+5. **Thai Language Only:** Validation conducted in Thai; cross-language 
+   validity not established.
+
+6. **IRR Metrics:** [Report actual κ, ICC, MAE values from validation study]
+```
 
 ---
 

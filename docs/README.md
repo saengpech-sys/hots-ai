@@ -1,4 +1,4 @@
-# 📚 HOTS AI ChatLoop v5.2 — Academic Documentation Suite
+# 📚 HOTS AI ChatLoop v5.3 — Academic Documentation Suite
 
 <div align="center">
 
@@ -6,9 +6,13 @@
 
 **ชุดเอกสารวิชาการสำหรับระบบประเมินทักษะการคิดขั้นสูงด้วยปัญญาประดิษฐ์**
 
+[![Version](https://img.shields.io/badge/Version-5.3.0-blue)](../README.md)
+[![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72%20(Substantial)-success)](./04_RESEARCH_METHODOLOGY.md)
+[![DPA](https://img.shields.io/badge/DPA%20Score-11%2F11-brightgreen)](../DPA_ASSESSMENT_CHECKLIST.md)
+
 ---
 
-**เวอร์ชัน:** 5.2  
+**เวอร์ชัน:** 5.3  
 **ปรับปรุงล่าสุด:** ธันวาคม 2568 (December 2025)
 
 </div>
@@ -62,19 +66,27 @@
 
 ## 🔗 เอกสารเสริม (Supplementary)
 
-| เอกสาร | คำอธิบาย |
-|--------|----------|
-| [README.md](../README.md) | Quick Start Guide |
-| [DOCS.md](../DOCS.md) | Technical Documentation |
-| [RESEARCH_PROTOCOL.md](../RESEARCH_PROTOCOL.md) | IRB Protocol |
-| [RELIABILITY_ECOSYSTEM.md](../RELIABILITY_ECOSYSTEM.md) | 8-Layer Details |
-| [GOLDEN_DATASET_IRR.md](../GOLDEN_DATASET_IRR.md) | IRR Testing Details |
+| เอกสาร | คำอธิบาย | สถานะ |
+|--------|----------|-------|
+| [README.md](../README.md) | Quick Start Guide | ✅ Updated |
+| [DOCS.md](../DOCS.md) | Technical Documentation | ✅ Updated |
+| [DEVELOPER_MANUAL.md](../DEVELOPER_MANUAL.md) | Developer Guide | ✅ Updated |
+| [USER_MANUAL.md](../USER_MANUAL.md) | End-User Guide | ✅ Updated |
+| [RESEARCH_PROTOCOL.md](../RESEARCH_PROTOCOL.md) | IRB Protocol | ✅ Updated |
+| [RELIABILITY_ECOSYSTEM.md](../RELIABILITY_ECOSYSTEM.md) | 8-Layer Details | ✅ Updated |
+| [GOLDEN_DATASET_IRR.md](../GOLDEN_DATASET_IRR.md) | IRR Testing Details | ✅ Updated |
+| [DPA_ASSESSMENT_CHECKLIST.md](../DPA_ASSESSMENT_CHECKLIST.md) | Privacy Compliance | ✅ Updated |
+| [ALGORITHMIC_ALIGNMENT_AUDIT.md](./ALGORITHMIC_ALIGNMENT_AUDIT.md) | Prompt Fidelity Analysis | ✅ 92.5% Aligned |
+| [END_TO_END_PROCESS_TRACE.md](./END_TO_END_PROCESS_TRACE.md) | Full Assessment Flow | ✅ Updated |
+| [IRB_ETHICS_BRIEF.md](./IRB_ETHICS_BRIEF.md) | Ethics Committee Brief | ✅ Updated |
+| [VALIDATION_STUDY_PROTOCOL.md](./VALIDATION_STUDY_PROTOCOL.md) | Validation Methodology | ✅ Updated |
+| [PDPA_COMPLIANCE_AND_DATA_RETENTION.md](./PDPA_COMPLIANCE_AND_DATA_RETENTION.md) | Data Protection | ✅ Updated |
 
 ---
 
 <div align="center">
 
 *HOTS AI ChatLoop — Academic Documentation Suite*  
-*Version 5.2 | December 2025*
+*Version 5.3 | December 2025*
 
 </div>

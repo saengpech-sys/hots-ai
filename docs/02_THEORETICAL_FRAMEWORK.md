@@ -12,7 +12,9 @@
 ![ZPD](https://img.shields.io/badge/Scaffolding-Vygotsky's_ZPD-8B5CF6?style=for-the-badge)
 
 **Academic Documentation Suite — บทที่ 2**  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568
+**เวอร์ชัน 5.3** | **ปรับปรุงล่าสุด:** ธันวาคม 2568
+
+**เอกสารก่อนหน้า:** [01_PROJECT_OVERVIEW.md](./01_PROJECT_OVERVIEW.md) | **เอกสารถัดไป:** [03_SYSTEM_ARCHITECTURE.md](./03_SYSTEM_ARCHITECTURE.md)
 
 </div>
 

@@ -59,10 +59,12 @@
         v-for="post in filteredPosts"
         :key="post.id"
         :post="post"
+        :following-ids="followingIds"
         @react="handleReaction"
         @comment="handleComment"
         @share="handleShare"
         @delete="handleDelete"
+        @follow-changed="handleFollowChanged"
       />
     </div>
 
@@ -333,29 +335,15 @@ async function handleReaction(postId, reactionType) {
 }
 
 async function handleComment(postId, commentText, parentId = null) {
+  // Comment is now added directly in PostCard.vue
+  // This handler only updates the local post count for UI sync
   try {
-    await addDoc(collection(db, 'comments'), {
-      postId,
-      authorId: authStore.user.uid,
-      authorName: authStore.user.displayName,
-      authorPhoto: authStore.user.photoURL,
-      content: commentText,
-      parentId: parentId,
-      createdAt: serverTimestamp()
-    })
-    
-    // Update post comment count in Firestore
-    await updateDoc(doc(db, 'posts', postId), {
-      commentCount: increment(1)
-    })
-    
-    // Update local state
     const post = posts.value.find(p => p.id === postId)
     if (post) {
       post.commentCount = (post.commentCount || 0) + 1
     }
   } catch (error) {
-    console.error('Error commenting:', error)
+    console.error('Error updating comment count:', error)
   }
 }
 
@@ -363,6 +351,17 @@ function handleShare(postId) {
   const url = `${window.location.origin}/feed?post=${postId}`
   navigator.clipboard.writeText(url)
   alert('✅ คัดลอกลิงก์แล้ว')
+}
+
+async function handleFollowChanged(userId, isNowFollowing) {
+  // Refresh following list when follow status changes
+  if (isNowFollowing) {
+    if (!followingIds.value.includes(userId)) {
+      followingIds.value.push(userId)
+    }
+  } else {
+    followingIds.value = followingIds.value.filter(id => id !== userId)
+  }
 }
 
 async function handleDelete(postId) {

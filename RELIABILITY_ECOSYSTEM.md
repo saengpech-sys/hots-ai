@@ -2,9 +2,15 @@
 
 <div align="center">
 
-**Version 1.0** | **Last Updated: December 22, 2025**
+[![Kappa](https://img.shields.io/badge/Cohen's%20κ-0.72%20(Substantial)-success)](./GOLDEN_DATASET_IRR.md)
+[![ICC](https://img.shields.io/badge/ICC-0.81%20(Excellent)-blue)](./GOLDEN_DATASET_IRR.md)
+[![8-Layer](https://img.shields.io/badge/Architecture-8%20Layer%20Ecosystem-purple)](#1-ภาพรวมห่วงโซ่ระบบนิเวศ)
+
+**Version 1.1** | **Last Updated: December 25, 2025**
 
 *ห่วงโซ่เหตุผลเชิงระบบสำหรับความเสถียรภาพ ความแม่นยำ และความน่าเชื่อถือระดับรากเง่า*
+
+**Related:** [GOLDEN_DATASET_IRR.md](./GOLDEN_DATASET_IRR.md) | [Validation Study Protocol](./docs/VALIDATION_STUDY_PROTOCOL.md) | [DOCS.md](./DOCS.md#14-reliability-ecosystem)
 
 </div>
 

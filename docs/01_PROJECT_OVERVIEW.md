@@ -7,10 +7,11 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-5.2.0-2563EB?style=for-the-badge&logo=semanticrelease)
+![Version](https://img.shields.io/badge/Version-5.3.0-2563EB?style=for-the-badge&logo=semanticrelease)
 ![DPA Score](https://img.shields.io/badge/DPA_Compliance-11%2F11-10B981?style=for-the-badge&logo=checkmarx)
 ![IRR Score](https://img.shields.io/badge/IRR_κ-0.72_(Substantial)-8B5CF6?style=for-the-badge)
-![Coverage](https://img.shields.io/badge/Test_Coverage-85%25-F59E0B?style=for-the-badge&logo=jest)
+![ICC](https://img.shields.io/badge/ICC-0.81_(Excellent)-EC4899?style=for-the-badge)
+![Coverage](https://img.shields.io/badge/Test_Cases-123_Passed-F59E0B?style=for-the-badge&logo=jest)
 ![License](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)
 
 ---

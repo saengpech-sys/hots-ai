@@ -1,4 +1,4 @@
-# 📚 HOTS AI ChatLoop v5.2 — Academic Documentation Suite
+# 📚 HOTS AI ChatLoop v5.3 — Academic Documentation Suite
 
 <div align="center">
 
@@ -9,8 +9,14 @@
 
 ---
 
+![IRR](https://img.shields.io/badge/Cohen's%20κ-0.72-success?style=for-the-badge)
+![ICC](https://img.shields.io/badge/ICC-0.81-blue?style=for-the-badge)
+![Golden](https://img.shields.io/badge/Golden%20Items-20-gold?style=for-the-badge)
+
 **เอกสารฉบับ:** Academic Documentation Suite  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568 (December 2025)
+**เวอร์ชัน 5.3** | **ปรับปรุงล่าสุด:** ธันวาคม 2568 (December 2025)
+
+**เอกสารก่อนหน้า:** [03_SYSTEM_ARCHITECTURE.md](./03_SYSTEM_ARCHITECTURE.md) | **เอกสารถัดไป:** [05_USER_MANUAL_ACADEMIC.md](./05_USER_MANUAL_ACADEMIC.md)
 
 </div>
 

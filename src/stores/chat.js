@@ -15,10 +15,19 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase/config'
 import { useAuthStore } from './auth'
+import { useGamificationStore } from './gamification'
 import router from '@/router'
 
 // 🆕 Fetch timeout configuration
 const FETCH_TIMEOUT_MS = 90000 // 90 seconds (Cloud Function timeout is 180s)
+
+/**
+ * 🎯 FIRST-TIME USER PRACTICE MODE
+ * First-time users (assessmentCount = 0) default to practice mode
+ * to reduce gamification pressure and allow low-stakes exploration.
+ * See: DOCS.md Section 15.4 "Ethical Limitations" → "Formative Assessment Identity Crisis"
+ */
+const PRACTICE_MODE_THRESHOLD = 0 // assessmentCount <= this value triggers practice mode
 
 export const useChatStore = defineStore('chat', () => {
   const authStore = useAuthStore()
@@ -561,6 +570,16 @@ export const useChatStore = defineStore('chat', () => {
         currentAbortController?.abort()
       }, FETCH_TIMEOUT_MS)
 
+      // 🎯 FIRST-TIME USER PRACTICE MODE: Determine assessment mode
+      // New users start in practice mode to reduce gamification pressure
+      const gamificationStore = useGamificationStore()
+      const isFirstTimeUser = gamificationStore.assessmentCount <= PRACTICE_MODE_THRESHOLD
+      const assessmentMode = options.assessmentMode || (isFirstTimeUser ? 'practice' : 'graded')
+      
+      if (isFirstTimeUser) {
+        console.log('🎯 First-time user detected → Practice Mode enabled')
+      }
+
       // Call Cloud Function for assessment with LO context + 🆕 Anti-Cheat fingerprint + 🔬 Research metrics
       const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
       let response
@@ -583,7 +602,9 @@ export const useChatStore = defineStore('chat', () => {
             // 🔬 Research Metrics: Send for AIED research
             answerMetrics: researchMetrics?.answerMetrics || null,
             timingMetrics: researchMetrics?.timingMetrics || null,
-            revisionMetrics: researchMetrics?.revisionMetrics || null
+            revisionMetrics: researchMetrics?.revisionMetrics || null,
+            // 🎯 PRACTICE MODE: First-time users default to practice mode
+            assessmentMode: assessmentMode
           }),
           signal: currentAbortController.signal
         })
