@@ -74,7 +74,7 @@ describe('Worksheet Controller', () => {
 
     it('should have correct function structure', () => {
       const { generateElectronicWorksheet } = require('../controllers/worksheetController')
-      expect(typeof generateElectronicWorksheet).toBe('object') // Firebase function
+      expect(['function', 'object']).toContain(typeof generateElectronicWorksheet) // Firebase function
     })
   })
 

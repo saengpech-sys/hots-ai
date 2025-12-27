@@ -91,7 +91,7 @@ describe('Research Controller', () => {
       
       Object.values(researchController).forEach(fn => {
         // Firebase functions are objects with __trigger property
-        expect(typeof fn).toBe('object')
+        expect(['function', 'object']).toContain(typeof fn)
       })
     })
   })

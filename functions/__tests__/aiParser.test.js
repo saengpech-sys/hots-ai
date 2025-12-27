@@ -78,7 +78,7 @@ describe('safeParseJSON', () => {
   test('should return fallback on invalid JSON', () => {
     const input = 'not valid json'
     const fallback = { default: true }
-    const result = safeParseJSON(input, fallback)
+    const result = safeParseJSON(input, { fallback })
     expect(result.success).toBe(false)
     expect(result.data).toEqual(fallback)
     expect(result.error).toBeDefined()

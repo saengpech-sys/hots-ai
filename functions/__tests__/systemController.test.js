@@ -136,54 +136,38 @@ describe('Health Check Response', () => {
 describe('Reliability Score Calculation', () => {
   const { calculateReliabilityScore } = require('../utils/reliability')
 
-  it('should calculate high reliability for good metrics', () => {
-    const metrics = {
-      hasAuditTrail: 0.95,
-      hasConfidence: 0.90,
-      avgConfidence: 0.85,
-      retryRate: 0.05,
-      fallbackRate: 0.02
-    }
+  it('should calculate high reliability for good assessment', () => {
+    const assessment = { confidence: 90 }
+    const parseResult = { errors: [], warnings: [] }
+    const retryAttempts = 1
 
-    const score = calculateReliabilityScore(metrics)
-    expect(score).toBeGreaterThan(0.8)
+    const score = calculateReliabilityScore(assessment, parseResult, retryAttempts)
+    expect(score).toBe(100)
   })
 
-  it('should calculate low reliability for poor metrics', () => {
-    const metrics = {
-      hasAuditTrail: 0.30,
-      hasConfidence: 0.40,
-      avgConfidence: 0.50,
-      retryRate: 0.30,
-      fallbackRate: 0.20
-    }
+  it('should calculate low reliability for poor assessment', () => {
+    const assessment = { confidence: 40, isFallback: true }
+    const parseResult = { errors: ['some error'], warnings: ['some warning'] }
+    const retryAttempts = 3
 
-    const score = calculateReliabilityScore(metrics)
-    expect(score).toBeLessThan(0.7)
+    const score = calculateReliabilityScore(assessment, parseResult, retryAttempts)
+    // 100 - 10(error) - 2(warning) - 10(retries) - 10(low conf) - 50(fallback) = 18
+    expect(score).toBeLessThan(70)
   })
 
   it('should handle edge cases', () => {
-    const perfectMetrics = {
-      hasAuditTrail: 1.0,
-      hasConfidence: 1.0,
-      avgConfidence: 1.0,
-      retryRate: 0,
-      fallbackRate: 0
-    }
+    const perfectAssessment = { confidence: 100 }
+    const perfectParse = { errors: [], warnings: [] }
+    
+    const perfectScore = calculateReliabilityScore(perfectAssessment, perfectParse, 1)
+    expect(perfectScore).toBe(100)
 
-    const worstMetrics = {
-      hasAuditTrail: 0,
-      hasConfidence: 0,
-      avgConfidence: 0,
-      retryRate: 1.0,
-      fallbackRate: 1.0
-    }
-
-    const perfectScore = calculateReliabilityScore(perfectMetrics)
-    const worstScore = calculateReliabilityScore(worstMetrics)
-
-    expect(perfectScore).toBe(1.0)
-    expect(worstScore).toBeLessThan(0.5)
+    const worstAssessment = { confidence: 0, isFallback: true }
+    const worstParse = { errors: ['e1', 'e2'], warnings: ['w1'] }
+    // 100 - 20 - 2 - 20(5 retries) - 10 - 50 = -2 -> 0
+    
+    const worstScore = calculateReliabilityScore(worstAssessment, worstParse, 5)
+    expect(worstScore).toBe(0)
   })
 })
 
