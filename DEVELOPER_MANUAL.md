@@ -2,7 +2,7 @@
 
 > **คู่มือสำหรับนักพัฒนารุ่นต่อไป** — เอกสารนี้รวบรวมทุกสิ่งที่คุณต้องรู้เพื่อพัฒนา, Debug และ Deploy ระบบ HOTS AI ChatLoop
 >
-> 📅 **Last Updated:** December 25, 2025 | 📊 **IRR Metrics:** κ = 0.72, ICC = 0.81
+> 📅 **Last Updated:** December 27, 2025 | 📊 **IRR Metrics:** κ = 0.72, ICC = 0.81
 
 ---
 
