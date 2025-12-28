@@ -6,6 +6,7 @@
         <h1>🎯 Expert Calibration Mode</h1>
       </div>
       <div class="nav-right">
+        <button @click="showIRRReport = true" class="btn btn-outline">📊 IRR Report</button>
         <span class="badge">{{ authStore.user?.displayName || 'ผู้เชี่ยวชาญ' }}</span>
       </div>
     </nav>
@@ -36,10 +37,57 @@
           <div class="stat-value highlight">{{ agreementRate }}%</div>
           <div class="stat-desc">ความสอดคล้องกับ AI</div>
         </div>
-        <div class="stat-card">
-          <h3>คะแนนเฉลี่ย Expert</h3>
-          <div class="stat-value">{{ avgExpertScore.toFixed(1) }}</div>
-          <div class="stat-desc">vs AI {{ avgAIScore.toFixed(1) }}</div>
+        <div class="stat-card irr-card" :class="irrClass">
+          <h3>Cohen's Kappa</h3>
+          <div class="stat-value">{{ irrStats.kappa?.toFixed(3) || 'N/A' }}</div>
+          <div class="stat-desc">{{ irrStats.interpretation || 'ต้องมี ≥5 รายการ' }}</div>
+        </div>
+      </div>
+
+      <!-- IRR Details Panel (collapsible) -->
+      <div v-if="irrStats.kappa !== null && completedCount >= 5" class="irr-details-panel card">
+        <div class="irr-header" @click="showIRRDetails = !showIRRDetails">
+          <h3>📊 รายละเอียด Inter-Rater Reliability</h3>
+          <span class="toggle-icon">{{ showIRRDetails ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="showIRRDetails" class="irr-content">
+          <div class="irr-metrics">
+            <div class="irr-metric">
+              <label>Weighted Kappa</label>
+              <span class="metric-value">{{ irrStats.weightedKappa?.toFixed(3) || 'N/A' }}</span>
+            </div>
+            <div class="irr-metric">
+              <label>Percent Agreement</label>
+              <span class="metric-value">{{ (irrStats.percentAgreement * 100)?.toFixed(1) || 'N/A' }}%</span>
+            </div>
+            <div class="irr-metric">
+              <label>MAE (Mean Abs Error)</label>
+              <span class="metric-value">{{ irrStats.mae?.toFixed(2) || 'N/A' }}</span>
+            </div>
+            <div class="irr-metric">
+              <label>Pearson Correlation</label>
+              <span class="metric-value">{{ irrStats.pearson?.toFixed(3) || 'N/A' }}</span>
+            </div>
+          </div>
+          <div class="irr-dimension-breakdown">
+            <h4>รายมิติ:</h4>
+            <div class="dimension-irr-grid">
+              <div v-for="dim in dimensions" :key="dim.key" class="dim-irr-item">
+                <span class="dim-label">{{ dim.label.split(' ')[0] }}</span>
+                <span class="dim-kappa" :class="getKappaClass(irrStats.dimensions?.[dim.key]?.kappa)">
+                  κ={{ irrStats.dimensions?.[dim.key]?.kappa?.toFixed(2) || '-' }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="publication-status">
+            <span v-if="irrStats.meetsPublicationStandard" class="pub-ready">
+              ✅ พร้อมตีพิมพ์ (Publication Ready)
+            </span>
+            <span v-else class="pub-not-ready">
+              ⚠️ ต้องการข้อมูลเพิ่มเติมเพื่อให้ได้มาตรฐานตีพิมพ์ (κ ≥ 0.80)
+            </span>
+          </div>
         </div>
       </div>
 
@@ -165,7 +213,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { db } from '@/firebase/config'
@@ -189,6 +237,20 @@ const myCalibrations = ref([])
 const selectedAssessment = ref(null)
 const selectedId = ref(null)
 const showAIScores = ref(false)
+const showIRRDetails = ref(false)
+const showIRRReport = ref(false)
+
+// IRR Stats
+const irrStats = ref({
+  kappa: null,
+  weightedKappa: null,
+  percentAgreement: null,
+  mae: null,
+  pearson: null,
+  interpretation: null,
+  meetsPublicationStandard: false,
+  dimensions: {}
+})
 
 const expertScores = ref({
   analysis: 0,
@@ -210,6 +272,16 @@ const agreementRate = computed(() => {
   if (myCalibrations.value.length === 0) return 0
   const total = myCalibrations.value.reduce((sum, c) => sum + (c.agreementScore || 0), 0)
   return Math.round(total / myCalibrations.value.length)
+})
+
+// IRR class based on kappa value
+const irrClass = computed(() => {
+  const k = irrStats.value.kappa
+  if (k === null) return ''
+  if (k >= 0.8) return 'excellent'
+  if (k >= 0.6) return 'good'
+  if (k >= 0.4) return 'moderate'
+  return 'poor'
 })
 
 const avgExpertScore = computed(() => {
@@ -430,6 +502,14 @@ function getAgreementClass(score) {
   return 'low'
 }
 
+function getKappaClass(kappa) {
+  if (kappa === null || kappa === undefined) return ''
+  if (kappa >= 0.8) return 'excellent'
+  if (kappa >= 0.6) return 'good'
+  if (kappa >= 0.4) return 'moderate'
+  return 'poor'
+}
+
 function truncate(text, length) {
   if (!text) return ''
   return text.length > length ? text.substring(0, length) + '...' : text
@@ -446,6 +526,260 @@ function formatDate(timestamp) {
 function goBack() {
   router.back()
 }
+
+// ============================================
+// Cohen's Kappa & IRR Calculation Functions
+// ============================================
+
+/**
+ * Calculate Cohen's Kappa for given ratings
+ * Formula: κ = (Po - Pe) / (1 - Pe)
+ */
+function calculateCohensKappa(rater1Scores, rater2Scores, maxScore = 5) {
+  if (rater1Scores.length !== rater2Scores.length || rater1Scores.length < 2) {
+    return { kappa: null, interpretation: 'Insufficient data' }
+  }
+  
+  const n = rater1Scores.length
+  const categories = Array.from({ length: maxScore + 1 }, (_, i) => i)
+  
+  // Create confusion matrix
+  const matrix = {}
+  categories.forEach(i => {
+    matrix[i] = {}
+    categories.forEach(j => {
+      matrix[i][j] = 0
+    })
+  })
+  
+  // Fill confusion matrix
+  for (let i = 0; i < n; i++) {
+    const r1 = Math.min(maxScore, Math.max(0, Math.round(rater1Scores[i])))
+    const r2 = Math.min(maxScore, Math.max(0, Math.round(rater2Scores[i])))
+    matrix[r1][r2]++
+  }
+  
+  // Calculate observed agreement (Po)
+  let po = 0
+  categories.forEach(c => {
+    po += matrix[c][c]
+  })
+  po = po / n
+  
+  // Calculate expected agreement (Pe)
+  let pe = 0
+  categories.forEach(c => {
+    let sum1 = 0, sum2 = 0
+    categories.forEach(other => {
+      sum1 += matrix[c][other]
+      sum2 += matrix[other][c]
+    })
+    pe += (sum1 / n) * (sum2 / n)
+  })
+  
+  // Calculate Kappa
+  let kappa = pe === 1 ? (po === 1 ? 1 : 0) : (po - pe) / (1 - pe)
+  
+  return {
+    kappa: Math.round(kappa * 1000) / 1000,
+    interpretation: interpretKappa(kappa),
+    po: Math.round(po * 1000) / 1000,
+    pe: Math.round(pe * 1000) / 1000
+  }
+}
+
+/**
+ * Calculate Weighted Kappa for ordinal scale
+ */
+function calculateWeightedKappa(rater1Scores, rater2Scores, maxScore = 5) {
+  if (rater1Scores.length !== rater2Scores.length || rater1Scores.length < 2) {
+    return null
+  }
+  
+  const n = rater1Scores.length
+  const k = maxScore + 1
+  
+  // Create quadratic weight matrix
+  const weights = []
+  for (let i = 0; i < k; i++) {
+    weights[i] = []
+    for (let j = 0; j < k; j++) {
+      weights[i][j] = 1 - Math.pow(i - j, 2) / Math.pow(k - 1, 2)
+    }
+  }
+  
+  // Create observed frequency matrix
+  const observed = Array(k).fill(null).map(() => Array(k).fill(0))
+  for (let i = 0; i < n; i++) {
+    const r1 = Math.min(maxScore, Math.max(0, Math.round(rater1Scores[i])))
+    const r2 = Math.min(maxScore, Math.max(0, Math.round(rater2Scores[i])))
+    observed[r1][r2]++
+  }
+  
+  // Calculate marginal totals
+  const row = Array(k).fill(0)
+  const col = Array(k).fill(0)
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) {
+      row[i] += observed[i][j]
+      col[j] += observed[i][j]
+    }
+  }
+  
+  // Calculate expected frequency matrix
+  const expected = Array(k).fill(null).map(() => Array(k).fill(0))
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) {
+      expected[i][j] = (row[i] * col[j]) / n
+    }
+  }
+  
+  // Calculate weighted observed and expected
+  let weightedPo = 0
+  let weightedPe = 0
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) {
+      weightedPo += weights[i][j] * (observed[i][j] / n)
+      weightedPe += weights[i][j] * (expected[i][j] / n)
+    }
+  }
+  
+  return weightedPe === 1 
+    ? (weightedPo === 1 ? 1 : 0) 
+    : (weightedPo - weightedPe) / (1 - weightedPe)
+}
+
+/**
+ * Calculate Mean Absolute Error
+ */
+function calculateMAE(arr1, arr2) {
+  if (arr1.length !== arr2.length || arr1.length === 0) return null
+  let sum = 0
+  for (let i = 0; i < arr1.length; i++) {
+    sum += Math.abs(arr1[i] - arr2[i])
+  }
+  return sum / arr1.length
+}
+
+/**
+ * Calculate Pearson Correlation
+ */
+function calculatePearson(arr1, arr2) {
+  if (arr1.length !== arr2.length || arr1.length < 2) return null
+  
+  const n = arr1.length
+  const mean1 = arr1.reduce((a, b) => a + b, 0) / n
+  const mean2 = arr2.reduce((a, b) => a + b, 0) / n
+  
+  let sumXY = 0, sumX2 = 0, sumY2 = 0
+  for (let i = 0; i < n; i++) {
+    const dx = arr1[i] - mean1
+    const dy = arr2[i] - mean2
+    sumXY += dx * dy
+    sumX2 += dx * dx
+    sumY2 += dy * dy
+  }
+  
+  if (sumX2 === 0 || sumY2 === 0) return 0
+  return sumXY / Math.sqrt(sumX2 * sumY2)
+}
+
+/**
+ * Interpret Kappa value
+ */
+function interpretKappa(kappa) {
+  if (kappa >= 0.81) return 'Excellent (ยอดเยี่ยม)'
+  if (kappa >= 0.61) return 'Substantial (ดีมาก)'
+  if (kappa >= 0.41) return 'Moderate (พอใช้)'
+  if (kappa >= 0.21) return 'Fair (ต่ำ)'
+  return 'Poor (ต้องปรับปรุง)'
+}
+
+/**
+ * Calculate comprehensive IRR statistics from calibrations
+ */
+function calculateIRRStats() {
+  if (myCalibrations.value.length < 5) {
+    irrStats.value = {
+      kappa: null,
+      weightedKappa: null,
+      percentAgreement: null,
+      mae: null,
+      pearson: null,
+      interpretation: 'ต้องมีอย่างน้อย 5 รายการ',
+      meetsPublicationStandard: false,
+      dimensions: {}
+    }
+    return
+  }
+  
+  const dims = ['analysis', 'reasoning', 'creativity', 'evidence']
+  const allAI = []
+  const allExpert = []
+  const dimData = { analysis: { ai: [], expert: [] }, reasoning: { ai: [], expert: [] }, creativity: { ai: [], expert: [] }, evidence: { ai: [], expert: [] } }
+  
+  myCalibrations.value.forEach(cal => {
+    if (!cal.aiScores || !cal.expertScores) return
+    
+    dims.forEach(dim => {
+      const ai = cal.aiScores[dim]
+      const expert = cal.expertScores[dim]
+      if (ai !== undefined && expert !== undefined) {
+        dimData[dim].ai.push(ai)
+        dimData[dim].expert.push(expert)
+        allAI.push(ai)
+        allExpert.push(expert)
+      }
+    })
+  })
+  
+  if (allAI.length < 5) {
+    irrStats.value.kappa = null
+    return
+  }
+  
+  // Calculate overall metrics
+  const kappaResult = calculateCohensKappa(allAI, allExpert)
+  const weightedKappa = calculateWeightedKappa(allAI, allExpert)
+  const mae = calculateMAE(allAI, allExpert)
+  const pearson = calculatePearson(allAI, allExpert)
+  
+  // Calculate exact agreement percentage
+  let exactMatch = 0
+  for (let i = 0; i < allAI.length; i++) {
+    if (Math.round(allAI[i]) === Math.round(allExpert[i])) exactMatch++
+  }
+  const percentAgreement = exactMatch / allAI.length
+  
+  // Calculate per-dimension
+  const dimensions = {}
+  dims.forEach(dim => {
+    if (dimData[dim].ai.length >= 3) {
+      const dimKappa = calculateCohensKappa(dimData[dim].ai, dimData[dim].expert)
+      dimensions[dim] = {
+        kappa: dimKappa.kappa,
+        n: dimData[dim].ai.length
+      }
+    }
+  })
+  
+  irrStats.value = {
+    kappa: kappaResult.kappa,
+    weightedKappa: weightedKappa ? Math.round(weightedKappa * 1000) / 1000 : null,
+    percentAgreement,
+    mae: mae ? Math.round(mae * 100) / 100 : null,
+    pearson: pearson ? Math.round(pearson * 1000) / 1000 : null,
+    interpretation: kappaResult.interpretation,
+    meetsPublicationStandard: kappaResult.kappa >= 0.8,
+    dimensions,
+    n: allAI.length
+  }
+}
+
+// Watch for changes in calibrations and recalculate IRR
+watch(myCalibrations, () => {
+  calculateIRRStats()
+}, { deep: true })
 </script>
 
 <style scoped>
@@ -475,10 +809,29 @@ function goBack() {
   gap: 1rem;
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .nav-left h1 {
   margin: 0;
   font-size: 1.5rem;
   color: var(--text-primary);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-outline:hover {
+  background: var(--hover-bg);
 }
 
 .badge {
@@ -509,6 +862,26 @@ function goBack() {
   border-radius: 12px;
   text-align: center;
   border: 1px solid var(--border-color);
+}
+
+.stat-card.irr-card.excellent {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.stat-card.irr-card.good {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.stat-card.irr-card.moderate {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.stat-card.irr-card.poor {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .stat-card h3 {
@@ -871,6 +1244,139 @@ function goBack() {
 .btn.large {
   padding: 1rem 2rem;
   font-size: 1rem;
+}
+
+/* IRR Stats Panel */
+.irr-details-panel {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.irr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.irr-header h3 {
+  font-size: 1.1rem;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.publication-badge {
+  padding: 0.4rem 0.8rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.publication-badge.ready {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.publication-badge.not-ready {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.irr-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.irr-metric {
+  background: var(--bg-tertiary);
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.irr-metric.primary {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.metric-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.metric-status.excellent { color: #10b981; }
+.metric-status.good { color: #3b82f6; }
+.metric-status.moderate { color: #f59e0b; }
+.metric-status.poor { color: #ef4444; }
+
+.irr-dimensions h4 {
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem 0;
+  color: var(--text-secondary);
+}
+
+.dimension-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dimension-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dim-label {
+  width: 80px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dim-bar-container {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dim-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.dim-bar-fill.excellent { background: linear-gradient(90deg, #10b981 0%, #059669 100%); }
+.dim-bar-fill.good { background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%); }
+.dim-bar-fill.moderate { background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%); }
+.dim-bar-fill.poor { background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%); }
+
+.dim-value {
+  width: 50px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text-primary);
 }
 
 /* Responsive */

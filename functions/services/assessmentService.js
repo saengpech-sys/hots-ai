@@ -3,6 +3,8 @@
  * 
  * Core assessment logic extracted from index.js
  * Handles HOTS assessment with OpenAI
+ * 
+ * 🆕 v2.0: Multi-Agent Assessment Integration
  */
 
 const { createAssessmentPrompt } = require('../utils/prompts')
@@ -10,6 +12,9 @@ const { cleanAIResponse, safeParseJSON } = require('../utils/aiParser')
 const { validateAssessmentSchema, getFallbackAssessment } = require('../utils/reliability')
 const { assessLearningOutcomes, updateStudentLOProgress } = require('../utils/loAssessment')
 const { comprehensiveAIDetection } = require('../utils/aiDetection')
+const { runMultiAgentAssessment } = require('../utils/multiAgentAssessment')
+const { generateAdaptiveScaffolding, formatScaffoldingMessage, SCAFFOLDING_LEVELS } = require('../utils/adaptiveScaffolding')
+const { LLMProvider } = require('../utils/llmProvider')
 
 /**
  * AI Configuration for assessments
@@ -19,7 +24,99 @@ const AI_CONFIG = {
   temperature: 0,      // Phase 2: Deterministic scoring
   seed: 42,            // Phase 2: Reproducibility
   maxTokens: 1500,
-  maxRetries: 2
+  maxRetries: 2,
+  useMultiAgent: process.env.USE_MULTI_AGENT === 'true' || false  // 🆕 Multi-Agent mode
+}
+
+/**
+ * 🤖 Perform Multi-Agent HOTS Assessment
+ * Uses 6 specialized agents for maximum accuracy (C10 Research Grade)
+ * @param {Object} openai - OpenAI client
+ * @param {Object} params - Assessment parameters
+ * @returns {Object} Assessment result with agent details
+ */
+async function performMultiAgentHOTSAssessment(openai, params) {
+  const {
+    questionContext,
+    studentAnswer,
+    gradeLevel,
+    subject,
+    isScaffolding = false,
+    scaffoldingAttempts = 0
+  } = params
+
+  // Create LLM Provider wrapper for multi-agent system
+  const llmProvider = {
+    async complete(prompt, options = {}) {
+      const completion = await openai.chat.completions.create({
+        model: AI_CONFIG.model,
+        messages: [
+          { role: 'system', content: 'You are an expert educational assessor. Respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: options.temperature || 0,
+        max_tokens: AI_CONFIG.maxTokens
+      })
+      return completion.choices[0].message.content
+    }
+  }
+
+  try {
+    const result = await runMultiAgentAssessment(
+      llmProvider,
+      questionContext,
+      studentAnswer,
+      {
+        gradeLevel,
+        subject,
+        isScaffolding,
+        scaffoldingAttempts,
+        parallelAgents: true,
+        includeAdversarial: true,
+        detailedLogging: true
+      }
+    )
+
+    if (!result.success) {
+      console.warn('Multi-agent assessment failed, falling back to standard')
+      return performHOTSAssessment(openai, params)
+    }
+
+    // Build assessment data from multi-agent result
+    const assessmentData = {
+      rubricScores: result.rubricScores,
+      overallScore: result.totalScore,
+      feedback: result.feedback,
+      strengths: result.strengths || [],
+      weaknesses: result.weaknesses || [],
+      suggestions: result.suggestions || [],
+      confidence: result.confidence,
+      confidenceReason: result.confidenceReason,
+      explanationDetails: result.explanationDetails,
+      promptVersion: 'v4.0-multi-agent',
+      assessmentMode: 'multi-agent',
+      multiAgentMetadata: result.multiAgentMetadata,
+      agentDetails: result.agentDetails,
+      probingQuestion: result.probingQuestion,
+      auditTrail: {
+        modelUsed: AI_CONFIG.model,
+        agentsRun: result.multiAgentMetadata?.agentsRun || [],
+        processingTimeMs: result.multiAgentMetadata?.processingTimeMs,
+        timestamp: new Date().toISOString()
+      }
+    }
+
+    return {
+      success: true,
+      data: assessmentData
+    }
+  } catch (error) {
+    console.error('Multi-agent assessment error:', error.message)
+    return {
+      success: false,
+      error: error.message
+    }
+  }
 }
 
 /**
@@ -158,19 +255,33 @@ async function performCompleteAssessment(deps, params) {
     subject,
     isScaffolding,
     scaffoldingAttempts,
-    previousAnswer
+    previousAnswer,
+    useMultiAgent = AI_CONFIG.useMultiAgent  // 🆕 Allow override per request
   } = params
 
-  // Step 1: Perform HOTS assessment
-  const hotsResult = await performHOTSAssessment(openai, {
-    questionContext,
-    studentAnswer,
-    gradeLevel,
-    subject,
-    isScaffolding,
-    scaffoldingAttempts,
-    previousAnswer
-  })
+  // Step 1: Perform HOTS assessment (Multi-Agent or Standard)
+  let hotsResult
+  if (useMultiAgent) {
+    console.log('🤖 Using Multi-Agent Assessment Mode')
+    hotsResult = await performMultiAgentHOTSAssessment(openai, {
+      questionContext,
+      studentAnswer,
+      gradeLevel,
+      subject,
+      isScaffolding,
+      scaffoldingAttempts
+    })
+  } else {
+    hotsResult = await performHOTSAssessment(openai, {
+      questionContext,
+      studentAnswer,
+      gradeLevel,
+      subject,
+      isScaffolding,
+      scaffoldingAttempts,
+      previousAnswer
+    })
+  }
 
   if (!hotsResult.success) {
     return hotsResult
@@ -178,7 +289,23 @@ async function performCompleteAssessment(deps, params) {
 
   const assessmentData = hotsResult.data
 
-  // Step 2: AI Detection (if typing fingerprint provided)
+  // Step 2: Generate Adaptive Scaffolding (if needed)
+  if (!isScaffolding && assessmentData.rubricScores) {
+    const scaffolding = generateAdaptiveScaffolding(
+      assessmentData,
+      scaffoldingAttempts || 0,
+      null
+    )
+    
+    if (scaffolding.needed) {
+      assessmentData.scaffolding = {
+        ...scaffolding,
+        formattedMessage: formatScaffoldingMessage(scaffolding, questionContext)
+      }
+    }
+  }
+
+  // Step 3: AI Detection (if typing fingerprint provided)
   if (typingFingerprint) {
     try {
       const aiDetection = comprehensiveAIDetection(studentAnswer, typingFingerprint)
@@ -192,7 +319,7 @@ async function performCompleteAssessment(deps, params) {
     }
   }
 
-  // Step 3: LO Assessment (if learning outcomes provided)
+  // Step 4: LO Assessment (if learning outcomes provided)
   if (learningOutcomes && learningOutcomes.length > 0) {
     const loResult = await assessLearningOutcomes(
       openai,
@@ -233,5 +360,9 @@ async function performCompleteAssessment(deps, params) {
 module.exports = {
   AI_CONFIG,
   performHOTSAssessment,
-  performCompleteAssessment
+  performMultiAgentHOTSAssessment,
+  performCompleteAssessment,
+  generateAdaptiveScaffolding,
+  formatScaffoldingMessage,
+  SCAFFOLDING_LEVELS
 }

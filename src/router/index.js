@@ -358,6 +358,18 @@ const routes = [
     component: () => import('@/views/LearningTrajectoryView.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
+  {
+    path: '/mental-model-map',
+    name: 'MentalModelMap',
+    component: () => import('@/views/MentalModelMap.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/mental-model-map/:studentId',
+    name: 'MentalModelMapStudent',
+    component: () => import('@/views/MentalModelMap.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
   
   // ==========================================
   // Learning Social Network Routes

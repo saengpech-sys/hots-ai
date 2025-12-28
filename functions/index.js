@@ -12369,3 +12369,197 @@ exports.getExpertValidationData = functions.https.onRequest(async (req, res) => 
     }
   })
 })
+
+// =============================================================================
+// 🧠 MENTAL MODEL MAPPING API (NEW)
+// =============================================================================
+
+const { MentalModelMapper } = require('./utils/mentalModelMapping')
+
+/**
+ * 🧠 Get Student Mental Model Map
+ * สร้างแผนภาพโครงข่ายแนวคิดของนักเรียน
+ * GET /getMentalModelMap?studentId=xxx&sessionId=yyy
+ */
+exports.getMentalModelMap = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const studentId = req.query.studentId || req.body?.studentId
+      const sessionId = req.query.sessionId || req.body?.sessionId
+      const includeRaw = req.query.includeRaw === 'true'
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      const mapper = new MentalModelMapper(db)
+      const result = await mapper.buildMentalModelMap(studentId, sessionId, {
+        includeRawResponses: includeRaw,
+        maxAssessments: 50
+      })
+
+      if (!result.success) {
+        return res.status(200).send({
+          success: false,
+          error: result.error,
+          assessmentCount: result.assessmentCount
+        })
+      }
+
+      return res.status(200).send({
+        success: true,
+        mentalModelMap: result.mentalModelMap
+      })
+    } catch (error) {
+      console.error('Mental model mapping error:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 🧠 Get Conceptual Change Analysis
+ * วิเคราะห์การเปลี่ยนแปลงมโนทัศน์เชิงลึก
+ */
+exports.getConceptualChangeAnalysis = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { studentId, courseId, startDate, endDate } = req.query
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      // Get assessments with filters
+      let query = db.collection('assessments')
+        .where('studentId', '==', studentId)
+        .orderBy('createdAt', 'asc')
+
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+
+      const snapshot = await query.limit(100).get()
+      const assessments = []
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt)
+        
+        // Filter by date range if provided
+        if (startDate && createdAt < new Date(startDate)) return
+        if (endDate && createdAt > new Date(endDate)) return
+        
+        if (data.studentAnswer && data.rubricScores) {
+          assessments.push({
+            id: doc.id,
+            ...data,
+            createdAt
+          })
+        }
+      })
+
+      if (assessments.length < 3) {
+        return res.status(200).send({
+          success: false,
+          error: 'Need at least 3 assessments for conceptual change analysis',
+          assessmentCount: assessments.length
+        })
+      }
+
+      // Analyze conceptual changes
+      const mapper = new MentalModelMapper(db)
+      const conceptSequence = mapper.extractConceptSequence(assessments)
+      const conceptualChanges = mapper.detectConceptualChanges(conceptSequence)
+      const dimensionModels = mapper.buildDimensionModels(conceptSequence)
+
+      // Generate narrative
+      const narrative = generateConceptualChangeNarrative(
+        assessments,
+        conceptualChanges,
+        dimensionModels
+      )
+
+      return res.status(200).send({
+        success: true,
+        studentId,
+        courseId: courseId || 'all',
+        assessmentCount: assessments.length,
+        timeSpan: {
+          start: assessments[0].createdAt,
+          end: assessments[assessments.length - 1].createdAt,
+          durationDays: Math.ceil(
+            (assessments[assessments.length - 1].createdAt - assessments[0].createdAt) / (1000 * 60 * 60 * 24)
+          )
+        },
+        conceptualChanges,
+        dimensionModels,
+        narrative,
+        generatedAt: new Date().toISOString()
+      })
+    } catch (error) {
+      console.error('Conceptual change analysis error:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * Generate narrative for conceptual change analysis
+ */
+function generateConceptualChangeNarrative(assessments, changes, dimensionModels) {
+  const parts = []
+  
+  // Opening
+  parts.push(`จากการวิเคราะห์คำตอบ ${assessments.length} รายการ พบการเปลี่ยนแปลงทางมโนทัศน์ดังนี้:`)
+  
+  // Major changes
+  if (changes.significantChanges && changes.significantChanges.length > 0) {
+    parts.push(`\n**การเปลี่ยนแปลงที่สำคัญ:**`)
+    for (const change of changes.significantChanges.slice(0, 3)) {
+      const typeName = {
+        'BELIEF_REVISION': 'การปรับความเชื่อ',
+        'MENTAL_MODEL_TRANSFORMATION': 'การเปลี่ยนรูปแบบความคิด',
+        'CATEGORICAL_SHIFT': 'การเปลี่ยนหมวดหมู่',
+        'KNOWLEDGE_ENRICHMENT': 'การเสริมความรู้'
+      }[change.type] || change.type
+      
+      parts.push(`- ${typeName}: ${change.description || 'ตรวจพบการเปลี่ยนแปลงในมิติ ' + change.dimension}`)
+    }
+  }
+  
+  // Dimension progress
+  parts.push(`\n**พัฒนาการรายมิติ:**`)
+  const dims = ['analysis', 'reasoning', 'creativity', 'evidence']
+  const dimNames = {
+    analysis: 'การวิเคราะห์',
+    reasoning: 'การให้เหตุผล',
+    creativity: 'ความคิดสร้างสรรค์',
+    evidence: 'การใช้หลักฐาน'
+  }
+  
+  for (const dim of dims) {
+    const model = dimensionModels[dim]
+    if (model) {
+      const growth = model.growth || 0
+      const trend = growth > 0 ? '↑ เพิ่มขึ้น' : growth < 0 ? '↓ ลดลง' : '→ คงที่'
+      parts.push(`- ${dimNames[dim]}: ${trend}${Math.abs(growth) > 0 ? ` (${growth > 0 ? '+' : ''}${growth.toFixed(1)})` : ''}`)
+    }
+  }
+  
+  // Recommendations
+  parts.push(`\n**ข้อเสนอแนะ:**`)
+  if (changes.summary?.totalChanges > 0) {
+    parts.push(`- นักเรียนแสดงพัฒนาการที่ดี ควรส่งเสริมการเรียนรู้เชิงลึกต่อไป`)
+  } else {
+    parts.push(`- ควรใช้คำถามกระตุ้นที่ท้าทายขึ้นเพื่อสร้างการเปลี่ยนแปลงทางมโนทัศน์`)
+  }
+  
+  return parts.join('\n')
+}
