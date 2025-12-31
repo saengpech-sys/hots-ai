@@ -318,9 +318,12 @@ async function updateGrowthHistory(db, studentId, courseId, scores, source, addi
     revisionCount = 0
   } = additionalMetrics
   
+  // 🔧 FIX: Use Date object instead of serverTimestamp() in array elements
+  const now = new Date()
+  
   const snapshot = {
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    timestampISO: new Date().toISOString(),
+    timestamp: now,  // Cannot use serverTimestamp() inside array
+    timestampISO: now.toISOString(),
     source,
     scores: {
       analysis: scores.analysis || 0,

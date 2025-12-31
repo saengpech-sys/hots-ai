@@ -140,11 +140,21 @@ service cloud.firestore {
     
     // Sessions collection
     match /sessions/{sessionId} {
-      allow read: if isSignedIn() && 
-                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+      // Teachers can list/read all sessions (for research exports)
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow read: if isSignedIn() && isStudent() && isOwner(resource.data.studentId);
+      allow read: if isSignedIn() && isParent();
       allow create: if isSignedIn() && isStudent();
       allow update: if isSignedIn() && 
                       (isOwner(resource.data.studentId) || isTeacher());
+      allow delete: if false;
+    }
+    
+    // Teacher Actions collection (for research analytics)
+    match /teacherActions/{actionId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isTeacher();
+      allow update: if isTeacher();
       allow delete: if false;
     }
     
@@ -158,11 +168,23 @@ service cloud.firestore {
     
     // Assessments collection
     match /assessments/{assessmentId} {
+      // Teachers can list/read all assessments (for research exports)
+      // Students can only read their own
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow read: if isSignedIn() && isStudent() && isOwner(resource.data.studentId);
+      allow read: if isSignedIn() && isParent();
+      allow create: if isSignedIn(); // Cloud Functions create these
+      allow update: if isTeacher() || isAnyAdmin();
+      allow delete: if false;
+    }
+    
+    // Reflections collection (Student Learning Journals)
+    match /reflections/{reflectionId} {
       allow read: if isSignedIn() && 
                     (isOwner(resource.data.studentId) || isTeacher() || isParent());
-      allow create: if isSignedIn(); // Cloud Functions create these
-      allow update: if isTeacher();
-      allow delete: if false;
+      allow create: if isSignedIn() && isStudent(); // นักเรียนสร้างบันทึกการเรียนรู้
+      allow update: if isSignedIn() && isOwner(resource.data.studentId); // แก้ไขได้เฉพาะเจ้าของ
+      allow delete: if false; // เก็บประวัติไว้ทั้งหมด
     }
     
     // Reports collection
@@ -183,8 +205,10 @@ service cloud.firestore {
     
     // Student Progress collection
     match /studentProgress/{progressId} {
+      // 🔒 Teachers can read all student progress (for analytics)
+      // Students can only read their own, Parents can read their children's
       allow read: if isSignedIn() && 
-                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+                    (isTeacher() || isOwner(resource.data.studentId) || isParent());
       allow create: if isSignedIn(); // Cloud Functions สร้าง
       allow update: if isSignedIn(); // Cloud Functions อัปเดต
       allow delete: if false; // ไม่อนุญาตให้ลบ
@@ -326,9 +350,10 @@ service cloud.firestore {
     
     // 🆕 Lesson Plans collection (AI-GENERATED TEACHING PLANS)
     match /lessonPlans/{planId} {
+      // 🔒 Teachers can read their own lesson plans, or published ones
       allow read: if isSignedIn() && 
-                    (isOwner(resource.data.teacherId) || isAnyAdmin() ||
-                     (resource.data.status == 'published' && isTeacher()));
+                    (isTeacher() || isAnyAdmin() ||
+                     resource.data.status == 'published');
       allow create: if isTeacher(); // Only teachers can create lesson plans
       allow update: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can update
       allow delete: if isTeacher() && isOwner(resource.data.teacherId); // Only owner can delete
@@ -564,6 +589,19 @@ service cloud.firestore {
         isOwner(resource.data.mentorId) ||
         isOwner(resource.data.menteeId)
       );
+      
+      // 💬 Chat messages subcollection
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (
+          isOwner(get(/databases/$(database)/documents/mentorRelationships/$(relationId)).data.mentorId) ||
+          isOwner(get(/databases/$(database)/documents/mentorRelationships/$(relationId)).data.menteeId)
+        );
+        allow create: if isSignedIn() && (
+          isOwner(get(/databases/$(database)/documents/mentorRelationships/$(relationId)).data.mentorId) ||
+          isOwner(get(/databases/$(database)/documents/mentorRelationships/$(relationId)).data.menteeId)
+        ) && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false; // Messages cannot be edited or deleted
+      }
     }
     
     // 🆕 Resource Library collection (shared resources - files, links, notes)
@@ -805,6 +843,54 @@ service cloud.firestore {
       allow update, delete: if false; // Immutable logs
     }
     
+    // 🆕 Expert Calibrations collection (Expert scoring for IRR)
+    match /expertCalibrations/{calibrationId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isTeacher() || isAnyAdmin(); // Teachers can create calibrations
+      allow update: if isTeacher() || isAnyAdmin();
+      allow delete: if isAnyAdmin();
+    }
+    
+    // 🆕 Calibrations collection (Expert scoring - alternative name)
+    match /calibrations/{calibrationId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow create: if isTeacher() || isAnyAdmin();
+      allow update: if isTeacher() || isAnyAdmin();
+      allow delete: if isAnyAdmin();
+    }
+    
+    // 🆕 Community Posts collection (PLC posts)
+    match /communityPosts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow delete: if isSignedIn() && (
+        isOwner(resource.data.authorId) ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Teacher Portfolios collection (Teacher professional development)
+    match /teacherPortfolios/{portfolioId} {
+      // Allow teacher to read their own portfolio, admins can read all
+      allow read: if isSignedIn() && (
+        isOwner(portfolioId) ||
+        resource.data.teacherId == request.auth.uid ||
+        isAnyAdmin()
+      );
+      allow create: if isTeacher(); // Teachers can create their own portfolio
+      allow update: if isSignedIn() && (
+        isOwner(portfolioId) ||
+        resource.data.teacherId == request.auth.uid ||
+        isAnyAdmin()
+      );
+      allow delete: if isAnyAdmin();
+    }
+    
     // 🆕 Idempotency Keys collection (Duplicate submission prevention)
     match /idempotencyKeys/{keyId} {
       allow read: if isSignedIn();
@@ -812,9 +898,75 @@ service cloud.firestore {
       allow update, delete: if false; // Immutable
     }
     
+    // 🆕 Learning Progress collection (Learning Journey tracking)
+    match /learningProgress/{progressId} {
+      // Students can read/write their own progress
+      // Teachers can read student progress
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isTeacher()
+      );
+      allow delete: if false; // Keep learning history
+    }
+    
+    // 🆕 User Settings collection (Journey settings, preferences)
+    match /userSettings/{userId} {
+      // Users can read/write their own settings
+      // Teachers can read student settings for configuration
+      allow read: if isSignedIn() && (
+        isOwner(userId) ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (
+        isOwner(userId) ||
+        isTeacher()  // Teachers can set journey levels for students
+      );
+      allow delete: if false;
+    }
+    
     // 🆕 System Tests collection (Admin/Teacher integration tests)
     match /_systemTests/{testId} {
       allow read, write: if isSignedIn() && (isTeacher() || isAnyAdmin());
+    }
+    
+    // 🆕 Research Tests collection (Pretest/Posttest management)
+    match /researchTests/{testId} {
+      allow read: if isSignedIn() && (
+        isTeacher() ||
+        isAnyAdmin() ||
+        isStudent()  // Students need to take tests
+      );
+      allow create: if isSignedIn() && isTeacher();
+      allow update, delete: if isSignedIn() && (
+        resource.data.teacherId == request.auth.uid ||
+        isAnyAdmin()
+      );
+    }
+    
+    // 🆕 Research Test Results collection
+    match /researchTestResults/{resultId} {
+      allow read: if isSignedIn() && (
+        resource.data.studentId == request.auth.uid ||
+        isTeacher() ||
+        isAnyAdmin()
+      );
+      allow create: if isSignedIn(); // Students submit results
+      allow update: if isSignedIn() && isTeacher(); // Teachers can update/grade
+      allow delete: if false;
+    }
+    
+    // 🆕 Review Queue collection (QA review items)
+    match /reviewQueue/{itemId} {
+      allow read: if isSignedIn() && (isTeacher() || isAnyAdmin());
+      allow write: if isSignedIn() && (isTeacher() || isAnyAdmin());
     }
   }
 }

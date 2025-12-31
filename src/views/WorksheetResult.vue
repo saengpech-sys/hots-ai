@@ -209,6 +209,101 @@
         </div>
       </section>
 
+      <!-- 🆕 Multi-Agent Details Section -->
+      <section class="multi-agent-section" v-if="isMultiAgentMode">
+        <h2 class="section-title">
+          <span class="material-icons">smart_toy</span>
+          🤖×6 รายงาน Multi-Agent Assessment
+        </h2>
+        
+        <!-- Assessment Mode Badge -->
+        <div class="multi-agent-badge">
+          <span class="badge-icon">🔬</span>
+          <span class="badge-text">ประเมินด้วยระบบ Multi-Agent (6 AI Experts)</span>
+          <span class="confidence-badge" v-if="multiAgentMetadata?.consensusLevel">
+            {{ getConsensusLabel(multiAgentMetadata.consensusLevel) }}
+          </span>
+        </div>
+
+        <!-- 4 Specialist Agents -->
+        <div class="agents-grid">
+          <div v-for="agent in specialistAgents" :key="agent.key" 
+               class="agent-card" :class="agent.key">
+            <div class="agent-header">
+              <span class="agent-icon">{{ agent.icon }}</span>
+              <h4>Agent #{{ agent.number }}: {{ agent.name }}</h4>
+            </div>
+            <div class="agent-score">
+              <span class="score-value">{{ agent.score }}/5</span>
+              <span class="confidence-value">ความเชื่อมั่น: {{ getConfidencePercent(agent.confidence) }}%</span>
+            </div>
+            <p class="agent-feedback">{{ agent.feedback || 'ไม่มีข้อมูล' }}</p>
+            
+            <!-- Chain of Thought (Expandable) -->
+            <details v-if="agent.chainOfThought" class="chain-of-thought">
+              <summary>🧠 กระบวนการคิดของ Agent</summary>
+              <p>{{ agent.chainOfThought }}</p>
+            </details>
+          </div>
+        </div>
+
+        <!-- Agent #5: Adversarial Refiner -->
+        <div class="adversarial-section" v-if="agentDetails?.adversarial">
+          <h4><span class="agent-icon">⚖️</span> Agent #5: Adversarial Refiner</h4>
+          <div class="adversarial-content">
+            <div v-if="adversarialChallenges.length" class="challenges-list">
+              <p><strong>🔍 ข้อท้าทาย:</strong></p>
+              <ul>
+                <li v-for="(challenge, idx) in adversarialChallenges" :key="idx">{{ challenge }}</li>
+              </ul>
+            </div>
+            <div v-if="adversarialBiasDetected.length" class="bias-list">
+              <p><strong>⚠️ อคติที่ตรวจพบ:</strong></p>
+              <ul>
+                <li v-for="(bias, idx) in adversarialBiasDetected" :key="idx">{{ bias }}</li>
+              </ul>
+            </div>
+            <div v-if="!adversarialChallenges.length && !adversarialBiasDetected.length" class="no-issues">
+              ✅ ไม่พบปัญหาในการประเมิน
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent #6: Consensus Aggregator -->
+        <div class="consensus-section" v-if="agentDetails?.consensus">
+          <h4><span class="agent-icon">🎯</span> Agent #6: Consensus Aggregator</h4>
+          <div class="consensus-content">
+            <div class="consensus-scores">
+              <div class="consensus-item">
+                <span class="label">คะแนนรวม:</span>
+                <span class="value">{{ agentDetails.consensus.totalScore }}/20</span>
+              </div>
+              <div class="consensus-item">
+                <span class="label">ความเชื่อมั่น:</span>
+                <span class="value">{{ getConfidencePercent(agentDetails.consensus.confidence) }}%</span>
+              </div>
+              <div class="consensus-item">
+                <span class="label">ระดับ Consensus:</span>
+                <span class="value consensus-badge" :class="agentDetails.consensus.consensusLevel">
+                  {{ getConsensusLabel(agentDetails.consensus.consensusLevel) }}
+                </span>
+              </div>
+            </div>
+            <p class="consensus-feedback" v-if="agentDetails.consensus.feedback">
+              {{ agentDetails.consensus.feedback }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Processing Metadata -->
+        <div class="processing-meta" v-if="multiAgentMetadata">
+          <small>
+            ⏱️ เวลาประมวลผล: {{ multiAgentMetadata.processingTimeMs || 0 }}ms | 
+            🤖 จำนวน Agent: {{ multiAgentMetadata.agentCount || 6 }}
+          </small>
+        </div>
+      </section>
+
       <!-- Strengths & Weaknesses -->
       <section class="feedback-section">
         <div class="feedback-grid">
@@ -636,6 +731,60 @@ const loPercentage = computed(() => {
   const passed = loAssessment.value?.passedLOs?.length || 0
   return Math.round((passed / totalLOs.value) * 100)
 })
+
+// 🆕 Multi-Agent computed properties
+const isMultiAgentMode = computed(() => {
+  return assessment.value?.assessmentMode === 'multi-agent'
+})
+
+const agentDetails = computed(() => {
+  return assessment.value?.agentDetails || null
+})
+
+const multiAgentMetadata = computed(() => {
+  return assessment.value?.multiAgentMetadata || null
+})
+
+const specialistAgents = computed(() => {
+  if (!agentDetails.value) return []
+  
+  const agents = [
+    { key: 'analysis', number: 1, icon: '🔍', name: 'Analysis Expert' },
+    { key: 'reasoning', number: 2, icon: '🧠', name: 'Reasoning Expert' },
+    { key: 'creativity', number: 3, icon: '💡', name: 'Creativity Expert' },
+    { key: 'evidence', number: 4, icon: '📚', name: 'Evidence Expert' }
+  ]
+  
+  return agents.map(a => ({
+    ...a,
+    score: agentDetails.value[a.key]?.score || 0,
+    confidence: agentDetails.value[a.key]?.confidence || 0,
+    feedback: agentDetails.value[a.key]?.microFeedback || '',
+    chainOfThought: agentDetails.value[a.key]?.chainOfThought || ''
+  }))
+})
+
+const adversarialChallenges = computed(() => {
+  return agentDetails.value?.adversarial?.challenges || []
+})
+
+const adversarialBiasDetected = computed(() => {
+  return agentDetails.value?.adversarial?.biasDetected || []
+})
+
+function getConfidencePercent(confidence) {
+  if (!confidence) return 0
+  return confidence > 1 ? Math.round(confidence) : Math.round(confidence * 100)
+}
+
+function getConsensusLabel(level) {
+  const labels = {
+    high: '✅ สูง',
+    moderate: '📊 ปานกลาง',
+    low: '⚠️ ต่ำ'
+  }
+  return labels[level] || level || 'ไม่ระบุ'
+}
 
 function isLOPassed(loCode) {
   return loAssessment.value?.passedLOs?.includes(loCode) || false
@@ -2209,6 +2358,249 @@ onMounted(() => {
 .arce-answer-section:nth-child(3) { border-left-color: #f59e0b; }  /* Creativity */
 .arce-answer-section:nth-child(4) { border-left-color: #10b981; }  /* Evidence */
 
+/* 🆕 Multi-Agent Section Styles */
+.multi-agent-section {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.multi-agent-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6366f1;
+}
+
+.multi-agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.badge-icon {
+  font-size: 1.5rem;
+}
+
+.badge-text {
+  font-weight: 500;
+  color: #6366f1;
+}
+
+.confidence-badge {
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.agent-card {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.agent-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.agent-card.analysis { border-left: 4px solid #3b82f6; }
+.agent-card.reasoning { border-left: 4px solid #8b5cf6; }
+.agent-card.creativity { border-left: 4px solid #f59e0b; }
+.agent-card.evidence { border-left: 4px solid #10b981; }
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.agent-icon {
+  font-size: 1.25rem;
+}
+
+.agent-header h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.agent-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+}
+
+.score-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #6366f1;
+}
+
+.confidence-value {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.agent-feedback {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.chain-of-thought {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.chain-of-thought summary {
+  cursor: pointer;
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.chain-of-thought p {
+  margin: 0.5rem 0 0 0;
+  color: var(--text-secondary, #6b7280);
+  white-space: pre-wrap;
+}
+
+.adversarial-section,
+.consensus-section {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.adversarial-section h4,
+.consensus-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.challenges-list ul,
+.bias-list ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.challenges-list li,
+.bias-list li {
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.no-issues {
+  color: #10b981;
+  font-size: 0.875rem;
+}
+
+.consensus-scores {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.consensus-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.consensus-item .label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.consensus-item .value {
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.consensus-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.consensus-badge.high { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.consensus-badge.moderate { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.consensus-badge.low { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.consensus-feedback {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.5;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.processing-meta {
+  text-align: center;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  color: var(--text-muted, #9ca3af);
+}
+
+/* Dark mode for Multi-Agent */
+.dark-mode .multi-agent-section {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.dark-mode .agent-card,
+.dark-mode .adversarial-section,
+.dark-mode .consensus-section {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .agent-score {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .chain-of-thought {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .result-container {
@@ -2238,6 +2630,15 @@ onMounted(() => {
   
   .arce-breakdown-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .agents-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .consensus-scores {
+    flex-direction: column;
+    gap: 0.75rem;
   }
 }
 </style>

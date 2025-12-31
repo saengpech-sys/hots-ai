@@ -1,40 +1,37 @@
+/* Import Design System Tokens */
+@import './design-system.css';
+
+/* Import A.R.C.E. Component Styles */
+@import './arce-components.css';
+
+/* Legacy aliases for backward compatibility */
 :root {
-  --primary: #667eea;
-  --primary-dark: #5a67d8;
-  --secondary: #764ba2;
-  --success: #48bb78;
-  --warning: #ed8936;
-  --danger: #f56565;
-  --info: #4299e1;
+  --primary: var(--primary-500);
+  --primary-dark: var(--primary-600);
+  --secondary: var(--secondary-500);
+  --success: var(--success-500);
+  --warning: var(--warning-500);
+  --danger: var(--error-500);
+  --info: var(--info-500);
   
-  /* Light mode */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f7fafc;
-  --bg-tertiary: #edf2f7;
-  --text-primary: #1a202c;
-  --text-secondary: #4a5568;
-  --border-color: #e2e8f0;
+  /* Light mode aliases */
+  --border-color: var(--border-default);
   --shadow: rgba(0, 0, 0, 0.1);
-  --bg-hover: #edf2f7;
-  --primary-light: #ebf4ff;
-  --modal-bg: #ffffff;
-  --input-bg: #ffffff;
-  --card-bg: #ffffff;
+  --bg-hover: var(--bg-tertiary);
+  --primary-light: var(--primary-100);
+  --modal-bg: var(--surface-modal);
+  --input-bg: var(--bg-primary);
+  --card-bg: var(--surface-card);
 }
 
 .dark-mode {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --border-color: #475569;
+  --border-color: var(--border-default);
   --shadow: rgba(0, 0, 0, 0.5);
-  --bg-hover: #334155;
-  --primary-light: rgba(102, 126, 234, 0.2);
-  --modal-bg: #1e293b;
-  --input-bg: #0f172a;
-  --card-bg: #1e293b;
+  --bg-hover: var(--bg-tertiary);
+  --primary-light: rgba(99, 102, 241, 0.2);
+  --modal-bg: var(--surface-modal);
+  --input-bg: var(--bg-primary);
+  --card-bg: var(--surface-card);
 }
 
 html, body {
@@ -43,7 +40,7 @@ html, body {
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -137,4 +134,72 @@ body {
   .card {
     padding: 1rem;
   }
+}
+/* ===== MOBILE INPUT FIXES ===== */
+
+/* Prevent iOS zoom on input focus */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    font-size: 16px !important;
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/* Mobile-friendly input base styles */
+.mobile-input,
+.mobile-textarea {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Safe area support for iPhone X+ */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Fix for sticky elements on mobile */
+@media (max-width: 768px) {
+  .sticky-bottom {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+    background: var(--bg-primary);
+    z-index: 100;
+  }
+}
+
+/* Ensure touch targets are large enough on mobile */
+@media (max-width: 768px) {
+  .btn, 
+  button,
+  [role="button"],
+  input[type="submit"],
+  input[type="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Disable double-tap zoom on interactive elements */
+button,
+input,
+textarea,
+select,
+a {
+  touch-action: manipulation;
 }

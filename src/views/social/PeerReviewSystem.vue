@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/student')">← กลับ</button>
         <h1>👥 Peer Review</h1>
         <p class="subtitle">เรียนรู้จากการประเมินเพื่อน</p>
       </div>

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 3.0** | **Last Updated: December 21, 2025**
+**Version 3.0** | **Last Updated: December 31, 2025**
 
 *ชุดข้อมูลมาตรฐานสำหรับการทดสอบความน่าเชื่อถือระหว่างผู้ประเมิน (AI vs Expert)*
 
@@ -430,7 +430,7 @@ const adjacent = calculatePercentAgreement(scores1, scores2, 1);
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        IRR REPORT                                       │
-│                    Generated: December 21, 2025                         │
+│                    Generated: December 31, 2025                         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  Raters:         Expert 1 (Teacher A), Expert 2 (Teacher B), AI        │
@@ -506,6 +506,6 @@ const adjacent = calculatePercentAgreement(scores1, scores2, 1);
 
 **HOTS AI ChatLoop — Golden Dataset for IRR Testing**
 
-*Version 3.0 | December 21, 2025*
+*Version 3.0 | December 31, 2025*
 
 </div>

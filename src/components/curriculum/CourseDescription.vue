@@ -29,7 +29,7 @@
 - ความสัมพันธ์กับวิชาอื่น
 - การนำไปใช้ในชีวิตจริง"
         rows="5"
-        @input="$emit('update:edited-description', ($event.target as HTMLTextAreaElement).value)"
+        @input="onInput"
       ></textarea>
       <div class="char-counter" :class="charCountClass">
         {{ editedDescription.length }} ตัวอักษร (แนะนำ 100+ ตัวอักษร)
@@ -66,7 +66,7 @@ const props = defineProps({
   }
 })
 
-defineEmits([
+const emit = defineEmits([
   'start-edit',
   'save',
   'cancel',
@@ -77,6 +77,10 @@ const charCountClass = computed(() => ({
   'warning': props.editedDescription.length < 50,
   'good': props.editedDescription.length >= 100
 }))
+
+function onInput(event) {
+  emit('update:edited-description', event.target.value)
+}
 </script>
 
 <style scoped>

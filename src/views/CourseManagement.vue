@@ -232,6 +232,39 @@
             </p>
           </div>
 
+          <!-- 🤖 โหมดการประเมิน AI -->
+          <div class="form-group assessment-mode-section">
+            <label>โหมดการประเมิน AI</label>
+            <div class="assessment-mode-options">
+              <label class="assessment-mode-option" :class="{ active: formData.assessmentMode === 'single' }">
+                <input type="radio" v-model="formData.assessmentMode" value="single" />
+                <div class="option-content">
+                  <span class="option-icon">🤖</span>
+                  <div class="option-text">
+                    <span class="option-title">Single Agent</span>
+                    <span class="option-desc">AI 1 ตัว - เร็ว (~10 วินาที)</span>
+                  </div>
+                </div>
+              </label>
+              <label class="assessment-mode-option" :class="{ active: formData.assessmentMode === 'multi-agent' }">
+                <input type="radio" v-model="formData.assessmentMode" value="multi-agent" />
+                <div class="option-content">
+                  <span class="option-icon">🤖×6</span>
+                  <div class="option-text">
+                    <span class="option-title">Multi-Agent</span>
+                    <span class="option-desc">AI 6 ตัว - แม่นยำกว่า (~30 วินาที)</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+            <p v-if="formData.assessmentMode === 'multi-agent'" class="form-hint hint-info">
+              🔬 <strong>Multi-Agent:</strong> ใช้ AI 6 ตัวตรวจสอบข้ามกัน (Analysis, Reasoning, Creativity, Evidence + Adversarial + Consensus) ลด Bias และเพิ่มความแม่นยำ
+            </p>
+            <p v-else class="form-hint">
+              ⚡ <strong>Single Agent:</strong> เหมาะสำหรับการฝึกซ้อมและทดสอบย่อย ประหยัดเวลา
+            </p>
+          </div>
+
           <!-- รหัสวิชา -->
           <div class="form-group">
             <label>รหัสวิชา <span class="required">*</span></label>
@@ -627,7 +660,8 @@ const formData = ref({
   learningOutcomes: [],
   courseType: 'basic', // 'basic' = รายวิชาพื้นฐาน, 'elective' = รายวิชาเพิ่มเติม
   keyCompetencies: [], // สมรรถนะสำคัญของผู้เรียน
-  desiredCharacteristics: [] // คุณลักษณะอันพึงประสงค์
+  desiredCharacteristics: [], // คุณลักษณะอันพึงประสงค์
+  assessmentMode: 'single' // 'single' = Single Agent, 'multi-agent' = Multi-Agent (6 AI)
 })
 
 // Computed: มาตรฐานที่สามารถเลือกได้ตามกลุ่มสาระ
@@ -736,7 +770,8 @@ function openCreateModal() {
     learningOutcomes: [],
     courseType: 'basic',
     keyCompetencies: [],
-    desiredCharacteristics: []
+    desiredCharacteristics: [],
+    assessmentMode: 'single'
   }
   // Reset preset selection
   presetEducationLevel.value = ''
@@ -816,7 +851,8 @@ function editCourse(course) {
     learningOutcomes: [...course.learningOutcomes],
     courseType: course.courseType || 'basic',
     keyCompetencies: course.keyCompetencies || [],
-    desiredCharacteristics: course.desiredCharacteristics || []
+    desiredCharacteristics: course.desiredCharacteristics || [],
+    assessmentMode: course.assessmentMode || 'single'
   }
   showModal.value = true
 }
@@ -1892,6 +1928,48 @@ function closeModal() {
   background: rgba(59, 130, 246, 0.1);
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
+}
+
+/* 🤖 Assessment Mode Options */
+.assessment-mode-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--hover-bg);
+  border-radius: 12px;
+  border: 1px dashed var(--border-color);
+}
+
+.assessment-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.assessment-mode-option {
+  position: relative;
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem;
+  transition: all 0.2s ease;
+  background: var(--card-bg);
+}
+
+.assessment-mode-option:hover {
+  border-color: var(--primary);
+  background: var(--hover-bg);
+}
+
+.assessment-mode-option.active {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.assessment-mode-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
   border-left: 3px solid #3b82f6;
 }
 

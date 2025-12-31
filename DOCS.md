@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 5.2** | **Last Updated: December 22, 2025**
+**Version 6.0** | **Last Updated: December 31, 2025**
 
 *Comprehensive technical reference for developers, researchers, and system administrators*
 
@@ -37,24 +37,18 @@
 |-------|------------|---------|---------|
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI with Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
-| **Routing** | Vue Router | 4.x | 45+ routes with guards |
-| **Backend** | Firebase Cloud Functions | Node.js 20 | 41 serverless functions |
-| **Database** | Cloud Firestore | - | 25+ collections, real-time sync |
-| **AI Engine** | OpenAI API | GPT-4o-mini | Cost-effective LLM (15-20x cheaper than GPT-4o) |
-| **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
-| **Hosting** | Firebase Hosting | - | CDN-backed static hosting |
-| **PWA** | Vite PWA | - | Installable, offline-ready |
-
-### Project Statistics
+| **Routing** | Vue Router | 4.x | 93+ routes with guards |
+| **Backend** | Firebase Cloud Functions | Node.js 20 | 98 serverless functions |
+| **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Vue Components | 80+ | Including 45+ full views |
-| Cloud Functions | 41 | HTTP + Scheduled + Triggers |
-| Backend Code | 9,200+ lines | Modular architecture |
-| Firestore Collections | 25+ | Normalized schema |
-| Test Cases | 123 | 48 backend + 75 frontend |
-| Routes | 45+ | Role-based access control |
+| Vue Components | 122+ | 91 views + 31 components |
+| Cloud Functions | 98 | 82 in index.js + 16 national-scale |
+| Backend Code | 40,000+ lines | Modular architecture |
+| Firestore Collections | 30+ | Normalized schema |
+| Test Suites | 15 | 11 backend + 4 frontend |
+| Routes | 93+ | Role-based access control |
 | Pinia Stores | 8 | auth, chat, gamification, theme, lessonPlan, learningPath, notifications, dashboard |
 
 ### A.R.C.E. Framework Quick Reference
@@ -1233,11 +1227,11 @@ function meetsPublicationStandard(kappa, icc) {
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `functions/index.js` | All Cloud Functions, AI prompts | ~9200 |
-| `functions/utils/prompts.js` | Modular prompt templates | ~200 |
-| `functions/utils/loAssessment.js` | LO assessment logic | ~150 |
-| `functions/utils/aiParser.js` | JSON response cleaning | ~100 |
-| `functions/utils/reliability.js` | AI resilience & validation | ~500 |
+| `functions/index.js` | All Cloud Functions, AI prompts | ~13,400 |
+| `functions/national-scale.js` | National scale APIs | ~530 |
+| `functions/utils/prompts.js` | Modular prompt templates | ~320 |
+| `functions/utils/reliabilityEcosystem.js` | 8-layer reliability | ~1,100 |
+| `functions/utils/researchData.js` | Research data helpers | ~1,650 |
 | `functions/utils/interRaterReliability.js` | IRR metrics | ~700 |
 | `src/stores/chat.js` | Session management, question selection | ~600 |
 | `src/utils/loProgress.js` | **Standard LO counting** | ~420 |
@@ -1276,6 +1270,6 @@ firebase emulators:start       # Start all emulators
 
 **HOTS AI ChatLoop — Technical Documentation**
 
-*Version 5.2 | December 22, 2025*
+*Version 6.0 | December 31, 2025*
 
 </div>

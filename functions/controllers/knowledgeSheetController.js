@@ -6,11 +6,15 @@
 const functions = require('firebase-functions')
 const admin = require('firebase-admin')
 const cors = require('cors')({ origin: true })
-const OpenAI = require('openai')
+const { 
+  getOpenAIClient, 
+  openaiApiKeySecret,
+  getDefaultModel 
+} = require('../utils/openaiClient')
 const { parseAIResponse } = require('../utils/aiParser')
 
 const getDb = () => admin.firestore()
-const getOpenAI = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const getOpenAI = () => getOpenAIClient()
 
 /**
  * Generate Knowledge Sheet

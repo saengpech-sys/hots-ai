@@ -15,6 +15,18 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/register-school',
+    name: 'SchoolRegistration',
+    component: () => import('@/views/SchoolRegistration.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/registration-status',
+    name: 'RegistrationStatus',
+    component: () => import('@/views/RegistrationStatus.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/student',
     name: 'StudentDashboard',
     component: () => import('@/views/StudentDashboard.vue'),
@@ -182,6 +194,12 @@ const routes = [
     path: '/teacher-portfolio',
     name: 'TeacherPortfolio',
     component: () => import('@/views/TeacherPortfolio.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/teacher-certification',
+    name: 'TeacherCertification',
+    component: () => import('@/views/TeacherCertification.vue'),
     meta: { requiresAuth: true, role: 'teacher' }
   },
   {

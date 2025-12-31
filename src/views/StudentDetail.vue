@@ -2,7 +2,7 @@
   <div class="student-detail">
     <!-- Header -->
     <div class="page-header">
-      <button @click="$router.back()" class="back-btn">
+      <button @click="$router.push('/teacher')" class="back-btn">
         ← กลับ
       </button>
       <div class="header-content">
@@ -42,24 +42,38 @@
       <!-- Summary Stats -->
       <div class="summary-stats">
         <div class="stat-box">
-          <div class="stat-icon">📝</div>
+          <div class="stat-icon">�</div>
           <div class="stat-content">
             <div class="stat-value">{{ totalAssessments }}</div>
-            <div class="stat-label">ครั้งที่ประเมิน</div>
+            <div class="stat-label">Chat Assessment</div>
+          </div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-icon">📋</div>
+          <div class="stat-content">
+            <div class="stat-value">{{ totalWorksheets }}</div>
+            <div class="stat-label">ใบงาน</div>
           </div>
         </div>
         <div class="stat-box">
           <div class="stat-icon">📊</div>
           <div class="stat-content">
             <div class="stat-value">{{ averageScore.toFixed(1) }}/20</div>
-            <div class="stat-label">คะแนนเฉลี่ย</div>
+            <div class="stat-label">คะแนนเฉลี่ย Chat</div>
+          </div>
+        </div>
+        <div class="stat-box highlight" v-if="totalWorksheets > 0">
+          <div class="stat-icon">📈</div>
+          <div class="stat-content">
+            <div class="stat-value">{{ averageWorksheetScore.toFixed(0) }}%</div>
+            <div class="stat-label">คะแนนเฉลี่ย Worksheet</div>
           </div>
         </div>
         <div class="stat-box">
           <div class="stat-icon">🎯</div>
           <div class="stat-content">
             <div class="stat-value">{{ totalLOsPassed }}</div>
-            <div class="stat-label">LO ที่ผ่าน</div>
+            <div class="stat-label">LO ที่ผ่าน (รวม)</div>
           </div>
         </div>
         <div class="stat-box">
@@ -71,10 +85,67 @@
         </div>
       </div>
     </div>
+    
+    <!-- 🎮 Worksheet History (เพิ่มใหม่) -->
+    <div v-if="!loading && worksheetSubmissions.length > 0" class="worksheets-section">
+      <h2>📋 ประวัติการทำใบงาน ({{ worksheetSubmissions.length }} ชิ้น)</h2>
+      
+      <div 
+        v-for="(ws, index) in worksheetSubmissions"
+        :key="ws.id"
+        class="worksheet-card card"
+      >
+        <div class="worksheet-header">
+          <div class="worksheet-number">#{{ worksheetSubmissions.length - index }}</div>
+          <div class="worksheet-date">
+            📅 {{ formatDate(ws.submittedAt) }}
+          </div>
+          <div class="worksheet-score" :class="getScoreClass(ws.assessment?.summary?.percentage / 5 || 0)">
+            {{ ws.assessment?.summary?.percentage?.toFixed(0) || 0 }}%
+          </div>
+        </div>
+        
+        <div class="worksheet-info">
+          <div class="worksheet-title">{{ ws.worksheetTitle || 'ใบงาน' }}</div>
+          <div class="worksheet-meta">
+            <span>🏆 PA Level: {{ ws.assessment?.summary?.paLevel || '-' }}</span>
+            <span>📊 คะแนน: {{ ws.assessment?.summary?.totalScore || 0 }}/{{ ws.assessment?.summary?.maxScore || 20 }}</span>
+          </div>
+        </div>
+        
+        <!-- ARCE Scores -->
+        <div v-if="ws.assessment?.arceScores" class="arce-scores">
+          <div class="arce-item">
+            <span>🔍 A</span>
+            <span>{{ ws.assessment.arceScores.analysis?.raw || 0 }}/5</span>
+          </div>
+          <div class="arce-item">
+            <span>🧠 R</span>
+            <span>{{ ws.assessment.arceScores.reasoning?.raw || 0 }}/5</span>
+          </div>
+          <div class="arce-item">
+            <span>💡 C</span>
+            <span>{{ ws.assessment.arceScores.creativity?.raw || 0 }}/5</span>
+          </div>
+          <div class="arce-item">
+            <span>📚 E</span>
+            <span>{{ ws.assessment.arceScores.evidence?.raw || 0 }}/5</span>
+          </div>
+        </div>
+        
+        <!-- LO Passed -->
+        <div v-if="ws.loAssessment?.passedLOs?.length > 0" class="lo-passed">
+          <span class="lo-label">✅ LO ที่ผ่าน:</span>
+          <span class="lo-tags">
+            <span v-for="lo in ws.loAssessment.passedLOs" :key="lo" class="lo-tag">{{ lo }}</span>
+          </span>
+        </div>
+      </div>
+    </div>
 
     <!-- Assessment History -->
     <div v-if="!loading && assessments.length > 0" class="assessments-section">
-      <h2>📋 ประวัติการประเมินทั้งหมด ({{ assessments.length }} ครั้ง)</h2>
+      <h2>💬 ประวัติ Chat Assessment ({{ assessments.length }} ครั้ง)</h2>
 
       <div 
         v-for="(assessment, index) in assessments" 
@@ -185,6 +256,203 @@
             </ul>
           </div>
         </div>
+
+        <!-- Multi-Agent Details (For Teacher Review) -->
+        <div v-if="assessment.multiAgentMode && assessment.agentDetails" class="multi-agent-section">
+          <h4>🤖 Multi-Agent Assessment Details</h4>
+          <div class="agent-badge">
+            <span class="badge multi-agent">🤖 Multi-Agent Mode (6 AI Agents)</span>
+            <span v-if="assessment.confidence" class="confidence-badge">
+              🎯 ความมั่นใจ: {{ assessment.confidence > 1 ? assessment.confidence.toFixed(0) : (assessment.confidence * 100).toFixed(0) }}%
+            </span>
+          </div>
+          
+          <div class="agent-details-grid">
+            <!-- Analysis Agent -->
+            <div v-if="assessment.agentDetails.analysis" class="agent-card">
+              <div class="agent-header">
+                <span class="agent-icon">🔍</span>
+                <span class="agent-name">Analysis Agent</span>
+                <span class="agent-score">{{ assessment.agentDetails.analysis.score || 0 }}/5</span>
+              </div>
+              <div class="agent-confidence" v-if="assessment.agentDetails.analysis.confidence">
+                🎯 {{ assessment.agentDetails.analysis.confidence }}%
+              </div>
+              <div class="agent-rationale">
+                {{ assessment.agentDetails.analysis.microFeedback || assessment.agentDetails.analysis.rationale || 'ไม่มี feedback' }}
+              </div>
+              <div v-if="assessment.agentDetails.analysis.chainOfThought" class="agent-cot">
+                <details>
+                  <summary>📖 ดูกระบวนการคิด</summary>
+                  <pre>{{ JSON.stringify(assessment.agentDetails.analysis.chainOfThought, null, 2) }}</pre>
+                </details>
+              </div>
+            </div>
+
+            <!-- Reasoning Agent -->
+            <div v-if="assessment.agentDetails.reasoning" class="agent-card">
+              <div class="agent-header">
+                <span class="agent-icon">🧠</span>
+                <span class="agent-name">Reasoning Agent</span>
+                <span class="agent-score">{{ assessment.agentDetails.reasoning.score || 0 }}/5</span>
+              </div>
+              <div class="agent-confidence" v-if="assessment.agentDetails.reasoning.confidence">
+                🎯 {{ assessment.agentDetails.reasoning.confidence }}%
+              </div>
+              <div class="agent-rationale">
+                {{ assessment.agentDetails.reasoning.microFeedback || assessment.agentDetails.reasoning.rationale || 'ไม่มี feedback' }}
+              </div>
+              <div v-if="assessment.agentDetails.reasoning.chainOfThought" class="agent-cot">
+                <details>
+                  <summary>📖 ดูกระบวนการคิด</summary>
+                  <pre>{{ JSON.stringify(assessment.agentDetails.reasoning.chainOfThought, null, 2) }}</pre>
+                </details>
+              </div>
+            </div>
+
+            <!-- Creativity Agent -->
+            <div v-if="assessment.agentDetails.creativity" class="agent-card">
+              <div class="agent-header">
+                <span class="agent-icon">💡</span>
+                <span class="agent-name">Creativity Agent</span>
+                <span class="agent-score">{{ assessment.agentDetails.creativity.score || 0 }}/5</span>
+              </div>
+              <div class="agent-confidence" v-if="assessment.agentDetails.creativity.confidence">
+                🎯 {{ assessment.agentDetails.creativity.confidence }}%
+              </div>
+              <div class="agent-rationale">
+                {{ assessment.agentDetails.creativity.microFeedback || assessment.agentDetails.creativity.rationale || 'ไม่มี feedback' }}
+              </div>
+              <div v-if="assessment.agentDetails.creativity.chainOfThought" class="agent-cot">
+                <details>
+                  <summary>📖 ดูกระบวนการคิด</summary>
+                  <pre>{{ JSON.stringify(assessment.agentDetails.creativity.chainOfThought, null, 2) }}</pre>
+                </details>
+              </div>
+            </div>
+
+            <!-- Evidence Agent -->
+            <div v-if="assessment.agentDetails.evidence" class="agent-card">
+              <div class="agent-header">
+                <span class="agent-icon">📚</span>
+                <span class="agent-name">Evidence Agent</span>
+                <span class="agent-score">{{ assessment.agentDetails.evidence.score || 0 }}/5</span>
+              </div>
+              <div class="agent-confidence" v-if="assessment.agentDetails.evidence.confidence">
+                🎯 {{ assessment.agentDetails.evidence.confidence }}%
+              </div>
+              <div class="agent-rationale">
+                {{ assessment.agentDetails.evidence.microFeedback || assessment.agentDetails.evidence.rationale || 'ไม่มี feedback' }}
+              </div>
+              <div v-if="assessment.agentDetails.evidence.chainOfThought" class="agent-cot">
+                <details>
+                  <summary>📖 ดูกระบวนการคิด</summary>
+                  <pre>{{ JSON.stringify(assessment.agentDetails.evidence.chainOfThought, null, 2) }}</pre>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <!-- Adversarial Refiner Review (Agent #5) -->
+          <div v-if="assessment.agentDetails.adversarial" class="adversarial-section">
+            <h5>⚔️ Adversarial Refiner (Agent #5)</h5>
+            <div class="adversarial-content">
+              <!-- Refined Scores -->
+              <div v-if="assessment.agentDetails.adversarial.refinedScores" class="refined-scores">
+                <strong>🔄 คะแนนที่ปรับปรุง:</strong>
+                <div class="score-grid">
+                  <div v-for="(item, key) in assessment.agentDetails.adversarial.refinedScores" :key="key" class="refined-item">
+                    <span class="dim-name">{{ key }}</span>
+                    <span v-if="item.changed" class="changed">
+                      {{ item.original }} → {{ item.refined }}
+                    </span>
+                    <span v-else class="unchanged">{{ item.refined || item.original }} ✓</span>
+                    <span v-if="item.reason" class="reason">{{ item.reason }}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Challenges -->
+              <div v-if="assessment.agentDetails.adversarial.challenges?.length > 0" class="challenges">
+                <strong>🎯 ข้อท้าทาย:</strong>
+                <ul>
+                  <li v-for="(challenge, idx) in assessment.agentDetails.adversarial.challenges" :key="idx">
+                    <strong>{{ challenge.targetAgent }}:</strong> {{ challenge.challenge }}
+                    <span v-if="challenge.recommendation" class="recommendation">
+                      → {{ challenge.recommendation }}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+              
+              <!-- Bias Detection -->
+              <div v-if="assessment.agentDetails.adversarial.biasDetected?.length > 0" class="bias-list">
+                <strong>⚠️ Bias ที่ตรวจพบ:</strong>
+                <ul>
+                  <li v-for="(bias, idx) in assessment.agentDetails.adversarial.biasDetected" :key="idx">
+                    {{ bias.type }} ({{ bias.severity }}): {{ bias.evidence }}
+                  </li>
+                </ul>
+              </div>
+              
+              <!-- Confidence -->
+              <div v-if="assessment.agentDetails.adversarial.overallConfidence" class="adversarial-confidence">
+                🎯 ความมั่นใจ Adversarial: {{ assessment.agentDetails.adversarial.overallConfidence }}%
+              </div>
+              
+              <!-- Summary -->
+              <div v-if="assessment.agentDetails.adversarial.refinementSummary" class="summary">
+                <strong>📝 สรุป:</strong> {{ assessment.agentDetails.adversarial.refinementSummary }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Consensus Aggregator (Agent #6) -->
+          <div v-if="assessment.agentDetails.consensus" class="consensus-section">
+            <h5>🤝 Consensus Aggregator (Agent #6)</h5>
+            <div class="consensus-content">
+              <!-- Final Scores -->
+              <div v-if="assessment.agentDetails.consensus.rubricScores" class="final-scores">
+                <strong>📊 คะแนนสุดท้าย:</strong>
+                <div class="score-tags">
+                  <span v-for="(score, key) in assessment.agentDetails.consensus.rubricScores" :key="key" class="score-tag">
+                    {{ key }}: {{ score }}/5
+                  </span>
+                  <span class="score-tag total">
+                    รวม: {{ assessment.agentDetails.consensus.totalScore }}/20
+                  </span>
+                </div>
+              </div>
+              
+              <!-- Confidence -->
+              <div v-if="assessment.agentDetails.consensus.confidence" class="consensus-confidence">
+                🎯 ความมั่นใจรวม: {{ assessment.agentDetails.consensus.confidence }}%
+                <span v-if="assessment.agentDetails.consensus.confidenceReason" class="confidence-reason">
+                  ({{ assessment.agentDetails.consensus.confidenceReason }})
+                </span>
+              </div>
+              
+              <!-- Consensus Level -->
+              <div v-if="assessment.agentDetails.consensus.consensusLevel" class="consensus-level">
+                <span :class="['level-badge', assessment.agentDetails.consensus.consensusLevel]">
+                  {{ assessment.agentDetails.consensus.consensusLevel === 'high' ? '🟢 High Consensus' : 
+                     assessment.agentDetails.consensus.consensusLevel === 'medium' ? '🟡 Medium Consensus' : 
+                     '🔴 Low Consensus' }}
+                </span>
+              </div>
+              
+              <!-- Feedback -->
+              <div v-if="assessment.agentDetails.consensus.feedback" class="consensus-feedback">
+                <strong>💬 Feedback:</strong> {{ assessment.agentDetails.consensus.feedback }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Processing Time -->
+          <div v-if="assessment.processingTime" class="processing-info">
+            ⏱️ เวลาประมวลผล: {{ (assessment.processingTime / 1000).toFixed(1) }}s
+          </div>
+        </div>
       </div>
     </div>
 
@@ -211,6 +479,7 @@ const router = useRouter()
 const loading = ref(true)
 const studentInfo = ref(null)
 const assessments = ref([])
+const worksheetSubmissions = ref([])  // 🎮 เพิ่มข้อมูล Worksheet
 
 const studentId = route.params.studentId
 const courseId = route.query.courseId
@@ -275,6 +544,36 @@ async function loadStudentData() {
         const dateB = b.createdAt?.toMillis() || 0
         return dateB - dateA
       })
+    
+    // 🎮 Load worksheet submissions (เพิ่มใหม่)
+    const worksheetsRef = collection(db, 'worksheetSubmissions')
+    let wsQuery
+    if (courseId) {
+      wsQuery = query(
+        worksheetsRef,
+        where('studentId', '==', studentId),
+        where('courseId', '==', courseId),
+        where('status', '==', 'graded')
+      )
+    } else {
+      wsQuery = query(
+        worksheetsRef,
+        where('studentId', '==', studentId),
+        where('status', '==', 'graded')
+      )
+    }
+    
+    const wsSnapshot = await getDocs(wsQuery)
+    worksheetSubmissions.value = wsSnapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a, b) => {
+        const dateA = a.submittedAt?.toMillis() || 0
+        const dateB = b.submittedAt?.toMillis() || 0
+        return dateB - dateA
+      })
 
   } catch (error) {
     console.error('Error loading student data:', error)
@@ -286,6 +585,8 @@ async function loadStudentData() {
 
 // Computed properties
 const totalAssessments = computed(() => assessments.value.length)
+const totalWorksheets = computed(() => worksheetSubmissions.value.length)  // 🎮 เพิ่ม
+const totalActivities = computed(() => totalAssessments.value + totalWorksheets.value)  // 🎮 รวมทั้งหมด
 
 const averageScore = computed(() => {
   if (assessments.value.length === 0) return 0
@@ -293,11 +594,25 @@ const averageScore = computed(() => {
   return total / assessments.value.length
 })
 
+// 🎮 คะแนนเฉลี่ย Worksheet
+const averageWorksheetScore = computed(() => {
+  if (worksheetSubmissions.value.length === 0) return 0
+  const total = worksheetSubmissions.value.reduce((sum, ws) => sum + (ws.assessment?.summary?.percentage || 0), 0)
+  return total / worksheetSubmissions.value.length
+})
+
 const totalLOsPassed = computed(() => {
   const uniqueLOs = new Set()
+  // จาก Chat assessments
   assessments.value.forEach(a => {
     if (a.loAssessment?.passedLOs) {
       a.loAssessment.passedLOs.forEach(lo => uniqueLOs.add(lo))
+    }
+  })
+  // 🎮 จาก Worksheet submissions
+  worksheetSubmissions.value.forEach(ws => {
+    if (ws.loAssessment?.passedLOs) {
+      ws.loAssessment.passedLOs.forEach(lo => uniqueLOs.add(lo))
     }
   })
   return uniqueLOs.size
@@ -781,6 +1096,428 @@ async function exportReport() {
   .score-item {
     grid-template-columns: 100px 1fr 50px;
     gap: 0.5rem;
+  }
+}
+
+/* 🎮 Worksheet Styles (เพิ่มใหม่) */
+.worksheets-section {
+  margin-bottom: 2rem;
+}
+
+.worksheets-section h2 {
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.worksheet-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  border-left: 4px solid #10b981;
+}
+
+.worksheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.worksheet-number {
+  background: #10b981;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.worksheet-date {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.worksheet-score {
+  font-size: 1.5rem;
+  font-weight: bold;
+  padding: 0.25rem 0.75rem;
+  border-radius: 8px;
+}
+
+.worksheet-score.excellent { background: #10b981; color: white; }
+.worksheet-score.good { background: #3b82f6; color: white; }
+.worksheet-score.fair { background: #f59e0b; color: white; }
+.worksheet-score.poor { background: #ef4444; color: white; }
+
+.worksheet-info {
+  margin-bottom: 1rem;
+}
+
+.worksheet-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.worksheet-meta {
+  display: flex;
+  gap: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.arce-scores {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  background: var(--bg-secondary);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.arce-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.arce-item span:first-child {
+  font-size: 1.2rem;
+}
+
+.arce-item span:last-child {
+  font-weight: bold;
+  color: var(--primary-color);
+}
+
+.lo-passed {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lo-label {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.lo-tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lo-tag {
+  background: #10b981;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.stat-box.highlight {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.stat-box.highlight .stat-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Multi-Agent Assessment Section */
+.multi-agent-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px dashed var(--border-color);
+}
+
+.multi-agent-section h4 {
+  color: var(--primary-color);
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.agent-badge {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.badge.multi-agent {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.confidence-badge {
+  background: var(--bg-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.agent-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.agent-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.agent-icon {
+  font-size: 1.25rem;
+}
+
+.agent-name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.agent-score {
+  background: var(--primary-color);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.agent-rationale {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.agent-confidence {
+  font-size: 0.8rem;
+  color: var(--primary-color);
+  margin-bottom: 0.5rem;
+}
+
+.agent-cot {
+  margin-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 0.5rem;
+}
+
+.agent-cot summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.agent-cot pre {
+  background: var(--bg-primary);
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.adversarial-section,
+.consensus-section {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.adversarial-section {
+  border-left: 4px solid #f59e0b;
+}
+
+.consensus-section {
+  border-left: 4px solid #10b981;
+}
+
+.adversarial-section h5,
+.consensus-section h5 {
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+}
+
+.adversarial-content,
+.consensus-content {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.refined-scores .score-grid {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.refined-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.refined-item .dim-name {
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.refined-item .changed {
+  color: #f59e0b;
+  font-weight: bold;
+}
+
+.refined-item .unchanged {
+  color: #10b981;
+}
+
+.refined-item .reason {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.challenges ul,
+.bias-list ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.challenges li,
+.bias-list li {
+  margin-bottom: 0.5rem;
+}
+
+.recommendation {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.adversarial-confidence,
+.consensus-confidence {
+  margin-top: 0.75rem;
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.confidence-reason {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.consensus-level {
+  margin-top: 0.5rem;
+}
+
+.level-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.level-badge.high {
+  background: #10b98122;
+  color: #10b981;
+}
+
+.level-badge.medium {
+  background: #f59e0b22;
+  color: #f59e0b;
+}
+
+.level-badge.low {
+  background: #ef444422;
+  color: #ef4444;
+}
+
+.consensus-feedback {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.score-tag.total {
+  background: var(--primary-color);
+  font-weight: bold;
+}
+
+.adjustments ul,
+.concerns {
+  margin: 0.5rem 0;
+}
+
+.adjustments li {
+  margin-left: 1.5rem;
+}
+
+.score-tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.score-tag {
+  background: var(--primary-color);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.processing-info {
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .agent-details-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .agent-badge {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

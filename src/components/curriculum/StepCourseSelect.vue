@@ -11,7 +11,7 @@
         <select 
           :value="selectedCourseId" 
           class="form-control" 
-          @change="$emit('select-course', ($event.target as HTMLSelectElement).value)"
+          @change="onCourseChange"
         >
           <option value="">-- เลือกรายวิชา --</option>
           <option v-for="course in courses" :key="course.id" :value="course.id">
@@ -136,7 +136,7 @@ const props = defineProps({
   }
 })
 
-defineEmits([
+const emit = defineEmits([
   'select-course',
   'continue',
   'reset',
@@ -146,6 +146,10 @@ defineEmits([
   'cancel-edit-description',
   'update:edited-description'
 ])
+
+function onCourseChange(event) {
+  emit('select-course', event.target.value)
+}
 </script>
 
 <style scoped>

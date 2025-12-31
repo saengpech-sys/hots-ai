@@ -1,7 +1,9 @@
 # HOTS AI ChatLoop - AI Coding Agent Instructions
 
 ## Project Overview
-Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions. Now includes Electronic Worksheets, Lesson Plans, and National Scale features.
+Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions. Now includes Electronic Worksheets, Lesson Plans, National Scale features, and 8-Layer Reliability Ecosystem.
+
+**Version:** 6.0.0 | **Last Updated:** December 31, 2025
 
 ## 🗺️ Navigation & Access
 **Complete Guide**: See [NAVIGATION_GUIDE.md](../NAVIGATION_GUIDE.md)
@@ -9,7 +11,7 @@ Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using O
 ### Student Features (9 Menus)
 All accessible from `/student` Dashboard Quick Actions:
 - 🚀 `/chat` - Start Assessment (Primary highlighted button)
-- 🏫 `/learning-rooms` - Learning activity rooms (✨ NEW - Worksheets)
+- 🏫 `/learning-rooms` - Learning activity rooms (Worksheets)
 - 📈 `/my-progress` - LO Progress tracking
 - 📊 `/progress-analytics` - Detailed analytics
 - 🎯 `/adaptive-learning` - Personalized paths
@@ -18,7 +20,7 @@ All accessible from `/student` Dashboard Quick Actions:
 - 🗺️ `/progress-map` - LO visualization
 - 👤 `/profile` - User profile
 
-### Teacher Features (12 Menus)
+### Teacher Features (14+ Menus)
 All accessible from `/teacher` Dashboard Quick Actions:
 - 📚 `/courses` - Course management
 - 💡 `/questions` - Question bank
@@ -26,20 +28,23 @@ All accessible from `/teacher` Dashboard Quick Actions:
 - 🎯 `/lo-reports` - LO reports
 - 🔮 `/teacher-analytics` - AI Predictions
 - 📡 `/realtime-monitor` - Live monitoring
-- 📝 `/lesson-plans` - Lesson plan management (✨ NEW - 5E + A.R.C.E.)
-- 📋 `/teacher/worksheets` - Electronic worksheets (✨ NEW)
-- 📊 `/teacher/worksheet-reports` - Worksheet reports (✨ NEW)
+- 📝 `/lesson-plans` - Lesson plan management (5E + A.R.C.E.)
+- 📋 `/teacher/worksheets` - Electronic worksheets
+- 📊 `/teacher/worksheet-reports` - Worksheet reports
 - 📖 `/micro-lessons` - Lesson management
 - 📚 `/micro-lesson-library` - Lesson library
 - 👥 `/student-detail/:id` - Student details
+- 🎓 `/curriculum-designer` - AI Curriculum Designer
+- 📄 `/knowledge-sheet/:id` - Knowledge sheets
 
 ## Architecture & Data Flow
 
 ### Tech Stack
-- **Frontend**: Vue 3.4 + Vite 5 + Pinia (Composition API pattern)
-- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20)
-- **AI**: OpenAI GPT-4o-mini (switched from gpt-4o for cost savings)
+- **Frontend**: Vue 3.4 + Vite 5 + Pinia (Composition API pattern) — 91 views, 31 components
+- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20) — 98 APIs (82 + 16 national-scale)
+- **AI**: OpenAI GPT-4o-mini with Deterministic Mode (temperature=0, seed=42)
 - **Deployment**: Firebase Hosting + Functions
+- **Code**: 40,000+ lines backend, 93+ routes
 
 ### Critical Flow: Student Answer Assessment
 1. Student types answer in `ChatView.vue` (copy-paste blocked)

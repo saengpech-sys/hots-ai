@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="task-header">
       <div class="header-top">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/student')">← กลับ</button>
         <div class="task-status-badge" :class="task.status">
           {{ getStatusLabel(task.status) }}
         </div>

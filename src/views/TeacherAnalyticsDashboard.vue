@@ -1,66 +1,85 @@
 <template>
   <div class="teacher-analytics">
-    <div class="page-header">
-      <div>
-        <h1>🎯 แดชบอร์ดวิเคราะห์ข้อมูลนักเรียน</h1>
-        <p>การคาดการณ์และข้อเสนอแนะเชิงลึกสำหรับการแทรกแซงการเรียนรู้</p>
+    <!-- Animated Background Orbs -->
+    <div class="orb-container">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <!-- Hero Header -->
+    <div class="hero-header glass-panel">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-icon">🎯</span>
+          <span>AI Analytics Hub</span>
+        </div>
+        <h1 class="hero-title">
+          <span class="gradient-text">แดชบอร์ดวิเคราะห์ข้อมูลนักเรียน</span>
+        </h1>
+        <p class="hero-subtitle">การคาดการณ์และข้อเสนอแนะเชิงลึกสำหรับการแทรกแซงการเรียนรู้</p>
       </div>
       <div class="header-actions">
-        <select v-model="selectedCourse" class="course-select" @change="loadAnalytics">
+        <select v-model="selectedCourse" class="glass-select" @change="loadAnalytics">
           <option value="">วิชาทั้งหมด</option>
           <option v-for="course in courses" :key="course.id" :value="course.id">
             {{ course.courseCode }} - {{ course.courseName }}
           </option>
         </select>
-        <select v-model="selectedGrade" class="grade-select" @change="loadRoomsAndAnalytics">
+        <select v-model="selectedGrade" class="glass-select" @change="loadRoomsAndAnalytics">
           <option value="">ชั้นทั้งหมด</option>
           <option v-for="grade in availableGrades" :key="grade" :value="grade">
             {{ grade }}
           </option>
         </select>
-        <select v-model="selectedRoom" class="room-select" @change="filterStudents" :disabled="!selectedGrade">
+        <select v-model="selectedRoom" class="glass-select" @change="filterStudents" :disabled="!selectedGrade">
           <option value="">ห้องทั้งหมด</option>
           <option v-for="room in availableRooms" :key="room" :value="room">
             ห้อง {{ room }}
           </option>
         </select>
-        <select v-model="timeRange" class="time-select" @change="loadAnalytics">
+        <select v-model="timeRange" class="glass-select" @change="loadAnalytics">
           <option value="7">7 วันที่ผ่านมา</option>
           <option value="14">14 วันที่ผ่านมา</option>
           <option value="30">30 วันที่ผ่านมา</option>
         </select>
-        <button @click="exportReport" class="btn btn-outline">
-          📥 ส่งออกรายงาน
+        <button @click="exportReport" class="btn btn-glass">
+          <span class="material-icons">download</span>
+          ส่งออกรายงาน
         </button>
       </div>
     </div>
 
-    <div v-if="loading" class="loading-state">
-      <div class="spinner"></div>
+    <div v-if="loading" class="loading-state glass-panel">
+      <div class="loader-ring"></div>
       <p>กำลังโหลดข้อมูลการวิเคราะห์...</p>
     </div>
 
     <div v-else class="analytics-content">
       <!-- Risk Distribution Summary -->
-      <div class="risk-summary card">
-        <h3>🚨 การกระจายระดับความเสี่ยงของนักเรียน</h3>
+      <div class="risk-summary glass-card">
+        <h3 class="section-title"><span class="gradient-text">🚨 การกระจายระดับความเสี่ยงของนักเรียน</span></h3>
         <div class="risk-cards">
           <div class="risk-card critical" @click="filterByRisk('critical')">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ riskDistribution.critical }}</div>
             <div class="risk-label">เสี่ยงวิกฤต</div>
             <div class="risk-desc">ต้องการแทรกแซงทันที</div>
           </div>
           <div class="risk-card high" @click="filterByRisk('high')">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ riskDistribution.high }}</div>
             <div class="risk-label">เสี่ยงสูง</div>
             <div class="risk-desc">ต้องติดตามอย่างใกล้ชิด</div>
           </div>
           <div class="risk-card moderate" @click="filterByRisk('moderate')">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ riskDistribution.moderate }}</div>
             <div class="risk-label">เสี่ยงปานกลาง</div>
             <div class="risk-desc">ติดตามเป็นระยะ</div>
           </div>
           <div class="risk-card low" @click="filterByRisk('low')">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ riskDistribution.low }}</div>
             <div class="risk-label">เสี่ยงต่ำ</div>
             <div class="risk-desc">เรียนได้ดี</div>
@@ -69,20 +88,23 @@
       </div>
 
       <!-- Talent Discovery Summary -->
-      <div class="risk-summary card" style="margin-top: 20px;">
-        <h3>🌟 การค้นพบพรสวรรค์ (Talent Discovery)</h3>
+      <div class="risk-summary glass-card">
+        <h3 class="section-title"><span class="gradient-text">🌟 การค้นพบพรสวรรค์ (Talent Discovery)</span></h3>
         <div class="risk-cards">
           <div class="risk-card talent-card research">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ talentStats.research }}</div>
             <div class="risk-label">Research Track</div>
             <div class="risk-desc">นักวิจัยรุ่นเยาว์</div>
           </div>
           <div class="risk-card talent-card innovation">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ talentStats.innovation }}</div>
             <div class="risk-label">Innovation Track</div>
             <div class="risk-desc">นวัตกรสร้างสรรค์</div>
           </div>
           <div class="risk-card talent-card total">
+            <div class="risk-glow"></div>
             <div class="risk-count">{{ talentStats.total }}</div>
             <div class="risk-label">รวมนักเรียนเก่ง</div>
             <div class="risk-desc">มีศักยภาพสูง</div>
@@ -91,24 +113,25 @@
       </div>
 
       <!-- At-Risk Students List -->
-      <div class="at-risk-students card">
+      <div class="at-risk-students glass-card">
         <div class="card-header">
           <div>
-            <h3>⚠️ นักเรียนที่ต้องเฝ้าระวัง ({{ filteredStudents.length }} คน)</h3>
+            <h3 class="section-title"><span class="gradient-text">⚠️ นักเรียนที่ต้องเฝ้าระวัง</span> ({{ filteredStudents.length }} คน)</h3>
             <div v-if="selectedGrade || selectedRoom" class="filter-info">
-              <span v-if="selectedGrade">📚 {{ selectedGrade }}</span>
-              <span v-if="selectedRoom">🚪 ห้อง {{ selectedRoom }}</span>
+              <span v-if="selectedGrade" class="filter-badge">📚 {{ selectedGrade }}</span>
+              <span v-if="selectedRoom" class="filter-badge">🚪 ห้อง {{ selectedRoom }}</span>
             </div>
           </div>
-          <button @click="refreshAnalytics" class="btn btn-sm btn-outline">🔄 รีเฟรช</button>
+          <button @click="refreshAnalytics" class="btn btn-glow btn-sm">🔄 รีเฟรช</button>
         </div>
         
-        <div v-if="filteredStudents.length === 0" class="empty-state">
-          <p>{{ activeRiskFilter ? 'ไม่มีนักเรียนในกลุ่มเสี่ยงนี้' : 'ไม่มีนักเรียนที่ต้องเฝ้าระวัง! 🎉' }}</p>
+        <div v-if="filteredStudents.length === 0" class="empty-state glass-panel">
+          <div class="empty-icon">🎉</div>
+          <p>{{ activeRiskFilter ? 'ไม่มีนักเรียนในกลุ่มเสี่ยงนี้' : 'ไม่มีนักเรียนที่ต้องเฝ้าระวัง!' }}</p>
         </div>
 
         <div v-else class="students-list">
-          <div v-for="student in filteredStudents" :key="student.id" class="student-row">
+          <div v-for="student in filteredStudents" :key="student.id" class="student-row glass-row">
             <div class="student-info">
               <div class="student-avatar" :class="`risk-${student.riskLevel}`">
                 {{ student.studentId?.slice(-2) || '??' }}
@@ -141,10 +164,10 @@
             </div>
 
             <div class="actions">
-              <button @click="viewIntervention(student)" class="btn btn-sm btn-primary">
+              <button @click="viewIntervention(student)" class="btn btn-glow btn-sm">
                 📋 ดูแผน
               </button>
-              <button @click="generateIntervention(student)" class="btn btn-sm btn-outline"
+              <button @click="generateIntervention(student)" class="btn btn-glass btn-sm"
                       :disabled="generatingFor === student.id">
                 {{ generatingFor === student.id ? '⏳' : '🤖' }} สร้างแผน
               </button>
@@ -154,8 +177,8 @@
       </div>
 
       <!-- Class Skill Gap Heatmap -->
-      <div class="heatmap-container card">
-        <h3>🔥 แผนที่ความร้อนช่องว่างทักษะทั้งห้อง</h3>
+      <div class="heatmap-container glass-card">
+        <h3 class="section-title"><span class="gradient-text">🔥 แผนที่ความร้อนช่องว่างทักษะทั้งห้อง</span></h3>
         <p class="subtitle">สีเข้มขึ้น = นักเรียนที่มีปัญหาในมิตินี้มากขึ้น</p>
         
         <div class="heatmap">
@@ -647,92 +670,234 @@ onMounted(() => {
   max-width: 1600px;
   margin: 0 auto;
   padding: 2rem;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0d1421 100%);
+  position: relative;
+  overflow: hidden;
 }
 
-.page-header {
+/* Animated Orbs */
+.orb-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: float 20s ease-in-out infinite;
+}
+
+.orb-1 {
+  width: 600px;
+  height: 600px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  top: -200px;
+  right: -200px;
+}
+
+.orb-2 {
+  width: 500px;
+  height: 500px;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  bottom: -150px;
+  left: -150px;
+  animation-delay: -7s;
+}
+
+.orb-3 {
+  width: 400px;
+  height: 400px;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -14s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(50px, -50px) scale(1.05); }
+  50% { transform: translate(-30px, 30px) scale(0.95); }
+  75% { transform: translate(-50px, -30px) scale(1.02); }
+}
+
+/* Hero Header */
+.hero-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 2rem;
   margin-bottom: 2rem;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
 }
 
-.page-header h1 {
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 50px;
+  font-size: 0.8rem;
+  color: #a78bfa;
+  margin-bottom: 1rem;
+}
+
+.badge-icon {
+  font-size: 1rem;
+}
+
+.hero-title {
   margin: 0 0 0.5rem 0;
-  color: var(--text-primary);
+  font-size: 2rem;
+  font-weight: 800;
 }
 
-.page-header p {
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-subtitle {
   margin: 0;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
 }
 
 .header-actions {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.course-select, 
-.grade-select, 
-.room-select, 
-.time-select {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+/* Glass Components */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+}
+
+.glass-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 2rem;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.glass-select {
+  padding: 0.75rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
   min-width: 150px;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
 }
 
-.course-select:hover,
-.grade-select:hover,
-.room-select:hover:not(:disabled),
-.time-select:hover {
-  border-color: var(--primary);
+.glass-select:hover:not(:disabled) {
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(0, 0, 0, 0.4);
 }
 
-.room-select:disabled {
+.glass-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  background: var(--bg-secondary);
 }
 
+.glass-select option {
+  background: #1a1a3e;
+  color: #fff;
+}
+
+.glass-row {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+.glass-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateX(5px);
+}
+
+/* Section Title */
+.section-title {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+/* Loading State */
 .loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 4rem;
+  position: relative;
+  z-index: 1;
 }
 
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid var(--border-color);
-  border-top-color: var(--primary);
+.loader-ring {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #667eea;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
+.loading-state p {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Analytics Content */
 .analytics-content {
   display: flex;
   flex-direction: column;
   gap: 2rem;
-}
-
-.risk-summary {
-  padding: 2rem;
+  position: relative;
+  z-index: 1;
 }
 
 .risk-summary h3 {
   margin: 0 0 1.5rem 0;
 }
 
+/* Risk Cards with Glassmorphism */
 .risk-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -740,55 +905,96 @@ onMounted(() => {
 }
 
 .risk-card {
-  padding: 1.5rem;
-  border-radius: 12px;
+  position: relative;
+  padding: 2rem;
+  border-radius: 20px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  text-align: center;
+  overflow: hidden;
+}
+
+.risk-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 
 .risk-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  transform: translateY(-8px);
+}
+
+.risk-card:hover .risk-glow {
+  opacity: 1;
 }
 
 .risk-card.critical {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25));
+  border: 1px solid rgba(239, 68, 68, 0.4);
   color: white;
+}
+
+.risk-card.critical .risk-glow {
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
 }
 
 .risk-card.high {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.25));
+  border: 1px solid rgba(245, 158, 11, 0.4);
   color: white;
+}
+
+.risk-card.high .risk-glow {
+  box-shadow: 0 0 40px rgba(245, 158, 11, 0.5);
 }
 
 .risk-card.moderate {
-  background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(202, 138, 4, 0.25));
+  border: 1px solid rgba(234, 179, 8, 0.4);
   color: white;
+}
+
+.risk-card.moderate .risk-glow {
+  box-shadow: 0 0 40px rgba(234, 179, 8, 0.5);
 }
 
 .risk-card.low {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25));
+  border: 1px solid rgba(16, 185, 129, 0.4);
   color: white;
 }
 
+.risk-card.low .risk-glow {
+  box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+}
+
 .risk-count {
-  font-size: 3rem;
-  font-weight: 700;
+  font-size: 3.5rem;
+  font-weight: 800;
   margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.8) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .risk-label {
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 0.25rem;
 }
 
 .risk-desc {
-  font-size: 0.875rem;
-  opacity: 0.9;
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
+/* At-Risk Students Card */
 .at-risk-students {
   padding: 2rem;
 }
@@ -802,23 +1008,42 @@ onMounted(() => {
 
 .card-header h3 {
   margin: 0 0 0.5rem 0;
+  color: white;
 }
 
 .filter-info {
   display: flex;
   gap: 0.75rem;
   margin-top: 0.5rem;
-  font-size: 0.875rem;
 }
 
 .filter-info span {
-  padding: 0.25rem 0.75rem;
-  background: var(--primary);
-  color: white;
-  border-radius: 12px;
+  padding: 0.35rem 0.85rem;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: #a78bfa;
+  border-radius: 20px;
   font-weight: 500;
+  font-size: 0.85rem;
 }
 
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.empty-state p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.1rem;
+}
+
+/* Students List */
 .students-list {
   display: flex;
   flex-direction: column;
@@ -830,10 +1055,16 @@ onMounted(() => {
   grid-template-columns: 2fr 1fr 2fr 1fr;
   gap: 1.5rem;
   align-items: center;
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+.student-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateX(5px);
 }
 
 .student-info {
@@ -851,32 +1082,34 @@ onMounted(() => {
   justify-content: center;
   font-weight: 700;
   color: white;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
 .student-avatar.risk-critical {
-  background: #ef4444;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 
 .student-avatar.risk-high {
-  background: #f59e0b;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .student-avatar.risk-moderate {
-  background: #eab308;
+  background: linear-gradient(135deg, #eab308, #ca8a04);
 }
 
 .student-avatar.risk-low {
-  background: #10b981;
+  background: linear-gradient(135deg, #10b981, #059669);
 }
 
 .student-name {
   font-weight: 600;
-  color: var(--text-primary);
+  color: white;
 }
 
 .student-meta {
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .risk-info {
@@ -892,24 +1125,24 @@ onMounted(() => {
 }
 
 .risk-score.risk-critical {
-  color: #ef4444;
+  color: #f87171;
 }
 
 .risk-score.risk-high {
-  color: #f59e0b;
+  color: #fbbf24;
 }
 
 .risk-score.risk-moderate {
-  color: #eab308;
+  color: #facc15;
 }
 
 .risk-score.risk-low {
-  color: #10b981;
+  color: #34d399;
 }
 
 .risk-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -917,19 +1150,23 @@ onMounted(() => {
 }
 
 .risk-badge.risk-critical {
-  background: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(220, 38, 38, 0.4));
+  border: 1px solid rgba(239, 68, 68, 0.5);
 }
 
 .risk-badge.risk-high {
-  background: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(217, 119, 6, 0.4));
+  border: 1px solid rgba(245, 158, 11, 0.5);
 }
 
 .risk-badge.risk-moderate {
-  background: #eab308;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.3), rgba(202, 138, 4, 0.4));
+  border: 1px solid rgba(234, 179, 8, 0.5);
 }
 
 .risk-badge.risk-low {
-  background: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.4));
+  border: 1px solid rgba(16, 185, 129, 0.5);
 }
 
 .skill-gaps {
@@ -939,22 +1176,22 @@ onMounted(() => {
 }
 
 .gap-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 600;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
 }
 
 .gap-badge.severity-critical {
-  background: #fee2e2;
-  color: #dc2626;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25));
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
 }
 
 .gap-badge.severity-high {
-  background: #fed7aa;
-  color: #d97706;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.25));
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
 }
 
 .actions {
@@ -962,12 +1199,13 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
+/* Heatmap Container */
 .heatmap-container {
   padding: 2rem;
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.6);
   margin-bottom: 1.5rem;
 }
 
@@ -986,6 +1224,7 @@ onMounted(() => {
 
 .dimension-label {
   font-weight: 600;
+  color: white;
 }
 
 .heatmap-cells {
@@ -996,27 +1235,36 @@ onMounted(() => {
 
 .heatmap-cell {
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: 12px;
   text-align: center;
   font-weight: 700;
   color: white;
   cursor: help;
+  transition: all 0.3s ease;
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.05);
 }
 
 .heatmap-cell.cell-critical {
-  background: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.6), rgba(220, 38, 38, 0.8));
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
 }
 
 .heatmap-cell.cell-high {
-  background: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.6), rgba(217, 119, 6, 0.8));
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
 }
 
 .heatmap-cell.cell-moderate {
-  background: #eab308;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.6), rgba(202, 138, 4, 0.8));
+  box-shadow: 0 4px 15px rgba(234, 179, 8, 0.3);
 }
 
 .heatmap-cell.cell-low {
-  background: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.6), rgba(5, 150, 105, 0.8));
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
 }
 
 .heatmap-legend {
@@ -1031,43 +1279,80 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .legend-color {
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
+/* Modal Styles */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, rgba(30, 30, 60, 0.95), rgba(20, 20, 40, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 2rem;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  width: 90%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h2 {
+  color: white;
+  margin: 0;
 }
 
 .close-btn {
-  background: none;
-  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   font-size: 1.5rem;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.7);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #f87171;
 }
 
 .plan-priority {
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  border-radius: 12px;
   font-weight: 700;
   text-align: center;
   margin-bottom: 1.5rem;
@@ -1075,19 +1360,23 @@ onMounted(() => {
 }
 
 .plan-priority.priority-critical {
-  background: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(220, 38, 38, 0.4));
+  border: 1px solid rgba(239, 68, 68, 0.5);
 }
 
 .plan-priority.priority-high {
-  background: #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(217, 119, 6, 0.4));
+  border: 1px solid rgba(245, 158, 11, 0.5);
 }
 
 .plan-priority.priority-moderate {
-  background: #eab308;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.3), rgba(202, 138, 4, 0.4));
+  border: 1px solid rgba(234, 179, 8, 0.5);
 }
 
 .plan-priority.priority-low {
-  background: #10b981;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.4));
+  border: 1px solid rgba(16, 185, 129, 0.5);
 }
 
 .plan-section {
@@ -1096,7 +1385,7 @@ onMounted(() => {
 
 .plan-section h4 {
   margin: 0 0 0.75rem 0;
-  color: var(--text-primary);
+  color: white;
 }
 
 .plan-section ul {
@@ -1106,7 +1395,7 @@ onMounted(() => {
 
 .plan-section li {
   margin-bottom: 0.5rem;
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .resources-list {
@@ -1116,17 +1405,18 @@ onMounted(() => {
 
 .resource-card {
   padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
 }
 
 .resource-type {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
-  background: var(--primary);
-  color: white;
-  border-radius: 12px;
+  padding: 0.35rem 0.85rem;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.3));
+  border: 1px solid rgba(102, 126, 234, 0.4);
+  color: #a78bfa;
+  border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -1135,44 +1425,135 @@ onMounted(() => {
 
 .resource-title {
   font-weight: 600;
-  color: var(--text-primary);
+  color: white;
   margin-bottom: 0.25rem;
 }
 
 .resource-desc {
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 0.875rem;
   margin-bottom: 0.5rem;
 }
 
 .resource-time {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .parent-message {
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  border-left: 4px solid var(--primary);
+  padding: 1.25rem;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-left: 4px solid #667eea;
+  border-radius: 12px;
   margin-bottom: 1rem;
   white-space: pre-wrap;
   line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .modal-footer {
   display: flex;
   gap: 1rem;
   padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.empty-state {
-  text-align: center;
-  padding: 3rem;
-  color: var(--text-secondary);
+/* Buttons */
+.btn-glass {
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
 }
 
+.btn-glass:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-glow {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+}
+
+.btn-glow:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Talent Cards */
+.talent-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.talent-card.research {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(139, 92, 246, 0.25));
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.talent-card.research .risk-glow {
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.5);
+}
+
+.talent-card.research .risk-count {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.talent-card.innovation {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(236, 72, 153, 0.25));
+  border: 1px solid rgba(236, 72, 153, 0.4);
+}
+
+.talent-card.innovation .risk-glow {
+  box-shadow: 0 0 40px rgba(236, 72, 153, 0.5);
+}
+
+.talent-card.innovation .risk-count {
+  background: linear-gradient(135deg, #f472b6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.talent-card.total {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25));
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.talent-card.total .risk-glow {
+  box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+}
+
+.talent-card.total .risk-count {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Responsive */
 @media (max-width: 1200px) {
   .student-row {
     grid-template-columns: 1fr;
@@ -1184,10 +1565,7 @@ onMounted(() => {
     align-items: stretch;
   }
   
-  .course-select,
-  .grade-select,
-  .room-select,
-  .time-select {
+  .glass-select {
     width: 100%;
   }
   
@@ -1201,46 +1579,23 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
   
-  .page-header {
+  .hero-header {
     flex-direction: column;
     gap: 1rem;
+    padding: 1rem;
   }
   
   .filter-info {
     flex-direction: column;
     gap: 0.5rem;
   }
+  
+  .heatmap-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .heatmap-cells {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>
-
-.talent-card {
-  border-left-width: 4px;
-  border-left-style: solid;
-}
-
-.talent-card.research {
-  border-left-color: #8b5cf6;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
-}
-
-.talent-card.research .risk-count {
-  color: #8b5cf6;
-}
-
-.talent-card.innovation {
-  border-left-color: #ec4899;
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(236, 72, 153, 0.05) 100%);
-}
-
-.talent-card.innovation .risk-count {
-  color: #ec4899;
-}
-
-.talent-card.total {
-  border-left-color: #10b981;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
-}
-
-.talent-card.total .risk-count {
-  color: #10b981;
-}

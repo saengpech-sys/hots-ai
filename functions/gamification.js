@@ -197,6 +197,40 @@ const BADGES = {
     icon: '⚡',
     points: 40,
     condition: (stats) => stats.maxDailyAssessments >= 5
+  },
+  
+  // 🎮 Worksheet Badges - เพิ่มใหม่เพื่อให้ครอบคลุมทั้ง Chat และ Worksheet
+  WORKSHEET_STARTER: {
+    id: 'WORKSHEET_STARTER',
+    name: 'นักทำใบงาน',
+    description: 'ทำใบงานครั้งแรก',
+    icon: '📋',
+    points: 15,
+    condition: (stats) => (stats.worksheetCount || 0) >= 1
+  },
+  WORKSHEET_EXPLORER: {
+    id: 'WORKSHEET_EXPLORER',
+    name: 'นักสำรวจใบงาน',
+    description: 'ทำใบงาน 5 ชิ้น',
+    icon: '📝',
+    points: 35,
+    condition: (stats) => (stats.worksheetCount || 0) >= 5
+  },
+  WORKSHEET_MASTER: {
+    id: 'WORKSHEET_MASTER',
+    name: 'ผู้เชี่ยวชาญใบงาน',
+    description: 'ทำใบงาน 20 ชิ้น',
+    icon: '📚',
+    points: 75,
+    condition: (stats) => (stats.worksheetCount || 0) >= 20
+  },
+  ALL_ROUNDER: {
+    id: 'ALL_ROUNDER',
+    name: 'รอบด้าน',
+    description: 'ทำทั้งแบบทดสอบ 10 ครั้ง และใบงาน 5 ชิ้น',
+    icon: '🌟',
+    points: 100,
+    condition: (stats) => (stats.assessmentCount || 0) >= 10 && (stats.worksheetCount || 0) >= 5
   }
 }
 

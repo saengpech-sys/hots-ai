@@ -214,41 +214,82 @@ function compareScoresWithTolerance(scores1, scores2, tolerance = SCORE_TOLERANC
 /**
  * Check if score should be flagged for human review
  * 
+ * ⚠️ Important: NOT flagged for review:
+ * - Gibberish/meaningless answers (auto-scored 0 with high confidence)
+ * - Clear high-quality answers (scored high with high confidence)
+ * 
+ * ✅ Flagged for review:
+ * - Low AI confidence (ambiguous answers)
+ * - All 5s without chain of thought (potential inflation)
+ * - Missing reasoning explanation
+ * 
  * @param {Object} assessment - Assessment result with confidence
  * @param {number} aiConfidence - AI confidence score (0-100)
- * @returns {{ shouldFlag: boolean, reasons: string[] }}
+ * @returns {{ shouldFlag: boolean, reasons: string[], priority: string }}
  */
 function shouldFlagForReview(assessment, aiConfidence) {
   const reasons = []
   
-  // Low confidence
-  if (aiConfidence < SCORE_TOLERANCE.lowConfidenceThreshold) {
-    reasons.push(`Low AI confidence: ${aiConfidence}%`)
+  // 🆕 Skip review if gibberish was detected (handled separately)
+  if (assessment?.gibberishDetection?.isGibberish) {
+    return {
+      shouldFlag: false,
+      reasons: ['Gibberish detected - auto-handled'],
+      priority: 'none',
+      skipReason: 'gibberish'
+    }
   }
   
-  // Extreme scores (all 0 or all 5)
+  // 🆕 Skip review if all zeros WITH high confidence (clear gibberish/empty)
   const scores = assessment?.rubricScores
   if (scores) {
     const values = Object.values(scores)
     const allZero = values.every(v => v === 0)
     const allMax = values.every(v => v === 5)
     
-    if (allZero) {
-      reasons.push('All dimensions scored 0 - potential issue')
+    // All zeros with high confidence = clear low-quality, no need to review
+    if (allZero && aiConfidence >= 80) {
+      return {
+        shouldFlag: false,
+        reasons: ['All zeros with high confidence - clear low-quality answer'],
+        priority: 'none',
+        skipReason: 'clear_low_quality'
+      }
     }
+    
+    // All 5s should be verified (potential inflation)
     if (allMax) {
       reasons.push('All dimensions scored 5 - verify for inflation')
     }
   }
   
-  // Missing chain of thought
+  // Low confidence = ambiguous answer, needs human review
+  if (aiConfidence < SCORE_TOLERANCE.lowConfidenceThreshold) {
+    reasons.push(`Low AI confidence: ${aiConfidence}% (threshold: ${SCORE_TOLERANCE.lowConfidenceThreshold}%)`)
+  }
+  
+  // Missing chain of thought = can't verify reasoning
   if (!assessment?.chainOfThought) {
     reasons.push('Missing chain of thought reasoning')
   }
   
+  // 🆕 Suspicious gibberish (not definite) - flag for review
+  if (assessment?.gibberishDetection?.isSuspicious) {
+    reasons.push(`Suspicious text detected (score: ${assessment.gibberishDetection.score})`)
+  }
+  
+  // Determine priority
+  let priority = 'none'
+  if (reasons.length > 0) {
+    priority = 'normal'
+    if (aiConfidence < 50) priority = 'high'
+    if (reasons.length >= 3) priority = 'high'
+  }
+  
   return {
     shouldFlag: reasons.length > 0,
-    reasons
+    reasons,
+    priority
   }
 }
 

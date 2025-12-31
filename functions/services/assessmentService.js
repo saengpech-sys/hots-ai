@@ -5,6 +5,7 @@
  * Handles HOTS assessment with OpenAI
  * 
  * 🆕 v2.0: Multi-Agent Assessment Integration
+ * 🆕 v2.1: Gibberish Detection Integration
  */
 
 const { createAssessmentPrompt } = require('../utils/prompts')
@@ -15,6 +16,7 @@ const { comprehensiveAIDetection } = require('../utils/aiDetection')
 const { runMultiAgentAssessment } = require('../utils/multiAgentAssessment')
 const { generateAdaptiveScaffolding, formatScaffoldingMessage, SCAFFOLDING_LEVELS } = require('../utils/adaptiveScaffolding')
 const { LLMProvider } = require('../utils/llmProvider')
+const { detectGibberish, quickGibberishCheck } = require('../utils/gibberishDetection')
 
 /**
  * AI Configuration for assessments
@@ -259,6 +261,63 @@ async function performCompleteAssessment(deps, params) {
     useMultiAgent = AI_CONFIG.useMultiAgent  // 🆕 Allow override per request
   } = params
 
+  // 🆕 Step 0: Gibberish Detection (before expensive AI call)
+  const gibberishResult = detectGibberish(studentAnswer)
+  
+  if (gibberishResult.isGibberish) {
+    console.log(`🚫 Gibberish detected (score: ${gibberishResult.score}): ${gibberishResult.reason}`)
+    
+    // Return low scores with high confidence - no need for AI call
+    return {
+      success: true,
+      data: {
+        rubricScores: {
+          analysis: 0,
+          reasoning: 0,
+          creativity: 0,
+          evidence: 0
+        },
+        overallScore: 0,
+        feedback: 'คำตอบไม่มีเนื้อหาที่สามารถประเมินได้ กรุณาตอบคำถามด้วยข้อความที่มีความหมาย',
+        strengths: [],
+        weaknesses: ['คำตอบไม่มีเนื้อหาที่ชัดเจน'],
+        suggestions: ['ลองอ่านคำถามอีกครั้งและตอบด้วยความคิดของตัวเอง', 'เขียนอธิบายเหตุผลหรือตัวอย่างประกอบ'],
+        confidence: 95, // High confidence that this is indeed gibberish
+        confidenceReason: `ตรวจพบข้อความไร้ความหมาย (${gibberishResult.reason})`,
+        gibberishDetection: {
+          isGibberish: true,
+          score: gibberishResult.score,
+          signals: gibberishResult.signals,
+          reason: gibberishResult.reason
+        },
+        requiresHumanReview: false, // No need for human review on gibberish
+        chainOfThought: {
+          step1_summary: 'คำตอบไม่มีเนื้อหาที่ประเมินได้',
+          step2_evidence: {
+            analysis: 'ไม่มีการวิเคราะห์ใดๆ',
+            reasoning: 'ไม่มีเหตุผลใดๆ',
+            creativity: 'ไม่มีความคิดใดๆ',
+            evidence: 'ไม่มีหลักฐานใดๆ'
+          },
+          step3_anchor_match: 'ไม่ตรงกับ Anchor ใดเลย (0 คะแนนทุกมิติ)',
+          step4_decision: `ระบบตรวจพบข้อความไร้ความหมาย: ${gibberishResult.signals.join(', ')}`
+        },
+        promptVersion: 'v3.0-gibberish-auto',
+        auditTrail: {
+          skippedAI: true,
+          reason: 'gibberish_detected',
+          gibberishScore: gibberishResult.score,
+          timestamp: new Date().toISOString()
+        }
+      }
+    }
+  }
+
+  // Log if suspicious but not definite gibberish
+  if (gibberishResult.isSuspicious) {
+    console.log(`⚠️ Suspicious text detected (score: ${gibberishResult.score}): ${gibberishResult.reason}`)
+  }
+
   // Step 1: Perform HOTS assessment (Multi-Agent or Standard)
   let hotsResult
   if (useMultiAgent) {
@@ -288,6 +347,16 @@ async function performCompleteAssessment(deps, params) {
   }
 
   const assessmentData = hotsResult.data
+
+  // 🆕 Add gibberish detection info (for suspicious but not definite cases)
+  if (gibberishResult.isSuspicious) {
+    assessmentData.gibberishDetection = {
+      isSuspicious: true,
+      score: gibberishResult.score,
+      signals: gibberishResult.signals,
+      reason: gibberishResult.reason
+    }
+  }
 
   // Step 2: Generate Adaptive Scaffolding (if needed)
   if (!isScaffolding && assessmentData.rubricScores) {

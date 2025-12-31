@@ -174,6 +174,10 @@ const RETRY_CONFIG = {
     'ENOTFOUND',
     'EAI_AGAIN',
     'rate_limit_exceeded',
+    'Connection error',
+    'connection',
+    'timeout',
+    'network',
     '429',
     '500',
     '502',
@@ -207,21 +211,29 @@ async function executeWithRetry(fn, options = {}) {
         attempt,
         message: error.message,
         code: error.code || error.status || 'UNKNOWN',
+        type: error.constructor?.name || 'Error',
+        cause: error.cause?.message || null,
         timestamp: new Date().toISOString()
       }
       errors.push(errorInfo)
       
       console.error(`Attempt ${attempt}/${config.maxRetries} failed:`, error.message)
+      console.error('Full error details:', JSON.stringify({
+        name: error.name,
+        code: error.code,
+        status: error.status,
+        type: error.type,
+        cause: error.cause?.message
+      }))
       
-      // Check if error is retryable
+      // Check if error is retryable (case-insensitive)
+      const errorText = `${error.message} ${error.code || ''} ${error.status || ''}`.toLowerCase()
       const isRetryable = config.retryableErrors.some(code => 
-        error.message?.includes(code) || 
-        error.code?.includes(code) ||
-        String(error.status) === code
+        errorText.includes(String(code).toLowerCase())
       )
       
       if (!isRetryable) {
-        console.error('Error is not retryable, stopping')
+        console.error('Error is not retryable, stopping. Error text:', errorText)
         break
       }
       

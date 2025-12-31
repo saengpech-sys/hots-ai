@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**เวอร์ชัน 5.2** | **อัปเดตล่าสุด: 22 ธันวาคม 2568**
+**เวอร์ชัน 6.0** | **อัปเดตล่าสุด: 31 ธันวาคม 2568**
 
 *คู่มือทางเทคนิคสำหรับนักพัฒนา นักวิจัย และผู้ดูแลระบบ*
 
@@ -37,9 +37,9 @@
 |------|----------|---------|-------------|
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI ด้วย Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
-| **Routing** | Vue Router | 4.x | 45+ routes พร้อม guards |
-| **Backend** | Firebase Cloud Functions | Node.js 20 | 41 serverless functions |
-| **Database** | Cloud Firestore | - | 25+ collections, real-time sync |
+| **Routing** | Vue Router | 4.x | 93+ routes พร้อม guards |
+| **Backend** | Firebase Cloud Functions | Node.js 20 | 98 serverless functions |
+| **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 | **AI Engine** | OpenAI API | GPT-4o-mini | LLM ประหยัด (ถูกกว่า 15-20 เท่า) |
 | **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
 | **Hosting** | Firebase Hosting | - | CDN-backed static hosting |
@@ -961,11 +961,11 @@ HOTS AI ใช้ **ระบบนิเวศความน่าเชื่
 
 | ไฟล์ | วัตถุประสงค์ | บรรทัด |
 |------|-------------|--------|
-| `functions/index.js` | Cloud Functions ทั้งหมด, AI prompts | ~9200 |
-| `functions/utils/prompts.js` | แม่แบบ prompt แบบ modular | ~200 |
-| `functions/utils/loAssessment.js` | ตรรกะประเมิน LO | ~150 |
-| `functions/utils/aiParser.js` | ทำความสะอาด JSON response | ~100 |
-| `functions/utils/reliability.js` | ความคงทน AI และ validation | ~500 |
+| `functions/index.js` | Cloud Functions ทั้งหมด, AI prompts | ~13,400 |
+| `functions/national-scale.js` | National Scale APIs | ~530 |
+| `functions/utils/prompts.js` | แม่แบบ prompt แบบ modular | ~320 |
+| `functions/utils/reliabilityEcosystem.js` | ระบบนิเวศความน่าเชื่อถือ 8 ชั้น | ~1,100 |
+| `functions/utils/researchData.js` | ตัวช่วยข้อมูลวิจัย | ~1,650 |
 | `functions/utils/interRaterReliability.js` | คำนวณ IRR | ~700 |
 | `src/stores/chat.js` | จัดการ session, เลือกคำถาม | ~600 |
 | `src/utils/loProgress.js` | **การนับ LO มาตรฐาน** | ~420 |
@@ -1004,6 +1004,6 @@ firebase emulators:start       # เริ่ม emulators ทั้งหมด
 
 **HOTS AI ChatLoop — คู่มือทางเทคนิค**
 
-*เวอร์ชัน 5.2 | 22 ธันวาคม 2568*
+*เวอร์ชัน 6.0 | 31 ธันวาคม 2568*
 
 </div>

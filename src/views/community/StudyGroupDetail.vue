@@ -19,7 +19,7 @@
     <template v-else>
       <!-- Header -->
       <div class="group-header">
-        <button class="back-btn" @click="$router.back()">←</button>
+        <button class="back-btn" @click="$router.push('/community/study-groups')">←</button>
         <div class="header-content">
           <span class="group-emoji">{{ group.emoji || '📚' }}</span>
           <div class="group-info">

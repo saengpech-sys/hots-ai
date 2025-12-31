@@ -1,9 +1,16 @@
+// Load environment variables from .env file for local development
+require('dotenv').config()
+
 const functions = require('firebase-functions')
 const admin = require('firebase-admin')
-const { OpenAI } = require('openai')
 const cors = require('cors')({ origin: true })
 const { calculatePoints, calculatePointsSimple, checkBadges, calculateStreak, BADGES } = require('./gamification')
-const { defineSecret } = require('firebase-functions/params')
+const { 
+  getOpenAIClient, 
+  openaiApiKeySecret, 
+  getDefaultModel, 
+  MODELS 
+} = require('./utils/openaiClient')
 
 // 🛡️ Reliability Module - เพิ่มความน่าเชื่อถือ 95%+
 const {
@@ -168,8 +175,20 @@ const validationStudy = require('./utils/validationStudy')
 // 🤖 NEW: Multi-LLM Provider
 const { getLLMProvider, createChatCompletion } = require('./utils/llmProvider')
 
-// 📊 Quality Assurance Controller
+// ============================================================
+// 📦 CONTROLLERS - Modular Backend Architecture (Phase 6)
+// ============================================================
 const qualityAssuranceController = require('./controllers/qualityAssuranceController')
+const gamificationController = require('./controllers/gamificationController')
+const generationController = require('./controllers/generationController')
+const researchController = require('./controllers/researchController')
+const systemController = require('./controllers/systemController')
+const analyticsController = require('./controllers/analyticsController')
+const reviewController = require('./controllers/reviewController')
+const certificationController = require('./controllers/certificationController')
+const esaDashboardController = require('./controllers/esaDashboardController')
+const schoolOnboardingController = require('./controllers/schoolOnboardingController')
+const ministryDashboardController = require('./controllers/ministryDashboardController')
 
 // 🤖 NEW: Multi-Agent Assessment System (C10 Research Grade)
 const {
@@ -194,8 +213,8 @@ const {
 admin.initializeApp()
 const db = admin.firestore()
 
-// Define OpenAI API Key as a secret
-const openaiApiKey = defineSecret('OPENAI_API_KEY')
+// OpenAI API Key secret - imported from centralized client
+const openaiApiKey = openaiApiKeySecret
 
 // =============================================================================
 // 🔐 SECURITY: Role-Based Access Control (RBAC) Helper Functions
@@ -327,25 +346,14 @@ async function verifyAdminRole(req, res) {
 
 // =============================================================================
 
-// Initialize OpenAI
-let openai
-try {
-  const apiKey = process.env.OPENAI_API_KEY
-  if (apiKey) {
-    openai = new OpenAI({ apiKey })
-    console.log('✅ OpenAI initialized successfully')
-  } else {
-    console.warn('⚠️ OpenAI API key not found in environment')
-  }
-} catch (error) {
-  console.error('❌ Error initializing OpenAI:', error)
-}
+// OpenAI client is imported from ./utils/openaiClient.js
+// Use getOpenAIClient() inside functions to get the client instance
 
 /**
  * Cloud Function to assess student answers using OpenAI
  * Evaluates Higher-Order Thinking Skills (HOTS)
  */
-exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.assessAnswer = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       // Only allow POST
@@ -456,11 +464,13 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
         }
       }
 
-      // Check if OpenAI is configured
-      if (!openai) {
+      // Validate OpenAI is configured (early check before expensive operations)
+      try {
+        getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured',
-          message: 'Please set OpenAI API key using: firebase functions:config:set openai.key="your-key"'
+          message: 'Please set OpenAI API key secret using: firebase functions:secrets:set OPENAI_API_KEY'
         })
       }
 
@@ -680,7 +690,7 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       // 🛡️ RELIABILITY: Execute OpenAI call with retry mechanism + circuit breaker tracking
       let responseText, completion
       const aiCallResult = await executeWithRetry(async () => {
-        const result = await openai.chat.completions.create({
+        const result = await getOpenAIClient().chat.completions.create({
           model: model,
           messages: [
             {
@@ -822,7 +832,7 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
       let scoreAppropriatenessCheck = null
       if (gradeContext) {
         scoreAppropriatenessCheck = checkScoreAppropriateness(rubricScores, gradeContext)
-        if (scoreAppropriatenessCheck.concerns.length > 0) {
+        if (scoreAppropriatenessCheck.flags && scoreAppropriatenessCheck.flags.length > 0) {
           console.log(`📊 Grade appropriateness concerns for ${gradeContext}:`, scoreAppropriatenessCheck)
         }
       }
@@ -847,57 +857,63 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKey] }).https.onRe
           ? 'LOW_OVERALL_SCORE' 
           : 'HIGH_DIMENSION_VARIANCE'
         
-        // Use new adaptive scaffolding module
+        // Use new adaptive scaffolding module (wrap rubricScores in object)
         const scaffoldingResult = generateAdaptiveScaffolding(
-          rubricScores,
+          { rubricScores },
           scaffoldingAttempts,
           { maxAttempts: 2 }
         )
         
-        // Store scaffolding context for future analysis
-        await db.collection('scaffoldingLogs').add({
-          studentId,
-          sessionId,
-          questionId: questionId || null,
-          attempt: scaffoldingAttempts + 1,
-          rubricScores,
-          weakestDimension: scaffoldingResult.weakestDimension,
-          scaffoldingLevel: scaffoldingResult.level,
-          scaffoldType: scaffoldingResult.scaffoldType,
-          // 🔬 PHASE 3: Track why scaffolding was triggered
-          scaffoldReason,
-          dimensionVariance,
-          overallScore,
-          timestamp: admin.firestore.FieldValue.serverTimestamp()
-        })
-        
-        // Don't save final assessment yet - return probing question
-        await sessionRef.set({
-          isScaffolding: true,
-          scaffoldingAttempts: scaffoldingAttempts + 1,
-          previousAnswer: studentAnswer,
-          probingQuestion: scaffoldingResult.prompts[0], // Use first prompt
-          scaffoldingContext: {
-            weakestDimension: scaffoldingResult.weakestDimension,
-            level: scaffoldingResult.level,
-            scaffoldType: scaffoldingResult.scaffoldType
-          },
-          lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true })
+        // Check if scaffolding is actually needed (module may decide otherwise)
+        if (scaffoldingResult.needed === false) {
+          console.log('Scaffolding skipped:', scaffoldingResult.reason || 'No reason provided')
+          // Continue to save assessment normally
+        } else {
+          // Store scaffolding context for future analysis
+          await db.collection('scaffoldingLogs').add({
+            studentId,
+            sessionId,
+            questionId: questionId || null,
+            attempt: scaffoldingAttempts + 1,
+            rubricScores,
+            weakestDimension: scaffoldingResult.weakestDimension || null,
+            scaffoldingLevel: scaffoldingResult.level || null,
+            scaffoldType: scaffoldingResult.scaffoldType || null,
+            // 🔬 PHASE 3: Track why scaffolding was triggered
+            scaffoldReason,
+            dimensionVariance,
+            overallScore,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          })
+          
+          // Don't save final assessment yet - return probing question
+          await sessionRef.set({
+            isScaffolding: true,
+            scaffoldingAttempts: scaffoldingAttempts + 1,
+            previousAnswer: studentAnswer,
+            probingQuestion: scaffoldingResult.prompts?.[0] || null, // Use first prompt
+            scaffoldingContext: {
+              weakestDimension: scaffoldingResult.weakestDimension || null,
+              level: scaffoldingResult.level || null,
+              scaffoldType: scaffoldingResult.scaffoldType || null
+            },
+            lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true })
 
-        return res.status(200).json({
-          success: true,
-          needsScaffolding: true,
-          probingQuestion: scaffoldingResult.prompts[0],
-          scaffoldingInfo: {
-            targetDimension: scaffoldingResult.weakestDimension,
-            scaffoldType: scaffoldingResult.scaffoldType,
-            level: scaffoldingResult.level,
-            explanation: scaffoldingResult.explanation
-          },
-          currentScore: overallScore,
-          attemptsRemaining: 2 - (scaffoldingAttempts + 1)
-        })
+          return res.status(200).json({
+            success: true,
+            needsScaffolding: true,
+            probingQuestion: scaffoldingResult.prompts?.[0] || null,
+            scaffoldingInfo: {
+              targetDimension: scaffoldingResult.weakestDimension || null,
+              scaffoldType: scaffoldingResult.scaffoldType || null,
+              level: scaffoldingResult.level || null,
+              explanation: scaffoldingResult.explanation || null
+            },
+            currentScore: overallScore,
+            attemptsRemaining: 2 - (scaffoldingAttempts + 1)
+          })
+        }
       }
 
       // Reset scaffolding state if this is the final answer
@@ -1600,27 +1616,48 @@ ${needsProbingQuestion ? `
  */
 async function assessLearningOutcomesInternal(studentAnswer, learningOutcomes, assessmentResult) {
   try {
-    if (!openai) {
+    // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai' variable
+    let openaiClient
+    try {
+      openaiClient = getOpenAIClient()
+    } catch (err) {
       console.warn('OpenAI not configured, skipping LO assessment')
       return { passedLOs: [], analysis: 'AI not configured' }
     }
 
-    // 🔍 Debug logging
-    console.log('🎓 LO Assessment Input:', {
-      learningOutcomesCount: learningOutcomes.length,
-      learningOutcomes: learningOutcomes.map(lo => ({
-        code: lo.loCode || lo.code,
-        description: (lo.loDescription || lo.description || '').substring(0, 50) + '...'
-      })),
-      rubricScores: assessmentResult.rubricScores
+    // 🔧 FIX: Normalize learningOutcomes - รองรับทั้ง string array และ object array
+    const normalizedLOs = learningOutcomes.map((lo, idx) => {
+      // ถ้าเป็น string เช่น "LO1" หรือ "วิเคราะห์..."
+      if (typeof lo === 'string') {
+        return {
+          loCode: lo.startsWith('LO') ? lo : `LO${idx + 1}`,
+          loDescription: lo.startsWith('LO') ? `Learning Outcome ${lo}` : lo
+        }
+      }
+      // ถ้าเป็น object
+      return {
+        loCode: lo.loCode || lo.code || `LO${idx + 1}`,
+        loDescription: lo.loDescription || lo.description || 'No description'
+      }
     })
 
-    // สร้าง prompt สำหรับประเมิน LO (รองรับทั้ง loCode/code และ loDescription/description)
-    const loList = learningOutcomes.map((lo, idx) => {
-      const code = lo.loCode || lo.code || `LO${idx + 1}`
-      const description = lo.loDescription || lo.description || 'No description'
-      return `${idx + 1}. [${code}] ${description}`
+    // 🔍 Debug logging
+    console.log('🎓 LO Assessment Input:', {
+      learningOutcomesCount: normalizedLOs.length,
+      learningOutcomes: normalizedLOs.map(lo => ({
+        code: lo.loCode,
+        description: (lo.loDescription || '').substring(0, 50) + '...'
+      })),
+      rubricScores: assessmentResult.rubricScores || assessmentResult
+    })
+
+    // สร้าง prompt สำหรับประเมิน LO (ใช้ normalizedLOs)
+    const loList = normalizedLOs.map((lo, idx) => {
+      return `${idx + 1}. [${lo.loCode}] ${lo.loDescription}`
     }).join('\n')
+
+    // 🔧 FIX: Handle assessmentResult ทั้ง object ที่มี rubricScores และ object ที่เป็น rubricScores เอง
+    const rubricScores = assessmentResult.rubricScores || assessmentResult
 
     const prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินผลการเรียนรู้ตาม Learning Outcomes (LOs) ที่เคร่งครัดเรื่องหลักฐานและความเที่ยงตรง
 
@@ -1629,10 +1666,10 @@ async function assessLearningOutcomesInternal(studentAnswer, learningOutcomes, a
 ${studentAnswer}
 
 ผลการประเมิน HOTS (0–5):
-- การวิเคราะห์ (analysis): ${assessmentResult.rubricScores.analysis}
-- การให้เหตุผล (reasoning): ${assessmentResult.rubricScores.reasoning}
-- ความคิดสร้างสรรค์ (creativity): ${assessmentResult.rubricScores.creativity}
-- การใช้หลักฐาน (evidence): ${assessmentResult.rubricScores.evidence}
+- การวิเคราะห์ (analysis): ${rubricScores.analysis || 0}
+- การให้เหตุผล (reasoning): ${rubricScores.reasoning || 0}
+- ความคิดสร้างสรรค์ (creativity): ${rubricScores.creativity || 0}
+- การใช้หลักฐาน (evidence): ${rubricScores.evidence || 0}
 
 รายการ Learning Outcomes (loList): ${loList}
 > หมายเหตุ: แต่ละ LO ต้องมีรหัสระบุชัด เช่น "LO1: …", "LO2: …" (ใช้รหัสดังกล่าวในเอาต์พุต)
@@ -1675,7 +1712,7 @@ ${studentAnswer}
 
     const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
     
-    const completion = await openai.chat.completions.create({
+    const completion = await openaiClient.chat.completions.create({
       model: model,
       messages: [
         {
@@ -2367,7 +2404,7 @@ function validateAntiCheat(text, typingFingerprint) {
  * Cloud Function to generate Learning Outcomes using AI
  * 🔐 SECURED: Teacher/Admin only
  */
-exports.generateLearningOutcomes = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateLearningOutcomes = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -2386,7 +2423,11 @@ exports.generateLearningOutcomes = functions.runWith({ secrets: [openaiApiKey] }
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured'
         })
@@ -2424,7 +2465,7 @@ ${learningStandards}
 }
 `
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
         messages: [
           {
@@ -2479,7 +2520,7 @@ ${learningStandards}
  * Based on Learning Outcomes and course context
  * 🔐 SECURED: Teacher/Admin only
  */
-exports.generateHOTSQuestion = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateHOTSQuestion = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -2498,7 +2539,11 @@ exports.generateHOTSQuestion = functions.runWith({ secrets: [openaiApiKey] }).ht
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai' variable
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured'
         })
@@ -2543,7 +2588,7 @@ ${loList}
 
       const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -2590,7 +2635,7 @@ ${loList}
         validatedQuestions.push({
           ...q,
           qualityMetrics: {
-            bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
+            bloomLevel: qualityReport.bloomsAnalysis?.level || qualityReport.bloomsLevel || 1,
             hotsScore: qualityReport.hotsScore,
             issues: qualityReport.issues?.slice(0, 3) || [],
             passesHOTSThreshold: qualityReport.hotsScore >= 70
@@ -2655,7 +2700,7 @@ exports.validateQuestionQuality = functions.https.onRequest(async (req, res) => 
 
       // Get transformation suggestions if needed
       let transformationSuggestions = null
-      if (needsImprovement && qualityReport.bloomAnalysis.dominantLevel <= 3) {
+      if (needsImprovement && (qualityReport.bloomsAnalysis?.level || qualityReport.bloomsLevel || 1) <= 3) {
         transformationSuggestions = suggestHOTSTransformation(question, qualityReport)
       }
 
@@ -2663,8 +2708,8 @@ exports.validateQuestionQuality = functions.https.onRequest(async (req, res) => 
         success: true,
         valid: passesThreshold,
         hotsScore: qualityReport.hotsScore,
-        bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
-        bloomCategory: qualityReport.bloomAnalysis.levelName,
+        bloomLevel: qualityReport.bloomsAnalysis?.level || qualityReport.bloomsLevel || 1,
+        bloomCategory: qualityReport.bloomsAnalysis?.levelName || 'remember',
         cognitiveComplexity: qualityReport.cognitiveComplexity,
         issues: qualityReport.issues || [],
         strengths: qualityReport.strengths || [],
@@ -2690,7 +2735,7 @@ exports.validateQuestionQuality = functions.https.onRequest(async (req, res) => 
  * 🆕 Cloud Function to generate a fallback question when question pool is exhausted
  * Uses weak LOs to create a targeted HOTS question on-the-fly
  */
-exports.generateFallbackQuestion = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateFallbackQuestion = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -2705,7 +2750,11 @@ exports.generateFallbackQuestion = functions.runWith({ secrets: [openaiApiKey] }
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured'
         })
@@ -2750,7 +2799,7 @@ ${targetLODescriptions || weakLOs.join(', ')}
 
       const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini'
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -2797,7 +2846,7 @@ ${targetLODescriptions || weakLOs.join(', ')}
           isTemporary: true, // Not saved to DB
           qualityMetrics: {
             hotsScore: qualityReport.hotsScore,
-            bloomLevel: qualityReport.bloomAnalysis.dominantLevel,
+            bloomLevel: qualityReport.bloomsAnalysis?.level || qualityReport.bloomsLevel || 1,
             passesHOTSThreshold: qualityReport.hotsScore >= 70
           }
         },
@@ -2820,7 +2869,7 @@ ${targetLODescriptions || weakLOs.join(', ')}
  * This creates a model answer that would score maximum points
  * 🔐 SECURED: Teacher/Admin only - Students should NOT access this!
  */
-exports.generateSolution = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateSolution = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -2840,7 +2889,11 @@ exports.generateSolution = functions.runWith({ secrets: [openaiApiKey] }).https.
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured'
         })
@@ -2902,7 +2955,7 @@ ${contextInfo}
 
       const model = process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini-2024-07-18'
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -3253,6 +3306,8 @@ exports.getLeaderboard = functions.https.onRequest(async (req, res) => {
           currentStreak: data.currentStreak || 0,
           passedLOsCount: data.totalPassed || 0,
           assessmentCount: data.assessmentCount || 0,
+          worksheetCount: data.worksheetCount || 0,  // 🎮 เพิ่มจำนวน Worksheet
+          totalActivities: (data.assessmentCount || 0) + (data.worksheetCount || 0), // รวมกิจกรรมทั้งหมด
           leaderboardScore: calculateLeaderboardScore(data)
         })
       }
@@ -3406,7 +3461,7 @@ exports.claimDailyReward = functions.https.onRequest(async (req, res) => {
  * Generate Adaptive Learning Path for student
  * Analyzes weak LOs and creates personalized learning sequence
  */
-exports.generateAdaptivePath = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateAdaptivePath = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -3966,7 +4021,7 @@ exports.dailyConsistencyCheck = functions.pubsub
  * Callable function for admin
  */
 exports.recalculateStudentProgress = functions.https.onCall(async (data, context) => {
-  // Check if caller is admin
+  // Check if caller is authenticated
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated')
   }
@@ -3974,51 +4029,98 @@ exports.recalculateStudentProgress = functions.https.onCall(async (data, context
   const callerDoc = await db.collection('users').doc(context.auth.uid).get()
   const callerRole = callerDoc.data()?.role
   
-  if (callerRole !== 'ministry_admin' && callerRole !== 'esa_admin') {
-    throw new functions.https.HttpsError('permission-denied', 'Only admins can run this function')
+  // Allow ministry_admin, esa_admin, or teacher
+  const isAdmin = callerRole === 'ministry_admin' || callerRole === 'esa_admin'
+  const isTeacher = callerRole === 'teacher'
+  
+  if (!isAdmin && !isTeacher) {
+    throw new functions.https.HttpsError('permission-denied', 'Only teachers or admins can run this function')
   }
 
   const { studentId, courseId } = data
 
-  if (!studentId || !courseId) {
-    throw new functions.https.HttpsError('invalid-argument', 'studentId and courseId required')
+  if (!courseId) {
+    throw new functions.https.HttpsError('invalid-argument', 'courseId is required')
+  }
+
+  // If teacher, verify they own this course
+  if (isTeacher) {
+    const courseDoc = await db.collection('courses').doc(courseId).get()
+    if (!courseDoc.exists || courseDoc.data()?.teacherId !== context.auth.uid) {
+      throw new functions.https.HttpsError('permission-denied', 'You can only recalculate progress for your own courses')
+    }
   }
 
   try {
-    // Get all assessments
-    const assessmentsSnap = await db.collection('assessments')
-      .where('studentId', '==', studentId)
-      .where('courseId', '==', courseId)
-      .get()
-
-    // Collect all passed LOs
-    const passedLOs = new Set()
-    let totalAssessments = 0
-    let totalPoints = 0
-
-    assessmentsSnap.docs.forEach(doc => {
-      const assessment = doc.data()
-      totalAssessments++
+    // Support both single student and batch (all students in course)
+    let studentsToProcess = []
+    
+    if (studentId) {
+      // Single student mode
+      studentsToProcess = [studentId]
+    } else {
+      // Batch mode: get all students enrolled in this course
+      const progressSnap = await db.collection('studentProgress')
+        .where('courseId', '==', courseId)
+        .get()
       
-      // LOs
-      const los = assessment.loAssessment?.passedLOs || []
-      los.forEach(lo => passedLOs.add(lo))
+      studentsToProcess = [...new Set(progressSnap.docs.map(d => d.data().studentId))]
       
-      // Points
-      totalPoints += assessment.gamification?.pointsEarned || 0
-    })
+      // Also check assessments if no progress records exist
+      if (studentsToProcess.length === 0) {
+        const assessmentSnap = await db.collection('assessments')
+          .where('courseId', '==', courseId)
+          .get()
+        studentsToProcess = [...new Set(assessmentSnap.docs.map(d => d.data().studentId).filter(Boolean))]
+      }
+    }
+    
+    let updatedCount = 0
+    const results = []
+    
+    for (const sid of studentsToProcess) {
+      // Get all assessments for this student
+      const assessmentsSnap = await db.collection('assessments')
+        .where('studentId', '==', sid)
+        .where('courseId', '==', courseId)
+        .get()
 
-    // Update studentProgress
-    const progressRef = db.collection('studentProgress').doc(`${studentId}_${courseId}`)
-    await progressRef.set({
-      studentId,
-      courseId,
-      passedLOs: Array.from(passedLOs),
-      totalAssessments,
-      totalPoints,
-      lastRecalculated: admin.firestore.FieldValue.serverTimestamp(),
-      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true })
+      // Collect all passed LOs
+      const passedLOs = new Set()
+      let totalAssessments = 0
+      let totalPoints = 0
+
+      assessmentsSnap.docs.forEach(doc => {
+        const assessment = doc.data()
+        totalAssessments++
+        
+        // LOs
+        const los = assessment.loAssessment?.passedLOs || []
+        los.forEach(lo => passedLOs.add(lo))
+        
+        // Points
+        totalPoints += assessment.gamification?.pointsEarned || 0
+      })
+
+      // Update studentProgress
+      const progressRef = db.collection('studentProgress').doc(`${sid}_${courseId}`)
+      await progressRef.set({
+        studentId: sid,
+        courseId,
+        passedLOs: Array.from(passedLOs),
+        totalAssessments,
+        totalPoints,
+        lastRecalculated: admin.firestore.FieldValue.serverTimestamp(),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true })
+      
+      updatedCount++
+      results.push({
+        studentId: sid,
+        passedLOs: Array.from(passedLOs),
+        totalAssessments
+      })
+    }
 
     // Audit log
     await db.collection('auditLogs').add({
@@ -4026,18 +4128,17 @@ exports.recalculateStudentProgress = functions.https.onCall(async (data, context
       action: 'recalculate_progress',
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       metadata: {
-        targetStudent: studentId,
+        targetStudent: studentId || 'batch',
         courseId,
-        passedLOsCount: passedLOs.size,
-        totalAssessments
+        studentsProcessed: updatedCount,
+        mode: studentId ? 'single' : 'batch'
       }
     })
 
     return {
       success: true,
-      passedLOs: Array.from(passedLOs),
-      totalAssessments,
-      totalPoints
+      updated: updatedCount,
+      results: studentId ? results[0] : results.slice(0, 10) // Return first 10 in batch mode
     }
   } catch (error) {
     console.error('Recalculation error:', error)
@@ -4051,10 +4152,19 @@ exports.recalculateStudentProgress = functions.https.onCall(async (data, context
  * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateLessonPlan = functions.runWith({ 
-  secrets: [openaiApiKey],
-  timeoutSeconds: 180,
-  memory: '1GB'
+  secrets: [openaiApiKeySecret],
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation ที่ซับซ้อน
+  memory: '2GB'
 }).https.onRequest(async (req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -4125,7 +4235,11 @@ exports.generateLessonPlan = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({
           error: 'OpenAI API not configured'
         })
@@ -4646,7 +4760,7 @@ ${additionalNotes ? `- หมายเหตุเพิ่มเติม: ${ad
 8. competencies.descriptions - สำหรับแต่ละสมรรถนะที่เลือก ต้องอธิบายว่าส่งเสริมอย่างไร เชื่อมโยงกับกิจกรรมจริง
 9. integration.crossSubjects - ถ้าเนื้อหาสามารถบูรณาการกับสาระอื่นได้ ให้ระบุพร้อมอธิบายการเชื่อมโยง`
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -4761,7 +4875,7 @@ ${additionalNotes ? `- หมายเหตุเพิ่มเติม: ${ad
  * 🔐 SECURED: Teacher/Admin only
  */
 exports.generateWorksheet = functions.runWith({ 
-  secrets: [openaiApiKey],
+  secrets: [openaiApiKeySecret],
   timeoutSeconds: 120,
   memory: '512MB'
 }).https.onRequest(async (req, res) => {
@@ -4816,7 +4930,11 @@ exports.generateWorksheet = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
@@ -5084,7 +5202,7 @@ ${arceInfo.map(a => `- ${a.name}: ใช้คำกริยา ${a.verbs}`).jo
 5. **maxScore ต้องเป็นตัวเลข** (ปกติ 5 ต่อข้อ)
 6. **ห้ามมี markdown wrapper** เช่น \`\`\`json`
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -5143,10 +5261,19 @@ ${arceInfo.map(a => `- ${a.name}: ใช้คำกริยา ${a.verbs}`).jo
  * Analyzes course description and LOs to create curriculum structure
  */
 exports.generateCourseStructure = functions.runWith({ 
-  timeoutSeconds: 180,
-  memory: '1GB',
-  secrets: [openaiApiKey]
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation
+  memory: '2GB',
+  secrets: [openaiApiKeySecret]
 }).https.onRequest(async (req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -5166,7 +5293,11 @@ exports.generateCourseStructure = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
@@ -5367,7 +5498,7 @@ ${selectedStandards?.length > 0
 3. ผลรวม periods ของทุกหน่วย = ${totalHours} คาบ
 4. plansPreview ต้องมีจำนวน = periods ของหน่วยนั้น`
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -5448,10 +5579,19 @@ ${selectedStandards?.length > 0
  * Creates detailed unit structure with lesson plans outline
  */
 exports.generateLearningUnit = functions.runWith({ 
-  timeoutSeconds: 180,
-  memory: '1GB',
-  secrets: [openaiApiKey]
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation
+  memory: '2GB',
+  secrets: [openaiApiKeySecret]
 }).https.onRequest(async (req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -5479,7 +5619,11 @@ exports.generateLearningUnit = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
@@ -5585,7 +5729,7 @@ ${isBasicCourse ? '\n⚠️ เนื่องจากเป็นรายว�
 5. หัวข้อแผนต้องต่อเนื่องกัน: แผน 1 → แผน 2 → แผน 3 → ... → แผน ${numberOfPlans}
 6. ถ้า ${numberOfPlans} คาบ ต้องสร้าง ${numberOfPlans} แผน ห้ามน้อยกว่านี้!`
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -5744,10 +5888,19 @@ ${isBasicCourse ? '\n⚠️ เนื่องจากเป็นรายว�
  * - ปรับตามบริบทและเนื้อหาของแต่ละแผน
  */
 exports.generateElectronicWorksheet = functions.runWith({ 
-  secrets: [openaiApiKey],
-  timeoutSeconds: 180,
-  memory: '1GB'
+  secrets: [openaiApiKeySecret],
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation ที่ซับซ้อน
+  memory: '2GB'
 }).https.onRequest(async (req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -5799,7 +5952,11 @@ exports.generateElectronicWorksheet = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🔧 FIX: Use getOpenAIClient() instead of undefined 'openai'
+      let openaiClient
+      try {
+        openaiClient = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
@@ -6194,7 +6351,7 @@ ${includeRubric !== false ? '- แสดงเกณฑ์การให้ค�
 5. ⚠️ ปฏิบัติตามจำนวนคำถามที่ระบุอย่างเคร่งครัด ห้ามสร้างเกินหรือน้อยกว่า
 ตอบเป็นภาษาไทยและ JSON เท่านั้น`
 
-      const completion = await openai.chat.completions.create({
+      const completion = await openaiClient.chat.completions.create({
         model: model,
         messages: [
           {
@@ -6210,15 +6367,31 @@ ${includeRubric !== false ? '- แสดงเกณฑ์การให้ค�
       const responseText = completion.choices[0].message.content
       let worksheetData
       try {
+        // Enhanced markdown wrapper cleaning
         let cleanedText = responseText.trim()
+        
+        // Remove markdown code block wrappers
         if (cleanedText.startsWith('```')) {
           cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
           cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+          cleanedText = cleanedText.trim()
         }
+        
+        // Try to find JSON object if there's extra text
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          cleanedText = jsonMatch[0]
+        }
+        
         worksheetData = JSON.parse(cleanedText)
       } catch (parseError) {
-        console.error('Failed to parse worksheet JSON:', responseText)
-        return res.status(500).send({ error: 'Failed to parse AI response' })
+        console.error('Failed to parse worksheet JSON:', parseError.message)
+        console.error('Response text preview:', responseText.substring(0, 500))
+        return res.status(500).send({ 
+          error: 'Failed to parse AI response',
+          details: parseError.message,
+          preview: responseText.substring(0, 200)
+        })
       }
 
       // Validate and fix metadata
@@ -6452,10 +6625,19 @@ function buildArceContext(arceFocus, weights) {
  * พร้อมจุดแข็ง จุดอ่อน ข้อเสนอแนะตามมาตรฐาน PA/DPA
  */
 exports.assessWorksheetSubmission = functions.runWith({ 
-  secrets: [openaiApiKey],
-  timeoutSeconds: 180,
-  memory: '1GB'
+  secrets: [openaiApiKeySecret],
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation
+  memory: '2GB'
 }).https.onRequest(async (req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -6465,6 +6647,7 @@ exports.assessWorksheetSubmission = functions.runWith({
       const {
         submissionId,
         worksheetId,
+        courseId, // 🆕 ดึง courseId เพื่อหา assessmentMode
         answers,
         worksheetStructure,
         attemptNumber,
@@ -6478,11 +6661,30 @@ exports.assessWorksheetSubmission = functions.runWith({
         })
       }
 
-      if (!openai) {
+      // 🆕 Get course setting for assessmentMode
+      let useMultiAgent = false
+      if (courseId) {
+        try {
+          const courseDoc = await db.collection('courses').doc(courseId).get()
+          if (courseDoc.exists) {
+            const courseData = courseDoc.data()
+            useMultiAgent = courseData.assessmentMode === 'multi-agent'
+            console.log(`📚 Course ${courseId} assessmentMode: ${courseData.assessmentMode || 'single'} (Multi-Agent: ${useMultiAgent})`)
+          }
+        } catch (err) {
+          console.warn('Could not fetch course settings:', err.message)
+        }
+      }
+
+      // Get OpenAI client
+      let openai
+      try {
+        openai = getOpenAIClient()
+      } catch (err) {
         return res.status(500).send({ error: 'OpenAI not configured' })
       }
 
-      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
+      const model = getDefaultModel()
 
       // Load worksheet structure if not provided
       let worksheet = worksheetStructure
@@ -6725,7 +6927,32 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
 1. สำหรับ arce_situation ให้ประเมินแยกทุกด้าน A-R-C-E และรวมคะแนน
 2. เปรียบเทียบคำตอบนักเรียนกับ Expected_ARCE ที่กำหนดไว้
 3. feedback ต้องเฉพาะเจาะจง อ้างอิงจากคำตอบจริง
-4. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ`
+4. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
+
+<bias_prevention>
+⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
+1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
+   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
+   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
+2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
+3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
+4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
+</bias_prevention>
+
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
+- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+- "ดีมากครับ เห็นด้วยเลย"
+
+การตรวจสอบ:
+- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
+- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
+</fluffy_content_detection>`
       } else {
         // Original assessment prompt for regular worksheets
         prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS) ตามเกณฑ์ A.R.C.E., Bloom's Taxonomy และมาตรฐาน PA/DPA
@@ -6858,7 +7085,32 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
 4. strengths/weaknesses ต้องยกตัวอย่างจากคำตอบ
 5. nextSteps ต้องเป็นสิ่งที่นักเรียนทำได้จริงเพื่อพัฒนาตัวเอง
 6. teacherNotes สำหรับครูใช้วางแผนช่วยเหลือนักเรียน
-7. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ`
+7. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
+
+<bias_prevention>
+⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
+1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
+   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
+   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
+2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
+3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
+4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
+</bias_prevention>
+
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
+- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+- "ดีมากครับ เห็นด้วยเลย"
+
+การตรวจสอบ:
+- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
+- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
+</fluffy_content_detection>`
       } // End of else block for regular worksheets
 
       // Use appropriate system message based on worksheet type
@@ -6878,32 +7130,188 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
 5. เข้าใจมาตรฐาน PA/DPA ของไทย
 ตอบเป็น JSON ภาษาไทยเท่านั้น`
 
-      const completion = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: systemMessage
-          },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 4000
-      })
-
-      const responseText = completion.choices[0].message.content
       let assessmentResult
-      try {
-        let cleanedText = responseText.trim()
-        if (cleanedText.startsWith('```')) {
-          cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
-          cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+      
+      // 🤖 Multi-Agent Mode: Use 6 agents for more accurate assessment
+      if (useMultiAgent && !isArceEvaluateWorksheet && !hasArceSituations) {
+        console.log('🤖×6 Using Multi-Agent mode for worksheet assessment')
+        
+        // Combine all answers for multi-agent assessment
+        const combinedAnswer = questionsForAssessment
+          .map(q => `${q.prompt}: ${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}`)
+          .join('\n\n')
+        
+        const mainQuestion = questionsForAssessment[0]?.prompt || worksheet.metadata?.title || 'ใบงาน'
+        
+        try {
+          const multiAgentResult = await runMultiAgentAssessment(
+            combinedAnswer,
+            mainQuestion,
+            getOpenAIClient(),
+            model,
+            {
+              gradeLevel: worksheet.metadata?.gradeLevel || 'ม.4',
+              subjectArea: worksheet.metadata?.subjectGroup || 'ทั่วไป',
+              expectedLOs: worksheet.metadata?.learningOutcomes || []
+            }
+          )
+          
+          // Map Multi-Agent result to worksheet assessment format
+          const totalMaxScore = worksheet.scoring?.totalPoints || (questionsForAssessment.length * 5)
+          const multiTotalScore = (multiAgentResult.consensus?.analysis || 0) +
+                                  (multiAgentResult.consensus?.reasoning || 0) +
+                                  (multiAgentResult.consensus?.creativity || 0) +
+                                  (multiAgentResult.consensus?.evidence || 0)
+          const percentage = Math.round((multiTotalScore / 20) * 100)
+          const paLevel = percentage >= 80 ? 4 : percentage >= 60 ? 3 : percentage >= 40 ? 2 : 1
+          const paLevelText = paLevel === 4 ? 'ระดับ 4: ดีมาก' : 
+                              paLevel === 3 ? 'ระดับ 3: ดี' :
+                              paLevel === 2 ? 'ระดับ 2: พอใช้' : 'ระดับ 1: ต้องปรับปรุง'
+          
+          assessmentResult = {
+            summary: {
+              totalScore: Math.round((percentage / 100) * totalMaxScore),
+              maxScore: totalMaxScore,
+              percentage,
+              paLevel,
+              paLevelText,
+              overallFeedback: multiAgentResult.consensus?.feedback || 'การประเมินเสร็จสิ้น',
+              recommendation: multiAgentResult.consensus?.recommendations?.[0] || 'ฝึกฝนต่อไป'
+            },
+            arceScores: {
+              analysis: {
+                raw: multiAgentResult.consensus?.analysis || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.analysis || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.analysis?.feedback || multiAgentResult.agentDetails?.analysis?.microFeedback || ''
+              },
+              reasoning: {
+                raw: multiAgentResult.consensus?.reasoning || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.reasoning || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.reasoning?.feedback || multiAgentResult.agentDetails?.reasoning?.microFeedback || ''
+              },
+              creativity: {
+                raw: multiAgentResult.consensus?.creativity || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.creativity || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.creativity?.feedback || multiAgentResult.agentDetails?.creativity?.microFeedback || ''
+              },
+              evidence: {
+                raw: multiAgentResult.consensus?.evidence || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.evidence || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.evidence?.feedback || multiAgentResult.agentDetails?.evidence?.microFeedback || ''
+              }
+            },
+            questionResults: questionsForAssessment.map(q => ({
+              questionId: q.questionId,
+              sectionId: q.sectionId,
+              score: Math.round((percentage / 100) * q.maxScore),
+              maxScore: q.maxScore,
+              passed: percentage >= 50,
+              feedback: multiAgentResult.consensus?.feedback || ''
+            })),
+            strengths: multiAgentResult.consensus?.strengths || multiAgentResult.strengths || [],
+            weaknesses: multiAgentResult.consensus?.weaknesses || multiAgentResult.weaknesses || [],
+            nextSteps: multiAgentResult.consensus?.recommendations || [],
+            teacherNotes: `📊 ประเมินด้วย Multi-Agent (6 AI): ความเชื่อมั่น ${multiAgentResult.confidence || multiAgentResult.consensus?.averageConfidence || 'N/A'}%`,
+            assessmentMode: 'multi-agent',
+            // 🆕 เพิ่ม agentDetails ละเอียด เหมือน Chat
+            agentDetails: {
+              analysis: {
+                agentName: 'Analysis Expert',
+                score: multiAgentResult.agentDetails?.analysis?.score || 0,
+                confidence: multiAgentResult.agentDetails?.analysis?.confidence || 0,
+                microFeedback: multiAgentResult.agentDetails?.analysis?.microFeedback || '',
+                chainOfThought: multiAgentResult.agentDetails?.analysis?.chainOfThought || ''
+              },
+              reasoning: {
+                agentName: 'Reasoning Expert',
+                score: multiAgentResult.agentDetails?.reasoning?.score || 0,
+                confidence: multiAgentResult.agentDetails?.reasoning?.confidence || 0,
+                microFeedback: multiAgentResult.agentDetails?.reasoning?.microFeedback || '',
+                chainOfThought: multiAgentResult.agentDetails?.reasoning?.chainOfThought || ''
+              },
+              creativity: {
+                agentName: 'Creativity Expert',
+                score: multiAgentResult.agentDetails?.creativity?.score || 0,
+                confidence: multiAgentResult.agentDetails?.creativity?.confidence || 0,
+                microFeedback: multiAgentResult.agentDetails?.creativity?.microFeedback || '',
+                chainOfThought: multiAgentResult.agentDetails?.creativity?.chainOfThought || ''
+              },
+              evidence: {
+                agentName: 'Evidence Expert',
+                score: multiAgentResult.agentDetails?.evidence?.score || 0,
+                confidence: multiAgentResult.agentDetails?.evidence?.confidence || 0,
+                microFeedback: multiAgentResult.agentDetails?.evidence?.microFeedback || '',
+                chainOfThought: multiAgentResult.agentDetails?.evidence?.chainOfThought || ''
+              },
+              adversarial: multiAgentResult.agentDetails?.adversarial || {
+                refinedScores: multiAgentResult.rubricScores || {},
+                challenges: [],
+                biasDetected: [],
+                consistencyScore: 0
+              },
+              consensus: multiAgentResult.agentDetails?.consensus || {
+                rubricScores: multiAgentResult.rubricScores || {},
+                totalScore: multiAgentResult.totalScore || 0,
+                confidence: multiAgentResult.confidence || 0,
+                consensusLevel: 'moderate',
+                feedback: multiAgentResult.feedback || ''
+              }
+            },
+            multiAgentMetadata: {
+              processingTimeMs: multiAgentResult.multiAgentMetadata?.processingTimeMs || 0,
+              agentCount: 6,
+              consensusLevel: multiAgentResult.agentDetails?.consensus?.consensusLevel || 'moderate'
+            },
+            agentDebate: multiAgentResult.adversarialRefinement || null
+          }
+          
+          console.log('✅ Multi-Agent worksheet assessment completed:', {
+            totalScore: assessmentResult.summary.totalScore,
+            percentage: assessmentResult.summary.percentage
+          })
+          
+        } catch (multiAgentError) {
+          console.error('❌ Multi-Agent failed, falling back to single agent:', multiAgentError.message)
+          // Fall through to single agent below
+          assessmentResult = null
         }
-        assessmentResult = JSON.parse(cleanedText)
-      } catch (parseError) {
-        console.error('Failed to parse assessment JSON:', responseText)
-        return res.status(500).send({ error: 'Failed to parse AI response' })
       }
+      
+      // Single Agent Mode (default or fallback)
+      if (!assessmentResult) {
+        console.log('🤖×1 Using Single Agent mode for worksheet assessment')
+        
+        const completion = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            {
+              role: 'system',
+              content: systemMessage
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 4000
+        })
+
+        const responseText = completion.choices[0].message.content
+        try {
+          let cleanedText = responseText.trim()
+          if (cleanedText.startsWith('```')) {
+            cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
+            cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+          }
+          assessmentResult = JSON.parse(cleanedText)
+          assessmentResult.assessmentMode = 'single' // Mark as single agent
+        } catch (parseError) {
+          console.error('Failed to parse assessment JSON:', responseText)
+          return res.status(500).send({ error: 'Failed to parse AI response' })
+        }
+      } // End of single agent block
 
       // 🎯 LO Assessment: Evaluate Learning Outcomes if worksheet has LOs
       let loAssessment = { passedLOs: [], analysis: 'ไม่มี Learning Outcomes สำหรับประเมิน' }
@@ -7046,6 +7454,58 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
               passedLOs: updatedPassedLOs,
               lastAssessedAt: admin.firestore.FieldValue.serverTimestamp()
             })
+            
+            // 🎮 GAMIFICATION: เพิ่ม XP, Badge, Streak สำหรับ Worksheet (เหมือน Chat)
+            const worksheetGamificationData = {
+              rubricScores: worksheetAssessment.arceScores,
+              overallScore: assessmentResult.summary.totalScore
+            }
+            const worksheetPointsEarned = calculatePointsSimple(worksheetGamificationData)
+            
+            // Calculate streak
+            const currentDate = new Date().toISOString()
+            const streakUpdate = calculateStreak(currentData.lastActiveDate, currentDate)
+            
+            const gamificationUpdate = {
+              totalPoints: admin.firestore.FieldValue.increment(worksheetPointsEarned),
+              worksheetCount: admin.firestore.FieldValue.increment(1),
+              lastActiveDate: currentDate
+            }
+            
+            // Add streak data if applicable
+            if (streakUpdate && streakUpdate.increment) {
+              gamificationUpdate.currentStreak = admin.firestore.FieldValue.increment(1)
+              const newStreak = (currentData.currentStreak || 0) + 1
+              if (newStreak > (currentData.maxStreak || 0)) {
+                gamificationUpdate.maxStreak = newStreak
+              }
+            }
+            
+            await progressRef.update(gamificationUpdate)
+            
+            // Check for badges
+            const courseDoc = await db.collection('courses').doc(submissionData.courseId).get()
+            const totalLOs = courseDoc.exists ? (courseDoc.data().learningOutcomes?.length || 0) : 0
+            const newBadges = checkBadges({
+              ...currentData,
+              totalPassed: updatedPassedLOs.length,
+              totalPoints: (currentData.totalPoints || 0) + worksheetPointsEarned,
+              currentStreak: streakUpdate?.increment ? (currentData.currentStreak || 0) + 1 : currentData.currentStreak,
+              worksheetCount: (currentData.worksheetCount || 0) + 1
+            }, totalLOs)
+            
+            // Update badges if new ones earned
+            if (newBadges.length > 0) {
+              const badgeIds = newBadges.map(b => b.id)
+              const badgePoints = newBadges.reduce((sum, b) => sum + b.points, 0)
+              await progressRef.update({
+                badges: admin.firestore.FieldValue.arrayUnion(...badgeIds),
+                totalPoints: admin.firestore.FieldValue.increment(badgePoints)
+              })
+              console.log(`🏆 Worksheet badges earned for ${submissionData.studentId}:`, badgeIds)
+            }
+            
+            console.log(`🎮 Worksheet gamification: ${submissionData.studentId} earned ${worksheetPointsEarned} XP`)
           } else {
             // First submission - initialize everything
             const worksheetScores = {}
@@ -7067,9 +7527,22 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
               worksheetAssessments: [worksheetAssessment],
               worksheetScores: worksheetScores,
               passedLOs: loAssessment.passedLOs || [],
+              // 🎮 GAMIFICATION: Initialize for first worksheet submission
+              totalPoints: calculatePointsSimple({
+                rubricScores: worksheetAssessment.arceScores,
+                overallScore: assessmentResult.summary.totalScore
+              }),
+              worksheetCount: 1,
+              assessmentCount: 0,
+              currentStreak: 1,
+              maxStreak: 1,
+              badges: [],
+              lastActiveDate: new Date().toISOString(),
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
               lastAssessedAt: admin.firestore.FieldValue.serverTimestamp()
             })
+            
+            console.log(`🎮 First worksheet: ${submissionData.studentId} started gamification`)
           }
 
           // 📊 Log Learning Event for research data (non-blocking)
@@ -7375,10 +7848,19 @@ function autoFixKnowledgeSheet(data, topic) {
 }
 
 exports.generateKnowledgeSheet = functions.runWith({ 
-  secrets: [openaiApiKey],
-  timeoutSeconds: 180,
-  memory: '1GB'
+  secrets: [openaiApiKeySecret],
+  timeoutSeconds: 540,  // เพิ่มเป็น 9 นาที สำหรับ AI generation
+  memory: '2GB'
 }).https.onRequest((req, res) => {
+  // Handle CORS preflight first
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -7828,7 +8310,7 @@ ${standaloneContext}
 
       // ✨ Use retry with exponential backoff
       const openaiResponse = await retryWithBackoff(async () => {
-        return openai.chat.completions.create({
+        return getOpenAIClient().chat.completions.create({
           model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
           messages: [
             {
@@ -8022,7 +8504,7 @@ ${standaloneContext}
 // สร้างใบความรู้รวมระดับหน่วย - รวบรวมจากทุกแผนในหน่วย
 // ป้องกันเนื้อหาซ้ำซ้อนระหว่างแผน
 exports.generateUnitKnowledgeSheet = functions.runWith({ 
-  secrets: [openaiApiKey],
+  secrets: [openaiApiKeySecret],
   timeoutSeconds: 300,  // Longer timeout for unit-level
   memory: '1GB'
 }).https.onRequest((req, res) => {
@@ -8346,7 +8828,7 @@ ${plansOverview}
   ]
 }`
 
-      const openaiResponse = await openai.chat.completions.create({
+      const openaiResponse = await getOpenAIClient().chat.completions.create({
         model: process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18',
         messages: [
           {
@@ -8527,7 +9009,7 @@ ${plansOverview}
 // 📄 Batch Generate Knowledge Sheets for Multiple Plans
 // ========================================
 exports.generateBatchKnowledgeSheets = functions.runWith({ 
-  secrets: [openaiApiKey],
+  secrets: [openaiApiKeySecret],
   timeoutSeconds: 540,  // 9 minutes for multiple plans
   memory: '2GB'
 }).https.onRequest((req, res) => {
@@ -10666,29 +11148,36 @@ exports.logSequenceEventAPI = functions.https.onRequest(async (req, res) => {
         return res.status(405).json({ error: 'Method not allowed' })
       }
       
-      const { sessionId, studentId, courseId, questionId, eventType, data } = req.body
+      // Support both old (sequenceId) and new (sessionId) field names
+      const { 
+        sessionId, sequenceId, studentId, courseId, 
+        questionId, eventType, data, metadata 
+      } = req.body
       
-      if (!sessionId || !studentId || !questionId || !eventType) {
+      const effectiveSessionId = sessionId || sequenceId
+      const effectiveData = data || metadata || {}
+      
+      if (!effectiveSessionId || !studentId || !eventType) {
         return res.status(400).json({ 
-          error: 'Missing required fields: sessionId, studentId, questionId, eventType' 
+          error: 'Missing required fields: sessionId/sequenceId, studentId, eventType' 
         })
       }
       
-      // Validate eventType
+      // Validate eventType - allow any string for flexibility
       const validTypes = Object.keys(SEQUENCE_EVENT_TYPES)
-      if (!validTypes.includes(eventType)) {
-        return res.status(400).json({ 
-          error: `Invalid eventType. Must be one of: ${validTypes.join(', ')}` 
-        })
+      const isValidType = validTypes.includes(eventType) || eventType.includes('_')
+      
+      if (!isValidType) {
+        console.warn(`Unknown eventType: ${eventType}, allowing anyway`)
       }
       
       const result = await logSequenceEvent(db, {
-        sessionId,
+        sessionId: effectiveSessionId,
         studentId,
-        courseId,
-        questionId,
+        courseId: courseId || 'unknown',
+        questionId: questionId || 'unknown',
         eventType,
-        data
+        data: effectiveData
       })
       
       return res.json(result)
@@ -10711,15 +11200,17 @@ exports.finalizeSequenceAPI = functions.https.onRequest(async (req, res) => {
         return res.status(405).json({ error: 'Method not allowed' })
       }
       
-      const { sessionId, questionId } = req.body
+      // Support both old (sequenceId) and new (sessionId) field names
+      const { sessionId, sequenceId, questionId, studentId, outcome } = req.body
+      const effectiveSessionId = sessionId || sequenceId
       
-      if (!sessionId || !questionId) {
+      if (!effectiveSessionId) {
         return res.status(400).json({ 
-          error: 'Missing required fields: sessionId, questionId' 
+          error: 'Missing required field: sessionId or sequenceId' 
         })
       }
       
-      const result = await finalizeSequence(db, sessionId, questionId)
+      const result = await finalizeSequence(db, effectiveSessionId, questionId || 'session-end', outcome)
       return res.json(result)
       
     } catch (error) {
@@ -11083,7 +11574,7 @@ exports.updateAdaptivePath = functions.https.onRequest(async (req, res) => {
  * 📝 Assess Submission Multi-Pass - Multi-pass AI assessment for assignments
  * POST /assessSubmissionMultiPass { submissionId, assignmentId, studentAnswer|answer, questionText?, ... }
  */
-exports.assessSubmissionMultiPass = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.assessSubmissionMultiPass = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -11129,7 +11620,7 @@ exports.assessSubmissionMultiPass = functions.runWith({ secrets: [openaiApiKey] 
       const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
       
       // Multi-pass assessment: Pass 1 - Initial scoring
-      const pass1Response = await openai.chat.completions.create({
+      const pass1Response = await getOpenAIClient().chat.completions.create({
         model: modelToUse,
         temperature: 0,
         seed: 42,
@@ -11168,7 +11659,7 @@ Return JSON only:
       // Pass 2 - Verification (if score is borderline)
       const totalScore = assessment.totalScore
       if (totalScore >= 8 && totalScore <= 12) {
-        const pass2Response = await openai.chat.completions.create({
+        const pass2Response = await getOpenAIClient().chat.completions.create({
           model: modelToUse,
           temperature: 0,
           seed: 42,
@@ -11444,7 +11935,7 @@ exports.resolveAppeal = functions.https.onRequest(async (req, res) => {
  * 📖 Get Detailed Explanation - AI explains assessment scores
  * POST /getDetailedExplanation { assessmentId }
  */
-exports.getDetailedExplanation = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.getDetailedExplanation = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -11465,7 +11956,7 @@ exports.getDetailedExplanation = functions.runWith({ secrets: [openaiApiKey] }).
       const assessment = assessmentDoc.data()
       const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAIClient().chat.completions.create({
         model: modelToUse,
         temperature: 0.3,
         messages: [
@@ -11554,7 +12045,7 @@ exports.getCourses = functions.https.onRequest(async (req, res) => {
  * 📖 Generate Micro Lesson - AI generates bite-sized learning content
  * POST /generateMicroLesson { courseId, topic, learningOutcome, difficulty }
  */
-exports.generateMicroLesson = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateMicroLesson = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -11569,7 +12060,7 @@ exports.generateMicroLesson = functions.runWith({ secrets: [openaiApiKey] }).htt
 
       const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAIClient().chat.completions.create({
         model: modelToUse,
         temperature: 0.7,
         messages: [
@@ -11639,7 +12130,7 @@ ${difficulty ? `Difficulty: ${difficulty}` : ''}`
  * 🎯 Generate Interventions - AI suggests personalized interventions
  * POST /generateInterventions { studentId, courseId }
  */
-exports.generateInterventions = functions.runWith({ secrets: [openaiApiKey] }).https.onRequest(async (req, res) => {
+exports.generateInterventions = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
       if (req.method !== 'POST') {
@@ -11687,7 +12178,7 @@ exports.generateInterventions = functions.runWith({ secrets: [openaiApiKey] }).h
 
       const modelToUse = process.env.OPENAI_MODEL || 'gpt-4o-mini-2024-07-18'
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAIClient().chat.completions.create({
         model: modelToUse,
         temperature: 0.5,
         messages: [
@@ -11891,12 +12382,58 @@ exports.createEvidencePack = functions.https.onRequest(async (req, res) => {
 // =============================================================================
 
 /**
+ * 🤖 Format Multi-Agent feedback for chat display
+ */
+function formatMultiAgentFeedback(result) {
+  const scores = result.rubricScores || {}
+  const overallScore = result.overallScore || 0
+  
+  let feedback = `✅ ประเมินคำตอบเสร็จแล้ว! (🤖 Multi-Agent Mode)\n\n`
+  feedback += `📊 คะแนนของคุณ: ${overallScore}/20\n\n`
+  feedback += `คะแนนรายด้าน:\n`
+  feedback += `- 🔍 การวิเคราะห์: ${scores.analysis || 0}/5\n`
+  feedback += `- 🧠 การให้เหตุผล: ${scores.reasoning || 0}/5\n`
+  feedback += `- 💡 ความคิดสร้างสรรค์: ${scores.creativity || 0}/5\n`
+  feedback += `- 📚 การใช้หลักฐาน: ${scores.evidence || 0}/5\n\n`
+  
+  if (result.confidence) {
+    feedback += `🎯 ความมั่นใจในการประเมิน: ${Math.round(result.confidence)}%\n\n`
+  }
+  
+  feedback += `💬 Feedback:\n${result.feedbackText || 'ไม่มี feedback'}\n\n`
+  
+  if (result.strengths && result.strengths.length > 0) {
+    feedback += `✨ จุดเด่นของคุณ:\n`
+    result.strengths.forEach((s, i) => {
+      feedback += `${i + 1}. ${s}\n`
+    })
+    feedback += `\n`
+  }
+  
+  if (result.weaknesses && result.weaknesses.length > 0) {
+    feedback += `🎯 จุดที่ควรพัฒนา:\n`
+    result.weaknesses.forEach((w, i) => {
+      feedback += `${i + 1}. ${w}\n`
+    })
+    feedback += `\n`
+  }
+  
+  if (result.processingTime) {
+    feedback += `⏱️ เวลาประมวลผล: ${(result.processingTime / 1000).toFixed(1)}s (6 AI agents)\n`
+  }
+  
+  feedback += `\n---\n\n🎲 พร้อมสำหรับคำถามใหม่หรือไม่? พิมพ์ "ถัดไป" หรือ "next" เพื่อรับคำถามข้อใหม่ค่ะ`
+  
+  return feedback
+}
+
+/**
  * 🤖 Multi-Agent Assessment - Professional-grade HOTS assessment
  * Uses 6 specialized agents for maximum accuracy
  * POST /assessAnswerMultiAgent { studentAnswer, question, context }
  */
 exports.assessAnswerMultiAgent = functions.runWith({ 
-  secrets: [openaiApiKey],
+  secrets: [openaiApiKeySecret],
   timeoutSeconds: 300,
   memory: '1GB'
 }).https.onRequest(async (req, res) => {
@@ -11906,48 +12443,184 @@ exports.assessAnswerMultiAgent = functions.runWith({
         return res.status(405).send({ error: 'Method not allowed' })
       }
 
-      const { studentAnswer, question, context, studentId, sessionId } = req.body
+      const { 
+        studentAnswer, 
+        question, 
+        questionContext, // Support same format as assessAnswer
+        context, 
+        studentId, 
+        sessionId,
+        courseId,
+        questionId,
+        learningOutcomes
+      } = req.body
 
-      if (!studentAnswer || !question) {
+      // Support both formats
+      const answerText = studentAnswer || req.body.studentAnswer
+      const questionObj = question || { question: questionContext, id: questionId }
+      const contextObj = context || { learningOutcomes }
+
+      if (!answerText) {
         return res.status(400).send({ 
-          error: 'Missing required fields: studentAnswer, question' 
+          error: 'Missing required field: studentAnswer' 
         })
       }
 
-      // Initialize OpenAI
-      const openai = new OpenAI({ apiKey: openaiApiKey.value() })
+      // 🆕 Use LLMProvider with complete() method for Multi-Agent compatibility
+      const { getLLMProvider } = require('./utils/llmProvider')
+      const llmProvider = getLLMProvider()
 
-      // Run multi-agent assessment
+      // 🆕 Build context string for the question
+      let contextString = questionObj?.question || questionContext || ''
+      if (contextObj?.learningOutcomes?.length > 0) {
+        contextString += '\n\nLearning Outcomes:\n'
+        contextObj.learningOutcomes.forEach(lo => {
+          contextString += `- ${lo.code}: ${lo.description}\n`
+        })
+      }
+
+      // Run multi-agent assessment with CORRECT parameter order:
+      // runMultiAgentAssessment(llmProvider, context, answer, options)
       const result = await runMultiAgentAssessment(
-        openai,
-        studentAnswer,
-        question,
-        context || {}
+        llmProvider,
+        contextString,
+        answerText,
+        {
+          gradeLevel: contextObj?.gradeLevel,
+          subject: questionObj?.subject,
+          parallelAgents: true,
+          includeAdversarial: true
+        }
       )
+
+      // 🆕 Check for Multi-Agent errors
+      if (!result.success) {
+        console.error('Multi-Agent assessment failed:', result.error)
+        return res.status(500).send({ 
+          success: false, 
+          error: result.error || 'Multi-Agent assessment failed'
+        })
+      }
+
+      // 🆕 Perform LO Assessment if learningOutcomes provided
+      let loAssessment = { passedLOs: [], analysis: 'ไม่มี Learning Outcomes สำหรับประเมิน' }
+      const learningOutcomesArr = learningOutcomes || questionObj?.relatedLOs || []
+      
+      if (learningOutcomesArr.length > 0) {
+        try {
+          // Use the rubricScores from multi-agent result
+          const rubricScores = result.rubricScores || {
+            analysis: result.agentDetails?.analysis?.score || 0,
+            reasoning: result.agentDetails?.reasoning?.score || 0,
+            creativity: result.agentDetails?.creativity?.score || 0,
+            evidence: result.agentDetails?.evidence?.score || 0
+          }
+          
+          loAssessment = await assessLearningOutcomesInternal(
+            answerText,
+            learningOutcomesArr,
+            rubricScores
+          )
+          console.log('Multi-Agent LO assessment result:', JSON.stringify(loAssessment))
+        } catch (loError) {
+          console.error('LO assessment error in Multi-Agent:', loError)
+          loAssessment = { passedLOs: [], analysis: 'เกิดข้อผิดพลาดในการประเมิน LO' }
+        }
+      }
+      // Map Multi-Agent result to same format as assessAnswer
+      // Note: runMultiAgentAssessment returns { success, rubricScores, totalScore, feedback, ... }
+      const mappedResult = {
+        rubricScores: result.rubricScores || result.finalAssessment?.scores || {
+          analysis: result.agentDetails?.analysis?.score || 0,
+          reasoning: result.agentDetails?.reasoning?.score || 0,
+          creativity: result.agentDetails?.creativity?.score || 0,
+          evidence: result.agentDetails?.evidence?.score || 0
+        },
+        overallScore: result.totalScore || result.finalAssessment?.totalScore || 
+          Object.values(result.agentDetails || {}).reduce((sum, r) => sum + (r?.score || 0), 0),
+        feedbackText: result.feedback || result.finalAssessment?.feedback || 'ประเมินโดย Multi-Agent System',
+        strengths: result.strengths || result.finalAssessment?.strengths || [],
+        weaknesses: result.weaknesses || result.finalAssessment?.weaknesses || [],
+        suggestion: result.suggestion || result.finalAssessment?.suggestion || '',
+        confidence: result.confidence || result.finalAssessment?.confidence || 0,
+        multiAgentMode: true,
+        agentDetails: result.agentDetails,
+        processingTime: result.multiAgentMetadata?.processingTimeMs
+      }
+
+      // Save assessment to Firestore (same as assessAnswer)
+      let assessmentId = null
+      if (studentId && sessionId) {
+        const assessmentData = {
+          sessionId,
+          studentId,
+          courseId: courseId || null,
+          questionId: questionId || questionObj?.id || null,
+          questionContext: questionContext || questionObj?.question || '',
+          rawAnswer: answerText,
+          rubricScores: mappedResult.rubricScores,
+          overallScore: mappedResult.overallScore,
+          feedbackText: mappedResult.feedbackText,
+          strengths: mappedResult.strengths,
+          weaknesses: mappedResult.weaknesses,
+          suggestion: mappedResult.suggestion,
+          confidence: mappedResult.confidence,
+          multiAgentMode: true,
+          agentDetails: result.agentDetails,
+          loAssessment: loAssessment,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        }
+
+        const assessmentRef = await db.collection('assessments').add(assessmentData)
+        assessmentId = assessmentRef.id
+        mappedResult.id = assessmentRef.id
+
+        // Update session message count
+        if (sessionId) {
+          await db.collection('sessions').doc(sessionId).update({
+            messageCount: admin.firestore.FieldValue.increment(1),
+            lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
+          })
+        }
+
+        // Add bot message with feedback
+        await db.collection('messages').add({
+          sessionId,
+          from: 'bot',
+          text: formatMultiAgentFeedback(mappedResult),
+          type: 'assessment',
+          assessmentId: assessmentRef.id,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        })
+      }
 
       // Log for research
       if (studentId) {
-        await logLearningEvent({
-          studentId,
+        await logLearningEvent(db, {
           eventType: 'MULTI_AGENT_ASSESSMENT',
-          data: {
-            questionId: question.id || 'unknown',
-            totalScore: result.finalAssessment?.totalScore,
-            agentScores: result.agentResults,
-            confidence: result.finalAssessment?.confidence,
-            processingTime: result.processingTime
-          }
+          studentId,
+          courseId: courseId || null,
+          assessmentId: assessmentId,
+          questionId: questionObj?.id || 'unknown',
+          rubricScores: mappedResult.rubricScores,
+          overallScore: mappedResult.overallScore,
+          aiConfidence: mappedResult.confidence,
+          targetLOs: learningOutcomesArr.map(lo => lo.code || lo) || [],
+          passedLOs: loAssessment?.passedLOs || []
         })
       }
 
       return res.status(200).send({
         success: true,
-        assessment: result.finalAssessment,
-        agentDetails: result.agentResults,
+        id: mappedResult.id,
+        result: mappedResult,
+        assessment: mappedResult,
+        agentDetails: result.agentDetails,
         adversarialReview: result.adversarialReview,
         consensusProcess: result.consensusProcess,
-        confidence: result.finalAssessment?.confidence,
-        processingTime: result.processingTime
+        confidence: mappedResult.confidence,
+        processingTime: result.multiAgentMetadata?.processingTimeMs,
+        loAssessment: loAssessment
       })
     } catch (error) {
       console.error('Multi-agent assessment error:', error)
@@ -12563,3 +13236,237 @@ function generateConceptualChangeNarrative(assessments, changes, dimensionModels
   
   return parts.join('\n')
 }
+
+/**
+ * 📊 Calculate Real-Time IRR (Callable version)
+ * For ExpertValidationDashboard
+ */
+exports.calculateRealTimeIRR = functions.https.onCall(async (data, context) => {
+  try {
+    // Optional: Verify auth
+    // if (!context.auth) {
+    //   throw new functions.https.HttpsError('unauthenticated', 'Must be logged in')
+    // }
+
+    const dimension = data?.dimension || 'total'
+    
+    // Get validated assessments
+    const snapshot = await db.collection('assessments')
+      .where('expertValidation.isValidated', '==', true)
+      .get()
+    
+    if (snapshot.empty) {
+      return {
+        success: false,
+        error: 'No validated assessments found',
+        validatedCount: 0
+      }
+    }
+    
+    // Extract validation data
+    const validations = []
+    snapshot.forEach(doc => {
+      const d = doc.data()
+      const expert = d.expertValidation
+      
+      if (expert && d.rubricScores) {
+        validations.push({
+          assessmentId: doc.id,
+          aiScores: {
+            analysis: d.rubricScores.analysis || 0,
+            reasoning: d.rubricScores.reasoning || 0,
+            creativity: d.rubricScores.creativity || 0,
+            evidence: d.rubricScores.evidence || 0
+          },
+          expertScores: {
+            analysis: expert.expertScores?.analysis || 0,
+            reasoning: expert.expertScores?.reasoning || 0,
+            creativity: expert.expertScores?.creativity || 0,
+            evidence: expert.expertScores?.evidence || 0
+          }
+        })
+      }
+    })
+    
+    if (validations.length < 5) {
+      return {
+        success: false,
+        error: `Insufficient validated assessments. Need at least 5, got ${validations.length}`,
+        validatedCount: validations.length
+      }
+    }
+    
+    // Calculate IRR for each dimension
+    const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+    const byDimension = {}
+    
+    for (const dim of dimensions) {
+      const irrResult = comprehensiveIRRAnalysis(validations, dim)
+      byDimension[dim] = {
+        kappa: irrResult.cohensKappa || 0,
+        spearman: irrResult.spearmanRho || 0,
+        agreement: irrResult.percentAgreement || 0,
+        status: getIRRStatus(irrResult.cohensKappa || 0)
+      }
+    }
+    
+    // Overall status
+    const avgKappa = dimensions.reduce((sum, d) => sum + (byDimension[d].kappa || 0), 0) / 4
+    const overallStatus = {
+      kappa: avgKappa,
+      status: getIRRStatus(avgKappa),
+      interpretation: getKappaInterpretation(avgKappa)
+    }
+    
+    return {
+      success: true,
+      byDimension,
+      overallStatus,
+      sampleSize: validations.length
+    }
+  } catch (error) {
+    console.error('Error in calculateRealTimeIRR:', error)
+    throw new functions.https.HttpsError('internal', error.message)
+  }
+})
+
+/**
+ * Helper: Get IRR Status from Kappa
+ */
+function getIRRStatus(kappa) {
+  if (kappa >= 0.81) return 'excellent'
+  if (kappa >= 0.61) return 'good'
+  if (kappa >= 0.41) return 'moderate'
+  if (kappa >= 0.21) return 'fair'
+  return 'poor'
+}
+
+/**
+ * Helper: Get Kappa Interpretation
+ */
+function getKappaInterpretation(kappa) {
+  if (kappa >= 0.81) return 'Almost Perfect Agreement'
+  if (kappa >= 0.61) return 'Substantial Agreement'
+  if (kappa >= 0.41) return 'Moderate Agreement'
+  if (kappa >= 0.21) return 'Fair Agreement'
+  return 'Slight Agreement'
+}
+
+/**
+ * 📊 Get Golden Dataset Stats (Callable version)
+ * For ExpertValidationDashboard
+ */
+exports.getGoldenDatasetStatsCallable = functions.https.onCall(async (data, context) => {
+  try {
+    // Get golden samples
+    const goldenSnapshot = await db.collection('goldenDataset').get()
+    
+    // Calculate stats
+    const counts = {
+      total: goldenSnapshot.size,
+      high: 0,
+      medium: 0,
+      low: 0
+    }
+    
+    const dimensions = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+    let totalDiffSum = 0
+    
+    goldenSnapshot.forEach(doc => {
+      const d = doc.data()
+      
+      // Count by stratum (based on AI score total)
+      const aiTotal = (d.aiScores?.analysis || 0) + (d.aiScores?.reasoning || 0) + 
+                     (d.aiScores?.creativity || 0) + (d.aiScores?.evidence || 0)
+      if (aiTotal >= 16) counts.high++
+      else if (aiTotal >= 10) counts.medium++
+      else counts.low++
+      
+      // Calculate diff per dimension
+      if (d.aiScores && d.expertScores) {
+        for (const dim of Object.keys(dimensions)) {
+          const diff = Math.abs((d.aiScores[dim] || 0) - (d.expertScores[dim] || 0))
+          dimensions[dim] += diff
+          totalDiffSum += diff
+        }
+      }
+    })
+    
+    // Average differences
+    const n = Math.max(1, goldenSnapshot.size)
+    const avgDiff = {
+      analysis: dimensions.analysis / n,
+      reasoning: dimensions.reasoning / n,
+      creativity: dimensions.creativity / n,
+      evidence: dimensions.evidence / n,
+      overall: totalDiffSum / (n * 4)
+    }
+    
+    return {
+      success: true,
+      stats: {
+        counts,
+        avgDiff,
+        lastUpdated: new Date().toISOString()
+      }
+    }
+  } catch (error) {
+    console.error('Error in getGoldenDatasetStats:', error)
+    throw new functions.https.HttpsError('internal', error.message)
+  }
+})
+
+// ============================================================
+// 📦 CONTROLLER RE-EXPORTS (Phase 6 Modular Architecture)
+// These exports delegate to modular controller files for cleaner code
+// ============================================================
+
+// 🎮 Gamification Controller Exports
+// Note: Using controller versions (duplicate implementations exist above - will be removed in v7.0)
+// exports.getLeaderboard = gamificationController.getLeaderboard
+// exports.getBadgeDefinitions = gamificationController.getBadgeDefinitions
+// exports.claimDailyReward = gamificationController.claimDailyReward
+// exports.generateDailyReport = gamificationController.generateDailyReport
+
+// 📊 Analytics Controller Exports (NEW in Phase 6)
+exports.getStudentTrajectoryV2 = analyticsController.getStudentTrajectory
+exports.exportSEMDataV2 = analyticsController.exportSEMData
+exports.generateClassAnalyticsV2 = analyticsController.generateClassAnalytics
+
+// 👨‍🏫 Review Controller Exports (NEW in Phase 6)
+exports.submitTeacherReviewV2 = reviewController.submitTeacherReview
+exports.submitAppealV2 = reviewController.submitAppeal
+exports.resolveAppealV2 = reviewController.resolveAppeal
+exports.getPendingAppeals = reviewController.getPendingAppeals
+
+// 🎓 Teacher Certification Controller Exports (NEW in Phase 6)
+exports.getTeacherCertification = certificationController.getTeacherCertification
+exports.issueBadge = certificationController.issueBadge
+exports.verifyBadge = certificationController.verifyBadge
+exports.getTrainingModules = certificationController.getTrainingModules
+exports.submitCalibration = certificationController.submitCalibration
+exports.getCertificationLeaderboard = certificationController.getCertificationLeaderboard
+
+// 📊 ESA Dashboard Controller Exports (NEW in Phase 6)
+exports.getESADashboard = esaDashboardController.getESADashboard
+exports.getESASchools = esaDashboardController.getESASchools
+exports.getESAHOTSGap = esaDashboardController.getESAHOTSGap
+exports.getESAEquityReport = esaDashboardController.getESAEquityReport
+exports.getESAResourceRecommendations = esaDashboardController.getESAResourceRecommendations
+
+// 🏫 School Onboarding Controller Exports (NEW in Phase 6)
+exports.registerSchool = schoolOnboardingController.registerSchool
+exports.verifyRegistration = schoolOnboardingController.verifyRegistration
+exports.approveRegistration = schoolOnboardingController.approveRegistration
+exports.rejectRegistration = schoolOnboardingController.rejectRegistration
+exports.getRegistrationStatus = schoolOnboardingController.getRegistrationStatus
+exports.getPendingRegistrations = schoolOnboardingController.getPendingRegistrations
+exports.getOnboardingAnalytics = schoolOnboardingController.getOnboardingAnalytics
+
+// 🇹🇭 Ministry Dashboard Controller Exports (NEW in Phase 6)
+exports.getNationalOverview = ministryDashboardController.getNationalOverview
+exports.getESARankings = ministryDashboardController.getESARankings
+exports.getNationalHOTSGap = ministryDashboardController.getNationalHOTSGap
+exports.getPolicyInsights = ministryDashboardController.getPolicyInsights
+exports.getTalentPipeline = ministryDashboardController.getTalentPipeline
+exports.exportNationalReport = ministryDashboardController.exportNationalReport

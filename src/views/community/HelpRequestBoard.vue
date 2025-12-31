@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/community')">← กลับ</button>
         <h1>🆘 กระดานขอความช่วยเหลือ</h1>
       </div>
       <button class="request-btn" @click="showRequestModal = true">

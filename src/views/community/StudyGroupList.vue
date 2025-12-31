@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/community')">← กลับ</button>
         <h1>👥 กลุ่มเรียน</h1>
       </div>
       <button class="create-btn" @click="showCreateModal = true">
@@ -621,8 +621,6 @@ const loadSuggestedGroups = async () => {
 
 const loadCourses = async () => {
   try {
-    console.log('Loading courses...')
-    
     // Simple query - get all courses (rules allow read for all signed-in users)
     const coursesQuery = query(collection(db, 'courses'), limit(50))
     const snapshot = await getDocs(coursesQuery)
@@ -631,8 +629,6 @@ const loadCourses = async () => {
       id: doc.id,
       ...doc.data()
     }))
-    
-    console.log('Courses loaded:', courses.value.length, courses.value.map(c => c.name))
 
     // Extract LOs from all courses
     const los = []

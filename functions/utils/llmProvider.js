@@ -24,6 +24,7 @@
 
 const OpenAI = require('openai')
 const { getCircuitBreaker, isOpenAIAvailable } = require('./circuitBreaker')
+const { getOpenAIClient, getDefaultModel, MODELS } = require('./openaiClient')
 
 /**
  * Provider Configuration
@@ -104,24 +105,23 @@ class LLMProviderManager {
    * Initialize all configured providers
    */
   _initializeProviders(config) {
-    // OpenAI
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        this.providers.set(PROVIDERS.OPENAI, {
-          client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
-          name: 'OpenAI',
-          isAvailable: true,
-          defaultModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          lastError: null,
-          consecutiveFailures: 0
-        })
-        console.log('✅ OpenAI provider initialized')
-      } catch (error) {
-        console.warn('⚠️ Failed to initialize OpenAI:', error.message)
-      }
+    // OpenAI - use centralized client if available
+    try {
+      const openaiClient = getOpenAIClient()
+      this.providers.set(PROVIDERS.OPENAI, {
+        client: openaiClient,
+        name: 'OpenAI',
+        isAvailable: true,
+        defaultModel: getDefaultModel(),
+        lastError: null,
+        consecutiveFailures: 0
+      })
+      console.log('✅ OpenAI provider initialized (via centralized client)')
+    } catch (error) {
+      console.warn('⚠️ Failed to initialize OpenAI:', error.message)
     }
 
-    // Azure OpenAI
+    // Azure OpenAI - still using direct configuration
     if (process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT) {
       try {
         this.providers.set(PROVIDERS.AZURE_OPENAI, {
@@ -410,6 +410,40 @@ class LLMProviderManager {
       provider.consecutiveFailures = 0
       provider.lastError = null
     }
+  }
+
+  /**
+   * 🆕 Complete method for Multi-Agent Assessment compatibility
+   * Simple wrapper around createChatCompletion for text-based prompts
+   * 
+   * @param {string} prompt - Text prompt to complete
+   * @param {Object} options - Completion options
+   * @returns {string} Completed text response
+   */
+  async complete(prompt, options = {}) {
+    const {
+      temperature = 0.3,
+      maxTokens = 2000,
+      model = null
+    } = options
+
+    const messages = [
+      { role: 'system', content: 'You are a professional educational assessment expert specializing in HOTS (Higher-Order Thinking Skills) evaluation. Respond in JSON format when requested.' },
+      { role: 'user', content: prompt }
+    ]
+
+    const result = await this.createChatCompletion({
+      messages,
+      temperature,
+      maxTokens,
+      model
+    })
+
+    if (!result.success) {
+      throw new Error(result.error || 'LLM completion failed')
+    }
+
+    return result.content
   }
 }
 

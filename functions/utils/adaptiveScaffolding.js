@@ -203,7 +203,26 @@ function identifyWeakDimensions(rubricScores, threshold = 3) {
  * @returns {Object} Scaffolding intervention
  */
 function generateAdaptiveScaffolding(assessmentResult, attemptNumber = 1, previousScaffolding = null) {
+  // Guard against missing or invalid assessment result
+  if (!assessmentResult || !assessmentResult.rubricScores) {
+    return {
+      needed: false,
+      reason: 'No valid assessment scores available',
+      error: 'Missing rubricScores'
+    }
+  }
+  
   const { rubricScores } = assessmentResult
+  
+  // Guard against null/undefined rubricScores
+  if (!rubricScores || typeof rubricScores !== 'object') {
+    return {
+      needed: false,
+      reason: 'Invalid rubricScores format',
+      error: 'rubricScores is null or not an object'
+    }
+  }
+  
   const overallScore = Object.values(rubricScores).reduce((a, b) => a + b, 0)
 
   // If passing, no scaffolding needed

@@ -6,18 +6,19 @@
 const functions = require('firebase-functions')
 const admin = require('firebase-admin')
 const cors = require('cors')({ origin: true })
-const { defineSecret } = require('firebase-functions/params')
+const { 
+  getOpenAIClient, 
+  openaiApiKeySecret, 
+  getDefaultModel 
+} = require('../utils/openaiClient')
 
-const openaiApiKey = defineSecret('OPENAI_API_KEY')
+const openaiApiKey = openaiApiKeySecret
 
 // Get Firestore instance
 const getDb = () => admin.firestore()
 
-// Get OpenAI instance
-const getOpenAI = () => {
-  const { OpenAI } = require('openai')
-  return new OpenAI({ apiKey: openaiApiKey.value() })
-}
+// Get OpenAI instance - use centralized client
+const getOpenAI = () => getOpenAIClient()
 
 /**
  * Generate Electronic Worksheet
@@ -140,15 +141,31 @@ ${learningOutcomes.length > 0 ? `- Learning Outcomes: ${learningOutcomes.map(lo 
       let worksheetData
       
       try {
+        // Enhanced markdown wrapper cleaning
         let cleanedText = responseText.trim()
+        
+        // Remove markdown code block wrappers
         if (cleanedText.startsWith('```')) {
           cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
           cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+          cleanedText = cleanedText.trim()
         }
+        
+        // Try to find JSON object if there's extra text
+        const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          cleanedText = jsonMatch[0]
+        }
+        
         worksheetData = JSON.parse(cleanedText)
       } catch (parseError) {
-        console.error('Failed to parse worksheet JSON:', responseText)
-        return res.status(500).send({ error: 'Failed to parse AI response' })
+        console.error('Failed to parse worksheet JSON:', parseError.message)
+        console.error('Response text:', responseText.substring(0, 500))
+        return res.status(500).send({ 
+          error: 'Failed to parse AI response',
+          details: parseError.message,
+          preview: responseText.substring(0, 200)
+        })
       }
 
       // Add metadata

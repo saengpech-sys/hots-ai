@@ -1,4 +1,4 @@
-# 📚 HOTS AI ChatLoop v5.2 — Academic Documentation Suite
+# 📚 HOTS AI ChatLoop v6.0 — Academic Documentation Suite
 
 <div align="center">
 
@@ -8,8 +8,8 @@
 
 ---
 
-**เวอร์ชัน:** 5.2  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568 (December 2025)
+**เวอร์ชัน:** 6.0  
+**ปรับปรุงล่าสุด:** 31 ธันวาคม 2568 (December 2025)
 
 </div>
 

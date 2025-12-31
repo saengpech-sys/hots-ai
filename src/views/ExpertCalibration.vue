@@ -6,7 +6,11 @@
         <h1>🎯 Expert Calibration Mode</h1>
       </div>
       <div class="nav-right">
-        <button @click="showIRRReport = true" class="btn btn-outline">📊 IRR Report</button>
+        <button @click="showIRRReport = true" class="btn btn-irr-report">
+          <span class="irr-icon">📊</span>
+          <span class="irr-text">IRR Report</span>
+          <span class="irr-badge" v-if="completedCount > 0">{{ completedCount }}</span>
+        </button>
         <span class="badge">{{ authStore.user?.displayName || 'ผู้เชี่ยวชาญ' }}</span>
       </div>
     </nav>
@@ -111,26 +115,40 @@
               :class="{ active: selectedId === item.id }"
               @click="selectAssessment(item)"
             >
-              <div class="item-info">
-                <span class="item-id">#{{ item.id.slice(-6) }}</span>
+              <div class="item-header">
+                <div class="item-score-badge">
+                  <span class="score-value">{{ getTotalScore(item) }}</span>
+                  <span class="score-max">/20</span>
+                </div>
                 <span class="item-date">{{ formatDate(item.timestamp) }}</span>
               </div>
               <div class="item-preview">
-                {{ truncate(item.studentAnswer || item.answer, 50) }}
+                <span class="preview-label">💬</span>
+                {{ truncate(item.rawAnswer || item.studentAnswer || item.answer, 60) || 'ไม่มีข้อความ' }}
               </div>
-              <div class="item-status">
-                <span class="status-badge pending">รอตรวจสอบ</span>
+              <div class="item-footer">
+                <span class="status-badge pending">🔍 รอตรวจสอบ</span>
+                <span class="item-dims" v-if="item.rubricScores">
+                  A:{{ item.rubricScores.analysis || 0 }} 
+                  R:{{ item.rubricScores.reasoning || 0 }} 
+                  C:{{ item.rubricScores.creativity || 0 }} 
+                  E:{{ item.rubricScores.evidence || 0 }}
+                </span>
               </div>
             </div>
           </div>
 
           <!-- Completed Section -->
           <div v-if="myCalibrations.length > 0" class="completed-section">
-            <h3>✅ ที่ตรวจสอบแล้ว (ล่าสุด 10 รายการ)</h3>
+            <h3>✅ ตรวจสอบแล้ว ({{ myCalibrations.length }} รายการ)</h3>
             <div v-for="cal in myCalibrations.slice(0, 10)" :key="cal.id" class="calibration-item">
-              <span class="cal-id">#{{ cal.assessmentId?.slice(-6) }}</span>
+              <div class="cal-scores">
+                <span class="cal-expert">👤 {{ getCalTotal(cal.expertScores) }}</span>
+                <span class="cal-vs">vs</span>
+                <span class="cal-ai">🤖 {{ getCalTotal(cal.aiScores) }}</span>
+              </div>
               <span class="cal-agreement" :class="getAgreementClass(cal.agreementScore)">
-                {{ cal.agreementScore }}% agreement
+                {{ cal.agreementScore }}%
               </span>
               <span class="cal-date">{{ formatDate(cal.timestamp) }}</span>
             </div>
@@ -150,12 +168,13 @@
 
           <div class="qa-section">
             <div class="question-box">
-              <h3>คำถาม:</h3>
-              <p>{{ selectedAssessment.questionText || selectedAssessment.question || 'ไม่มีคำถาม' }}</p>
+              <h3>📝 คำถาม:</h3>
+              <p v-if="loadingQuestion" class="loading-text">กำลังโหลด...</p>
+              <p v-else>{{ currentQuestion || 'ไม่พบข้อมูลคำถาม' }}</p>
             </div>
             <div class="answer-box">
-              <h3>คำตอบนักเรียน:</h3>
-              <p>{{ selectedAssessment.studentAnswer || selectedAssessment.answer || 'ไม่มีคำตอบ' }}</p>
+              <h3>💬 คำตอบนักเรียน:</h3>
+              <p>{{ currentAnswer || 'ไม่มีคำตอบ' }}</p>
             </div>
           </div>
 
@@ -239,6 +258,9 @@ const selectedId = ref(null)
 const showAIScores = ref(false)
 const showIRRDetails = ref(false)
 const showIRRReport = ref(false)
+const loadingQuestion = ref(false)
+const currentQuestion = ref('')
+const currentAnswer = ref('')
 
 // IRR Stats
 const irrStats = ref({
@@ -407,13 +429,48 @@ async function loadMyCalibrations() {
   }
 }
 
-function selectAssessment(item) {
+async function selectAssessment(item) {
   selectedAssessment.value = item
   selectedId.value = item.id
   // Reset form
   expertScores.value = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
   expertFeedback.value = ''
   showAIScores.value = false
+  
+  // Set answer - use rawAnswer (from backend) or studentAnswer or answer
+  currentAnswer.value = item.rawAnswer || item.studentAnswer || item.answer || ''
+  
+  // Set question - try multiple sources
+  // 1. questionData.question (stored from question bank)
+  // 2. questionContext (question text stored directly)
+  // 3. questionText or question field
+  currentQuestion.value = ''
+  
+  if (item.questionData?.question) {
+    currentQuestion.value = item.questionData.question
+  } else if (item.questionContext && item.questionContext !== 'General HOTS Assessment') {
+    currentQuestion.value = item.questionContext
+  } else if (item.questionText) {
+    currentQuestion.value = item.questionText
+  } else if (item.question) {
+    currentQuestion.value = item.question
+  }
+  
+  // If still no question, try loading from questions collection
+  if (!currentQuestion.value && item.questionId) {
+    loadingQuestion.value = true
+    try {
+      const { doc, getDoc } = await import('firebase/firestore')
+      const qDoc = await getDoc(doc(db, 'questions', item.questionId))
+      if (qDoc.exists()) {
+        currentQuestion.value = qDoc.data().question || qDoc.data().text || ''
+      }
+    } catch (e) {
+      console.error('Error loading question:', e)
+    } finally {
+      loadingQuestion.value = false
+    }
+  }
 }
 
 function cancelSelection() {
@@ -502,6 +559,17 @@ function getAgreementClass(score) {
   return 'low'
 }
 
+function getTotalScore(item) {
+  if (!item?.rubricScores) return 0
+  const scores = item.rubricScores
+  return (scores.analysis || 0) + (scores.reasoning || 0) + (scores.creativity || 0) + (scores.evidence || 0)
+}
+
+function getCalTotal(scores) {
+  if (!scores) return 0
+  return (scores.analysis || 0) + (scores.reasoning || 0) + (scores.creativity || 0) + (scores.evidence || 0)
+}
+
 function getKappaClass(kappa) {
   if (kappa === null || kappa === undefined) return ''
   if (kappa >= 0.8) return 'excellent'
@@ -524,7 +592,7 @@ function formatDate(timestamp) {
 }
 
 function goBack() {
-  router.back()
+  router.push('/teacher')
 }
 
 // ============================================
@@ -834,6 +902,60 @@ watch(myCalibrations, () => {
   background: var(--hover-bg);
 }
 
+/* IRR Report Button - Modern Gradient Style */
+.btn-irr-report {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-irr-report::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-irr-report:hover::before {
+  left: 100%;
+}
+
+.btn-irr-report:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+
+.irr-icon {
+  font-size: 1.1rem;
+}
+
+.irr-text {
+  font-size: 0.9rem;
+}
+
+.irr-badge {
+  background: rgba(255,255,255,0.25);
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .badge {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -961,7 +1083,7 @@ watch(myCalibrations, () => {
 
 .assessment-item {
   padding: 1rem;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   background: var(--bg-tertiary);
   border: 2px solid transparent;
@@ -970,23 +1092,37 @@ watch(myCalibrations, () => {
 
 .assessment-item:hover {
   border-color: #667eea;
+  transform: translateX(4px);
 }
 
 .assessment-item.active {
   border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(102, 126, 234, 0.15);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
 }
 
-.item-info {
+.item-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
 }
 
-.item-id {
-  font-weight: 600;
-  font-family: monospace;
-  color: var(--text-primary);
+.item-score-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 0.3rem 0.7rem;
+  border-radius: 8px;
+  color: white;
+  font-weight: 700;
+}
+
+.score-value {
+  font-size: 1.1rem;
+}
+
+.score-max {
+  font-size: 0.75rem;
+  opacity: 0.8;
 }
 
 .item-date {
@@ -997,11 +1133,36 @@ watch(myCalibrations, () => {
 .item-preview {
   font-size: 0.85rem;
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  line-height: 1.4;
+}
+
+.preview-label {
+  flex-shrink: 0;
+}
+
+.item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-dims {
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
 }
 
 .status-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   padding: 0.25rem 0.75rem;
   border-radius: 99px;
   font-size: 0.75rem;
@@ -1009,7 +1170,7 @@ watch(myCalibrations, () => {
 }
 
 .status-badge.pending {
-  background: #fef3c7;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
   color: #92400e;
 }
 
@@ -1029,21 +1190,36 @@ watch(myCalibrations, () => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem;
+  padding: 0.6rem 0.5rem;
   font-size: 0.8rem;
   border-bottom: 1px solid var(--border-color);
 }
 
-.cal-id {
-  font-family: monospace;
+.cal-scores {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.cal-expert {
+  color: #3b82f6;
+}
+
+.cal-vs {
   color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+.cal-ai {
+  color: #10b981;
 }
 
 .cal-agreement {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: 0.7rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.75rem;
 }
 
 .cal-agreement.high { background: #d1fae5; color: #065f46; }
@@ -1117,12 +1293,20 @@ watch(myCalibrations, () => {
   font-size: 0.9rem;
   color: var(--text-secondary);
   margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .question-box p, .answer-box p {
   margin: 0;
   color: var(--text-primary);
   line-height: 1.6;
+}
+
+.loading-text {
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .scoring-grid {

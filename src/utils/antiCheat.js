@@ -89,16 +89,16 @@ const PC_CONFIG = {
   SUDDEN_JUMP_TIME: 500,          // ms
 }
 
-// Configuration สำหรับ Mobile - ผ่อนปรนกว่าเพราะพิมพ์ช้ากว่า + autocomplete
+// Configuration สำหรับ Mobile - ผ่อนปรนกว่าเพราะพิมพ์ช้ากว่า + autocomplete/swipe
 const MOBILE_CONFIG = {
-  MIN_TYPING_SPEED: 10,           // CPM - Mobile พิมพ์ช้ากว่า
-  MAX_NORMAL_TYPING_SPEED: 250,   // CPM - Mobile พิมพ์ได้ช้ากว่า PC
-  MIN_KEYSTROKE_INTERVAL: 50,     // ms - Mobile ช้ากว่า
-  BURST_CHAR_THRESHOLD: 30,       // chars - Mobile burst น้อยกว่า
-  BURST_TIME_WINDOW: 4000,        // 4 seconds - ให้เวลามากกว่า
-  MIN_KEYSTROKE_RATIO: 0.5,       // 50% - ผ่อนปรนเพราะ autocomplete/swipe typing
-  SUDDEN_JUMP_THRESHOLD: 15,      // chars - Mobile มี autocomplete จึงมี jump บ้าง
-  SUDDEN_JUMP_TIME: 800,          // ms - ให้เวลามากกว่า
+  MIN_TYPING_SPEED: 5,            // CPM - Mobile พิมพ์ช้ากว่ามาก
+  MAX_NORMAL_TYPING_SPEED: 300,   // CPM - เพิ่มเพื่อรองรับ swipe typing
+  MIN_KEYSTROKE_INTERVAL: 30,     // ms - ลดลงเพื่อรองรับ swipe
+  BURST_CHAR_THRESHOLD: 50,       // chars - เพิ่มเพราะ autocomplete ได้หลายตัว
+  BURST_TIME_WINDOW: 5000,        // 5 seconds - ให้เวลามากขึ้น
+  MIN_KEYSTROKE_RATIO: 0.3,       // 30% - ผ่อนปรนมากเพราะ autocomplete/swipe/prediction
+  SUDDEN_JUMP_THRESHOLD: 25,      // chars - เพิ่มเพื่อรองรับ autocomplete phrases
+  SUDDEN_JUMP_TIME: 1000,         // ms - ให้เวลามากขึ้น
 }
 
 // Configuration สำหรับ Tablet - กลางๆ ระหว่าง PC และ Mobile
@@ -368,10 +368,11 @@ class TypingTracker {
     result.metrics.keystrokeRatio = keystrokeRatio
     
     if (keystrokeRatio < config.MIN_KEYSTROKE_RATIO) {
-      // Mobile ได้ penalty น้อยกว่าเพราะมี autocomplete
-      const penalty = isMobile ? 20 : 30
+      // Mobile ได้ penalty น้อยกว่าเพราะมี autocomplete/swipe typing
+      // 🆕 ลด penalty และเพิ่ม tolerance
+      const penalty = isMobile ? 10 : 20
       result.suspiciousLevel += penalty
-      result.reasons.push(`Low keystroke ratio: ${(keystrokeRatio * 100).toFixed(1)}% (expected ≥${config.MIN_KEYSTROKE_RATIO * 100}% for ${config.deviceType})`)
+      result.warnings.push(`Low keystroke ratio: ${(keystrokeRatio * 100).toFixed(1)}% (expected ≥${config.MIN_KEYSTROKE_RATIO * 100}% for ${config.deviceType})`)
     }
     
     // 2. ตรวจสอบ Typing Speed (ปรับตาม device)
@@ -402,14 +403,16 @@ class TypingTracker {
       h.lengthDiff > config.SUDDEN_JUMP_THRESHOLD && h.timeSinceLast < config.SUDDEN_JUMP_TIME
     )
     if (suspiciousJumps.length > 0) {
-      // Mobile: ผ่อนปรนถ้า jump ไม่ใหญ่มาก (อาจเป็น autocomplete)
-      const bigJumps = suspiciousJumps.filter(j => j.lengthDiff > 25)
+      // Mobile: ผ่อนปรนถ้า jump ไม่ใหญ่มาก (อาจเป็น autocomplete/prediction)
+      // 🆕 เพิ่ม threshold และลด penalty
+      const bigJumps = suspiciousJumps.filter(j => j.lengthDiff > 40) // เพิ่มจาก 25 เป็น 40
       if (bigJumps.length > 0 || !isMobile) {
-        const penalty = isMobile ? 25 : 35
+        const penalty = isMobile ? 15 : 25 // ลด penalty
         result.suspiciousLevel += penalty
-        result.reasons.push(`Sudden text jumps: ${suspiciousJumps.length} instances`)
+        result.warnings.push(`Sudden text jumps: ${suspiciousJumps.length} instances`)
       } else {
-        result.warnings.push(`Small text jumps (possible autocomplete): ${suspiciousJumps.length} instances`)
+        // ไม่เพิ่ม penalty สำหรับ small jumps บน mobile
+        result.metrics.autocompleteJumps = suspiciousJumps.length
       }
     }
     
@@ -472,7 +475,8 @@ class TypingTracker {
     
     // คำนวณผลสุดท้าย
     result.suspiciousLevel = Math.min(100, result.suspiciousLevel)
-    result.isValid = result.suspiciousLevel < 50
+    // 🆕 เพิ่ม threshold เป็น 70 เพื่อลด false positive
+    result.isValid = result.suspiciousLevel < 70
     
     // เพิ่ม summary
     result.summary = {

@@ -1,4 +1,4 @@
-# 📖 HOTS AI ChatLoop - Developer Manual (v5.2)
+# 📖 HOTS AI ChatLoop - Developer Manual (v6.0)
 
 > **คู่มือสำหรับนักพัฒนารุ่นต่อไป** — เอกสารนี้รวบรวมทุกสิ่งที่คุณต้องรู้เพื่อพัฒนา, Debug และ Deploy ระบบ HOTS AI ChatLoop
 
@@ -24,21 +24,22 @@
 ```
 hots-ai/
 ├── 📁 src/                    # 🖥️ FRONTEND (Vue 3 + Vite)
-│   ├── components/            # Reusable UI Components
-│   ├── views/                 # Page-level Components
+│   ├── components/            # Reusable UI Components (31 files)
+│   ├── views/                 # Page-level Components (91 views)
 │   ├── stores/                # Pinia State Management (8 stores)
-│   ├── router/                # Vue Router Configuration
+│   ├── router/                # Vue Router Configuration (93+ routes)
 │   ├── composables/           # Vue Composition API Hooks
 │   ├── firebase/              # Firebase Client SDK Config
 │   ├── utils/                 # Helper Functions
 │   └── styles/                # Global CSS + Dark Mode
 │
 ├── 📁 functions/              # ☁️ BACKEND (Cloud Functions)
-│   ├── index.js               # Main Entry (10,000+ lines) - AI Logic หลัก
+│   ├── index.js               # Main Entry (13,000+ lines) - AI Logic หลัก
+│   ├── national-scale.js      # National Scale Functions (16 APIs)
 │   ├── controllers/           # Business Logic แยกตาม Domain
 │   ├── services/              # External Service Integrations
-│   ├── utils/                 # Shared Utilities (Parser, Validators)
-│   ├── __tests__/             # Jest Unit Tests
+│   ├── utils/                 # Shared Utilities (30+ modules)
+│   ├── __tests__/             # Jest Unit Tests (11 suites)
 │   └── package.json           # Node.js 20 Dependencies
 │
 ├── 📁 docs/                   # 📚 Academic Documentation
@@ -1649,7 +1650,7 @@ exports.assessAnswer = functions
 
 *Built with ❤️ for Thai Education*
 
-**Version 5.2** | **December 2025**
+**Version 6.0** | **December 2025**
 
 ---
 

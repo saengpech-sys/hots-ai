@@ -621,6 +621,16 @@ ${JSON.stringify(agentResults, null, 2)}
 5. Severity Bias: ให้คะแนนต่ำเกินไปทุกมิติ
 </bias_detection>
 
+<confidence_calculation>
+คำนวณ overallConfidence (0-100) จาก:
+1. Agent Agreement: ถ้า variance ของคะแนนจาก 4 agents < 1 → +30 confidence
+2. Evidence Quality: ถ้าทุก agent อ้างหลักฐานที่ตรงกัน → +25 confidence
+3. No Bias Detected: ถ้าไม่พบ bias ใดๆ → +25 confidence
+4. Answer Clarity: ถ้าคำตอบชัดเจน ไม่กำกวม → +20 confidence
+
+เป้าหมาย: Confidence 90+ แสดงว่าการประเมินมีความน่าเชื่อถือสูง
+</confidence_calculation>
+
 <output_schema>
 {
   "agentId": "ADVERSARIAL_REFINER",
@@ -710,6 +720,32 @@ ${isScaffolding ? `
 - ยกหลักฐานจากคำตอบที่สนับสนุนคะแนน
 - อธิบายสิ่งที่ต้องทำเพื่อได้คะแนนสูงขึ้น
 </right_to_explanation>
+
+<confidence_calibration>
+การกำหนด Confidence Score (0-100):
+
+ความมั่นใจสูง (90-100):
+- Agent ทุกตัวให้คะแนนไปในทิศทางเดียวกัน (variance < 1)
+- คำตอบมีความชัดเจน ไม่กำกวม
+- มีหลักฐานชัดเจนในคำตอบสนับสนุนคะแนน
+- Adversarial Refiner ไม่พบ bias หรือปัญหาสำคัญ
+- คำตอบยาวเพียงพอให้ประเมินได้ครบถ้วน (>50 คำ)
+
+ความมั่นใจปานกลาง (70-89):
+- Agent ส่วนใหญ่เห็นตรงกัน (variance < 2)
+- คำตอบค่อนข้างชัดเจน แต่อาจมีส่วนที่กำกวมบ้าง
+- มีหลักฐานบางส่วนในคำตอบ
+
+ความมั่นใจต่ำ (50-69):
+- Agent มีความเห็นแตกต่าง (variance >= 2)
+- คำตอบกำกวม ตีความได้หลายทาง
+- ขาดหลักฐานชัดเจน
+- คำตอบสั้นเกินไป
+
+ความมั่นใจต่ำมาก (<50):
+- คำตอบไม่เกี่ยวข้องหรือไม่สามารถประเมินได้
+- มี bias ชัดเจนในการประเมิน
+</confidence_calibration>
 
 <output_schema>
 {
@@ -883,7 +919,25 @@ async function runMultiAgentAssessment(llmProvider, context, answer, options = {
       reasoning: agentResults.reasoning,
       creativity: agentResults.creativity,
       evidence: agentResults.evidence,
-      ...(includeAdversarial ? { adversarial: refinedResults.adversarial } : {})
+      ...(includeAdversarial && refinedResults.adversarial ? { 
+        adversarial: {
+          refinedScores: refinedResults.adversarial.refinedScores || {},
+          challenges: refinedResults.adversarial.challenges || [],
+          biasDetected: refinedResults.adversarial.biasDetected || [],
+          overallConfidence: refinedResults.adversarial.overallConfidence || 0,
+          refinementSummary: refinedResults.adversarial.refinementSummary || '',
+          consensusAchieved: refinedResults.adversarial.consensusAchieved || false
+        }
+      } : {}),
+      // Add consensus aggregator results
+      consensus: {
+        rubricScores: parsedFinal.rubricScores || {},
+        totalScore: parsedFinal.totalScore || 0,
+        confidence: parsedFinal.confidence || 0,
+        confidenceReason: parsedFinal.confidenceReason || '',
+        consensusLevel: parsedFinal.multiAgentMetadata?.consensusLevel || 'medium',
+        feedback: parsedFinal.feedback || ''
+      }
     }
     
     return {

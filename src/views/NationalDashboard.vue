@@ -299,6 +299,16 @@
           </div>
         </div>
       </div>
+
+      <!-- Policy Insights Tab -->
+      <div v-if="activeTab === 'policy'" class="policy-section">
+        <PolicyInsights />
+      </div>
+
+      <!-- Talent Pipeline Tab -->
+      <div v-if="activeTab === 'talent'" class="talent-section">
+        <TalentPipeline />
+      </div>
     </div>
   </div>
 </template>
@@ -309,6 +319,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
 import { collection, query, where, getDocs, limit } from 'firebase/firestore'
+import PolicyInsights from '@/components/PolicyInsights.vue'
+import TalentPipeline from '@/components/TalentPipeline.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -318,6 +330,8 @@ const tabs = [
   { id: 'esa', label: 'เขตพื้นที่ (ESA)', icon: '📍' },
   { id: 'schools', label: 'โรงเรียน', icon: '🏫' },
   { id: 'curriculum', label: 'หลักสูตร', icon: '📚' },
+  { id: 'policy', label: 'นโยบาย AI', icon: '🎯' },
+  { id: 'talent', label: 'Talent Pipeline', icon: '🌟' },
   { id: 'export', label: 'ส่งออกข้อมูล', icon: '📤' }
 ]
 

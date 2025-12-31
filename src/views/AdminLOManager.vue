@@ -1,7 +1,7 @@
 <template>
   <div class="admin-lo-manager">
     <div class="page-header">
-      <button @click="$router.back()" class="back-btn">← กลับ</button>
+      <button @click="$router.push('/teacher')" class="back-btn">← กลับ</button>
       <div class="header-content">
         <h1>🔧 Admin: จัดการ Learning Outcomes</h1>
         <p class="subtitle">แก้ไข LO ที่ผ่านของนักเรียนแต่ละคน</p>
@@ -681,12 +681,26 @@ function showToast(message, type = 'success') {
 }
 
 .back-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: none;
+  padding: 0.6rem 1.2rem;
   border-radius: 0.5rem;
   cursor: pointer;
   font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
+}
+
+.back-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.back-btn:active {
+  transform: translateY(0);
 }
 
 .header-content h1 {
@@ -900,17 +914,20 @@ function showToast(message, type = 'success') {
 }
 
 .lo-mini-badge {
-  padding: 0.125rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: #f8d7da;
-  color: #721c24;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+  border: none;
 }
 
 .lo-mini-badge.passed {
-  background: #d4edda;
-  color: #155724;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.3);
 }
 
 /* Student Details */
@@ -1019,15 +1036,16 @@ function showToast(message, type = 'success') {
 }
 
 .lo-badge {
-  padding: 0.125rem 0.5rem;
-  border-radius: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.375rem;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .lo-badge.passed {
-  background: #d4edda;
-  color: #155724;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: white;
+  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.3);
 }
 
 .no-lo {

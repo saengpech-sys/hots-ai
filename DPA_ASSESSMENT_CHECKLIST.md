@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 2.0** | **Assessment Date: December 21, 2025**
+**Version 2.0** | **Assessment Date: December 31, 2025**
 
 *รายการตรวจสอบระบบ HOTS AI ChatLoop สำหรับการประกวดรางวัล DPA*
 
@@ -572,7 +572,7 @@ service cloud.firestore {
 
 **HOTS AI ChatLoop — DPA Assessment Checklist**
 
-*Version 2.0 | December 21, 2025*
+*Version 2.0 | December 31, 2025*
 
 ✅ **11/11 Criteria Passed — Ready for DPA Submission**
 

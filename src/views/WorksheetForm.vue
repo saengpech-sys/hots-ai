@@ -197,15 +197,19 @@
                       <textarea 
                         v-model="arceAnswers[`${section.id}_${question.id}_analysis`]"
                         placeholder="เขียนการวิเคราะห์ของคุณ..."
-                        rows="3"
+                        :rows="isMobile ? 4 : 3"
                         @paste.prevent="blockPaste"
                         @copy.prevent="blockCopy"
                         @cut.prevent="blockCut"
                         @drop.prevent="blockDrop"
                         @dragover.prevent
-                        @contextmenu.prevent
-                        class="arce-textarea no-select"
+                        @contextmenu.prevent="!isMobile"
+                        :class="['arce-textarea', { 'mobile-textarea': isMobile }]"
                         autocomplete="off"
+                        :spellcheck="isMobile"
+                        :autocorrect="isMobile ? 'on' : 'off'"
+                        :autocapitalize="isMobile ? 'sentences' : 'off'"
+                        inputmode="text"
                       ></textarea>
                     </div>
 
@@ -218,15 +222,19 @@
                       <textarea 
                         v-model="arceAnswers[`${section.id}_${question.id}_reasoning`]"
                         placeholder="เขียนเหตุผลและหลักการของคุณ..."
-                        rows="3"
+                        :rows="isMobile ? 4 : 3"
                         @paste.prevent="blockPaste"
                         @copy.prevent="blockCopy"
                         @cut.prevent="blockCut"
                         @drop.prevent="blockDrop"
                         @dragover.prevent
-                        @contextmenu.prevent
-                        class="arce-textarea no-select"
+                        @contextmenu.prevent="!isMobile"
+                        :class="['arce-textarea', { 'mobile-textarea': isMobile }]"
                         autocomplete="off"
+                        :spellcheck="isMobile"
+                        :autocorrect="isMobile ? 'on' : 'off'"
+                        :autocapitalize="isMobile ? 'sentences' : 'off'"
+                        inputmode="text"
                       ></textarea>
                     </div>
 
@@ -239,15 +247,19 @@
                       <textarea 
                         v-model="arceAnswers[`${section.id}_${question.id}_creativity`]"
                         placeholder="เขียนแนวคิดสร้างสรรค์ของคุณ..."
-                        rows="3"
+                        :rows="isMobile ? 4 : 3"
                         @paste.prevent="blockPaste"
                         @copy.prevent="blockCopy"
                         @cut.prevent="blockCut"
                         @drop.prevent="blockDrop"
                         @dragover.prevent
-                        @contextmenu.prevent
-                        class="arce-textarea no-select"
+                        @contextmenu.prevent="!isMobile"
+                        :class="['arce-textarea', { 'mobile-textarea': isMobile }]"
                         autocomplete="off"
+                        :spellcheck="isMobile"
+                        :autocorrect="isMobile ? 'on' : 'off'"
+                        :autocapitalize="isMobile ? 'sentences' : 'off'"
+                        inputmode="text"
                       ></textarea>
                     </div>
 
@@ -260,15 +272,19 @@
                       <textarea 
                         v-model="arceAnswers[`${section.id}_${question.id}_evidence`]"
                         placeholder="เขียนหลักฐานและตัวอย่างของคุณ..."
-                        rows="3"
+                        :rows="isMobile ? 4 : 3"
                         @paste.prevent="blockPaste"
                         @copy.prevent="blockCopy"
                         @cut.prevent="blockCut"
                         @drop.prevent="blockDrop"
                         @dragover.prevent
-                        @contextmenu.prevent
-                        class="arce-textarea no-select"
+                        @contextmenu.prevent="!isMobile"
+                        :class="['arce-textarea', { 'mobile-textarea': isMobile }]"
                         autocomplete="off"
+                        :spellcheck="isMobile"
+                        :autocorrect="isMobile ? 'on' : 'off'"
+                        :autocapitalize="isMobile ? 'sentences' : 'off'"
+                        inputmode="text"
                       ></textarea>
                     </div>
                   </div>
@@ -313,16 +329,19 @@
                   v-model="answers[`${section.id}_${question.id}`]"
                   :placeholder="question.placeholder || 'พิมพ์คำตอบของคุณที่นี่...'"
                   :minlength="question.minCharacters || 20"
-                  :rows="question.rows || 6"
+                  :rows="isMobile ? 8 : (question.rows || 6)"
                   @paste.prevent="blockPaste"
                   @copy.prevent="blockCopy"
                   @cut.prevent="blockCut"
                   @drop.prevent="blockDrop"
                   @dragover.prevent
-                  @contextmenu.prevent
-                  class="textarea-answer no-select"
+                  @contextmenu.prevent="!isMobile"
+                  :class="['textarea-answer', { 'mobile-textarea': isMobile }]"
                   autocomplete="off"
-                  spellcheck="false"
+                  :spellcheck="isMobile"
+                  :autocorrect="isMobile ? 'on' : 'off'"
+                  :autocapitalize="isMobile ? 'sentences' : 'off'"
+                  inputmode="text"
                 ></textarea>
                 <div class="char-count">
                   {{ (answers[`${section.id}_${question.id}`] || '').length }} / {{ question.minCharacters || 20 }} ตัวอักษรขั้นต่ำ
@@ -340,9 +359,12 @@
                   @cut.prevent="blockCut"
                   @drop.prevent="blockDrop"
                   @dragover.prevent
-                  @contextmenu.prevent
-                  class="input-answer no-select"
+                  @contextmenu.prevent="!isMobile"
+                  :class="['input-answer', { 'mobile-input': isMobile }]"
                   autocomplete="off"
+                  :autocorrect="isMobile ? 'on' : 'off'"
+                  :autocapitalize="isMobile ? 'sentences' : 'off'"
+                  inputmode="text"
                 />
               </template>
 
@@ -601,10 +623,15 @@ import { db } from '@/firebase/config'
 import { doc, getDoc, setDoc, updateDoc, collection, addDoc, serverTimestamp, increment, query, where, orderBy, getDocs, limit } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import { getDeviceInfo } from '@/utils/antiCheat'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+// 📱 Mobile Detection
+const deviceInfo = ref(getDeviceInfo())
+const isMobile = computed(() => deviceInfo.value.isMobile || deviceInfo.value.isTablet)
 
 // State
 const loading = ref(true)
@@ -1319,6 +1346,7 @@ async function submitWorksheet() {
       body: JSON.stringify({
         submissionId: submissionRef.id,
         worksheetId: worksheet.value.id,
+        courseId: worksheet.value.courseId, // 🆕 ส่ง courseId เพื่อดึง assessmentMode
         answers: combinedAnswers, // Use combined answers
         worksheetStructure: worksheet.value,
         attemptNumber: currentAttempt,
@@ -2705,12 +2733,17 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .worksheet-container {
     padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
   }
   
   .top-navbar {
     padding: 1rem;
     flex-direction: column;
     gap: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg-primary);
   }
   
   .nav-actions {
@@ -2728,15 +2761,61 @@ onUnmounted(() => {
   
   .submit-actions {
     flex-direction: column;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-primary);
+    padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+    margin: 0 -1rem -1rem -1rem;
+    border-top: 1px solid var(--border-color);
+    z-index: 50;
   }
   
   .submit-actions .btn {
     width: 100%;
     justify-content: center;
   }
+  
+  /* Mobile textarea styles */
+  .textarea-answer,
+  .arce-textarea {
+    font-size: 16px; /* Prevent iOS zoom */
+    min-height: 100px;
+  }
+  
+  .input-answer {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding: 1rem;
+  }
 }
 
-/* Anti-cheat: Disable text selection */
+/* Mobile-specific textarea styles */
+.textarea-answer.mobile-textarea,
+.arce-textarea.mobile-textarea {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
+  min-height: 120px;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+.input-answer.mobile-input {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
+  padding: 1rem;
+}
+
+/* Anti-cheat: Disable text selection - NOT for mobile textareas */
 .no-select {
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -2745,7 +2824,7 @@ onUnmounted(() => {
   -webkit-touch-callout: none;
 }
 
-/* Allow typing but prevent selection */
+/* Allow typing but prevent selection - deprecated, use mobile-textarea instead */
 .textarea-answer.no-select,
 .input-answer.no-select {
   -webkit-user-select: text;

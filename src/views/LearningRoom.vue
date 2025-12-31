@@ -62,16 +62,44 @@
       <section v-if="!isTeacher" class="worksheets-section">
         <h2 class="section-title">📝 ใบงานในห้องกิจกรรมนี้</h2>
         
+        <!-- 🆕 Journey Level Indicator -->
+        <div class="journey-level-indicator" v-if="journeyLevel > 1">
+          <span class="level-badge" :class="'level-' + journeyLevel">
+            Level {{ journeyLevel }}: {{ getJourneyLevelName(journeyLevel) }}
+          </span>
+          <span class="level-desc">{{ getJourneyLevelDesc(journeyLevel) }}</span>
+        </div>
+        
         <div v-if="worksheets.length === 0" class="empty-state">
           <span class="material-icons">assignment</span>
           <p>ยังไม่มีใบงานในห้องกิจกรรมนี้</p>
         </div>
 
         <div v-else class="worksheet-cards">
-          <div v-for="(ws, index) in worksheets" :key="ws.id" class="worksheet-card" :class="['worksheet-color-' + (index % 6), { 'completed': getSubmissionStatus(ws.id) === 'graded' }]">
+          <div v-for="(ws, index) in worksheets" :key="ws.id" 
+               class="worksheet-card" 
+               :class="[
+                 'worksheet-color-' + (index % 6), 
+                 { 'completed': getSubmissionStatus(ws.id) === 'graded' },
+                 { 'locked': !canStartWorksheetGated(ws, index).allowed && journeyLevel >= 2 }
+               ]">
             <div class="worksheet-number-badge" :class="'badge-color-' + (index % 6)">
               ใบงาน {{ index + 1 }}
             </div>
+            
+            <!-- 🆕 Lock Overlay for Level 2+ -->
+            <div v-if="!canStartWorksheetGated(ws, index).allowed && journeyLevel >= 2" class="ws-locked-overlay">
+              <span class="lock-icon">🔒</span>
+              <p>{{ canStartWorksheetGated(ws, index).reason }}</p>
+              <router-link 
+                v-if="canStartWorksheetGated(ws, index).requiredKsId" 
+                :to="`/knowledge-sheet/${canStartWorksheetGated(ws, index).requiredKsId}?roomId=${route.params.id}`"
+                class="btn btn-sm btn-outline"
+              >
+                📖 ไปอ่านใบความรู้
+              </router-link>
+            </div>
+            
             <div class="ws-header">
               <h3>{{ ws.metadata?.title || 'ใบงาน' }}</h3>
               <span class="ws-status" :class="getSubmissionStatus(ws.id)">
@@ -79,6 +107,25 @@
               </span>
             </div>
             <p class="ws-description">{{ ws.metadata?.description }}</p>
+            
+            <!-- 🆕 Pre-requisite Warning (Level 1) -->
+            <div v-if="!isKnowledgeSheetReadForWorksheet(ws, index) && journeyLevel === 1" class="prerequisite-warning">
+              <span class="material-icons">info</span>
+              <span>แนะนำให้อ่านใบความรู้ก่อน</span>
+              <router-link 
+                :to="`/knowledge-sheet/${getRelatedKnowledgeSheet(ws, index)?.id}?roomId=${route.params.id}`"
+                class="read-link"
+              >
+                📖 อ่าน
+              </router-link>
+            </div>
+            
+            <!-- 🆕 Knowledge Sheet Read Badge -->
+            <div v-if="isKnowledgeSheetReadForWorksheet(ws, index)" class="ks-read-badge">
+              <span class="material-icons">check_circle</span>
+              อ่านใบความรู้แล้ว
+            </div>
+            
             <div class="ws-info">
               <span><span class="material-icons">timer</span> {{ ws.metadata?.duration || 50 }} นาที</span>
               <span><span class="material-icons">quiz</span> {{ ws.metadata?.totalQuestions || 0 }} คำถาม</span>
@@ -98,8 +145,8 @@
               </button>
               <button v-else 
                       class="btn btn-primary" 
-                      @click="startWorksheet(ws.id)"
-                      :disabled="ws.status !== 'published'">
+                      @click="handleStartWorksheet(ws, index)"
+                      :disabled="ws.status !== 'published' || (!canStartWorksheetGated(ws, index).allowed && journeyLevel >= 2)">
                 <span class="material-icons">{{ getSubmissionStatus(ws.id) === 'draft' ? 'edit' : 'play_arrow' }}</span>
                 {{ getSubmissionStatus(ws.id) === 'draft' ? 'ทำต่อ' : 'เริ่มทำ' }}
               </button>
@@ -125,6 +172,9 @@
             <div class="ks-header-badge">
               <span class="ks-number">ใบความรู้ {{ index + 1 }}</span>
               <span v-if="ks.metadata?.planNumber" class="ks-plan-link">📝 ประกอบแผนที่ {{ ks.metadata.planNumber }}</span>
+              <!-- 🆕 Read Status Badge -->
+              <span v-if="isKnowledgeSheetRead(ks.id)" class="ks-read-status read">✅ อ่านแล้ว</span>
+              <span v-else class="ks-read-status unread">📖 ยังไม่ได้อ่าน</span>
             </div>
             
             <h3>{{ ks.metadata?.title || ks.header?.topic || ks.metadata?.topic || 'ใบความรู้' }}</h3>
@@ -137,9 +187,9 @@
               <span v-if="ks.selfCheck?.questions?.length"><span class="material-icons">quiz</span> {{ ks.selfCheck.questions.length }} ข้อทดสอบ</span>
             </div>
             
-            <router-link :to="`/knowledge-sheet/${ks.id}`" class="ks-read-btn">
+            <router-link :to="`/knowledge-sheet/${ks.id}?roomId=${route.params.id}`" class="ks-read-btn">
               <span class="material-icons">menu_book</span>
-              อ่านใบความรู้
+              {{ isKnowledgeSheetRead(ks.id) ? 'อ่านอีกครั้ง' : 'อ่านใบความรู้' }}
               <span class="material-icons arrow">arrow_forward</span>
             </router-link>
           </div>
@@ -284,18 +334,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp, arrayRemove } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
+import { useLearningProgressStore } from '@/stores/learningProgress'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const learningProgress = useLearningProgressStore()
 const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
+
+// 🆕 Watch route changes to reload progress
+watch(() => route.fullPath, async () => {
+  if (route.name === 'LearningRoom' && !authStore.isTeacher) {
+    await learningProgress.loadAllProgress()
+  }
+})
 
 // State
 const loading = ref(true)
@@ -308,11 +367,18 @@ const lessonPlans = ref([])
 const selectedPlan = ref(null)
 const generatingWorksheet = ref(false)
 
+// 🆕 Learning Journey States
+const showPrerequisiteWarning = ref(false)
+const pendingWorksheet = ref(null)
+
 // 🆕 Sequence Tracking
 const sequenceId = ref(null)
 
 // Computed
 const isTeacher = computed(() => authStore.isTeacher)
+
+// 🆕 Journey Level (1=Soft, 2=Gated, 3=Adaptive)
+const journeyLevel = computed(() => learningProgress.journeySettings?.level || 2)
 
 const backRoute = computed(() => {
   if (room.value?.courseId) return `/courses`
@@ -348,6 +414,105 @@ function getArceIcon(arce) {
 function getArceLabel(arce) {
   const labels = { analysis: 'วิเคราะห์', reasoning: 'เหตุผล', creativity: 'สร้างสรรค์', evidence: 'หลักฐาน' }
   return labels[arce] || arce
+}
+
+// 🆕 Learning Journey Helper Functions
+function getJourneyLevelName(level) {
+  const names = {
+    1: 'Soft Guidance',
+    2: 'Gated Progression', 
+    3: 'Smart Adaptive'
+  }
+  return names[level] || 'Unknown'
+}
+
+function getJourneyLevelDesc(level) {
+  const descs = {
+    1: 'แนะนำให้อ่านก่อน แต่ข้ามได้',
+    2: 'ต้องอ่านใบความรู้ก่อนถึงจะทำใบงานได้',
+    3: 'ระบบเลือกคำถามตามจุดอ่อนของคุณ'
+  }
+  return descs[level] || ''
+}
+
+// 🆕 Check if Knowledge Sheet is read
+function isKnowledgeSheetRead(ksId) {
+  return learningProgress.isKnowledgeSheetRead(ksId)
+}
+
+// 🆕 Get related Knowledge Sheet for a worksheet
+function getRelatedKnowledgeSheet(ws, index) {
+  // Match by planNumber/unitNumber or by index
+  const wsPlan = ws.metadata?.planNumber || ws.planNumber
+  const wsUnit = ws.metadata?.unitNumber || ws.unitNumber
+  
+  // Try to match by planNumber or unitNumber
+  let matched = knowledgeSheets.value.find(ks => {
+    const ksPlan = ks.metadata?.planNumber
+    const ksUnit = ks.metadata?.unitNumber
+    return (wsPlan && ksPlan && wsPlan === ksPlan) || 
+           (wsUnit && ksUnit && wsUnit === ksUnit)
+  })
+  
+  // Fallback: match by index (KS 1 → WS 1)
+  if (!matched && knowledgeSheets.value[index]) {
+    matched = knowledgeSheets.value[index]
+  }
+  
+  return matched
+}
+
+// 🆕 Check if KS is read for specific worksheet
+function isKnowledgeSheetReadForWorksheet(ws, index) {
+  const relatedKs = getRelatedKnowledgeSheet(ws, index)
+  if (!relatedKs) return true // No related KS means OK to proceed
+  return isKnowledgeSheetRead(relatedKs.id)
+}
+
+// 🆕 Check if can start worksheet (gated)
+function canStartWorksheetGated(ws, index) {
+  const level = journeyLevel.value
+  
+  // Level 1: Always allowed (soft guidance)
+  if (level === 1) return { allowed: true, reason: null }
+  
+  const relatedKs = getRelatedKnowledgeSheet(ws, index)
+  
+  // No related KS = OK
+  if (!relatedKs) return { allowed: true, reason: null }
+  
+  // Check if KS is read
+  if (!isKnowledgeSheetRead(relatedKs.id)) {
+    return {
+      allowed: false,
+      reason: `ต้องอ่าน "${relatedKs.metadata?.title || 'ใบความรู้'}" ก่อน`,
+      requiredKsId: relatedKs.id
+    }
+  }
+  
+  return { allowed: true, reason: null }
+}
+
+// 🆕 Handle start worksheet with confirmation
+function handleStartWorksheet(ws, index) {
+  const gateCheck = canStartWorksheetGated(ws, index)
+  const level = journeyLevel.value
+  
+  // Level 2+: Hard gate
+  if (level >= 2 && !gateCheck.allowed) {
+    alert(gateCheck.reason)
+    return
+  }
+  
+  // Level 1: Soft warning
+  if (level === 1 && !isKnowledgeSheetReadForWorksheet(ws, index)) {
+    pendingWorksheet.value = { ws, index }
+    showPrerequisiteWarning.value = true
+    return
+  }
+  
+  // OK to start
+  startWorksheet(ws.id)
 }
 
 function getSubmissionStatus(worksheetId) {
@@ -767,6 +932,18 @@ async function finalizeSequenceTracking() {
 onMounted(async () => {
   await loadRoom()
   await startSequenceTracking()
+  
+  // 🆕 Load learning progress for students
+  if (!authStore.isTeacher) {
+    await learningProgress.loadAllProgress()
+  }
+})
+
+// 🆕 Reload progress when coming back from another page
+onActivated(async () => {
+  if (!authStore.isTeacher) {
+    await learningProgress.loadAllProgress()
+  }
 })
 
 onUnmounted(() => {
@@ -1675,5 +1852,164 @@ onUnmounted(() => {
 
 .dark-mode .ks-info {
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* 🆕 Learning Journey Styles */
+
+/* Journey Level Indicator */
+.journey-level-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.level-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.level-badge.level-1 {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.level-badge.level-2 {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.level-badge.level-3 {
+  background: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+}
+
+.level-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Locked Worksheet Overlay */
+.worksheet-card.locked {
+  position: relative;
+  opacity: 0.85;
+}
+
+.ws-locked-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-radius: 16px;
+  z-index: 10;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.ws-locked-overlay .lock-icon {
+  font-size: 2.5rem;
+}
+
+.ws-locked-overlay p {
+  color: white;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.ws-locked-overlay .btn {
+  margin-top: 0.5rem;
+}
+
+/* Prerequisite Warning (Level 1) */
+.prerequisite-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #f59e0b;
+  margin-bottom: 0.75rem;
+}
+
+.prerequisite-warning .material-icons {
+  font-size: 1rem;
+}
+
+.prerequisite-warning .read-link {
+  margin-left: auto;
+  color: #f59e0b;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.prerequisite-warning .read-link:hover {
+  text-decoration: underline;
+}
+
+/* KS Read Badge on Worksheet */
+.ks-read-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #10b981;
+  margin-bottom: 0.75rem;
+  width: fit-content;
+}
+
+.ks-read-badge .material-icons {
+  font-size: 0.9rem;
+}
+
+/* KS Read Status Badge */
+.ks-read-status {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.ks-read-status.read {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.ks-read-status.unread {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .journey-level-indicator {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .ws-locked-overlay {
+    padding: 1rem;
+  }
+  
+  .ws-locked-overlay .lock-icon {
+    font-size: 2rem;
+  }
 }
 </style>

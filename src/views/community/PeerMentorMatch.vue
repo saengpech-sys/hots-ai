@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/community')">← กลับ</button>
         <h1>🌟 Peer Mentorship</h1>
       </div>
     </div>
@@ -247,13 +247,16 @@
     </div>
 
     <!-- Chat Modal -->
-    <div v-if="showChatModal" class="modal-overlay" @click.self="showChatModal = false">
+    <div v-if="showChatModal" class="modal-overlay" @click.self="closeChat">
       <div class="modal-content chat-modal">
         <div class="modal-header">
           <h2>💬 แชทกับ {{ chatPartner?.name }}</h2>
-          <button class="close-btn" @click="showChatModal = false">×</button>
+          <button class="close-btn" @click="closeChat">×</button>
         </div>
         <div class="chat-container" ref="chatContainer">
+          <div v-if="chatMessages.length === 0" class="no-messages">
+            <p>🌟 เริ่มสนทนากันเลย!</p>
+          </div>
           <div v-for="msg in chatMessages" :key="msg.id" class="chat-message" :class="{ mine: isMyMessage(msg) }">
             <div class="msg-bubble">{{ msg.content }}</div>
             <span class="msg-time">{{ formatTime(msg.createdAt) }}</span>
@@ -274,11 +277,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { 
   collection, query, where, orderBy, limit, 
-  getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp 
+  getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
+  onSnapshot
 } from 'firebase/firestore'
 import { db } from '@/firebase/config'
 
@@ -312,6 +316,8 @@ const chatPartner = ref(null)
 const chatMessages = ref([])
 const newChatMessage = ref('')
 const chatContainer = ref(null)
+const currentRelationshipId = ref(null)
+let chatUnsubscribe = null
 
 // Methods
 const formatDate = (timestamp) => {
@@ -443,28 +449,74 @@ const becomeMentor = async () => {
   }
 }
 
-const openChat = (rel) => {
+const openChat = async (rel) => {
   const isMyMentor = rel.mentorId !== authStore.user?.uid
   chatPartner.value = {
     id: isMyMentor ? rel.mentorId : rel.menteeId,
     name: isMyMentor ? rel.mentorName : rel.menteeName
   }
+  currentRelationshipId.value = rel.id
   chatMessages.value = []
   showChatModal.value = true
-  // TODO: Load chat messages
+  
+  // Unsubscribe from previous chat listener if exists
+  if (chatUnsubscribe) {
+    chatUnsubscribe()
+  }
+  
+  // Subscribe to real-time chat messages
+  const messagesQuery = query(
+    collection(db, 'mentorRelationships', rel.id, 'messages'),
+    orderBy('createdAt', 'asc')
+  )
+  
+  chatUnsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+    chatMessages.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+    // Scroll to bottom after messages update
+    nextTick(() => {
+      if (chatContainer.value) {
+        chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+      }
+    })
+  })
+}
+
+const closeChat = () => {
+  showChatModal.value = false
+  if (chatUnsubscribe) {
+    chatUnsubscribe()
+    chatUnsubscribe = null
+  }
+  currentRelationshipId.value = null
+  chatMessages.value = []
 }
 
 const sendChatMessage = async () => {
-  if (!newChatMessage.value.trim()) return
+  if (!newChatMessage.value.trim() || !currentRelationshipId.value) return
   
-  // TODO: Implement chat functionality
-  chatMessages.value.push({
-    id: Date.now(),
-    content: newChatMessage.value,
-    senderId: authStore.user.uid,
-    createdAt: new Date()
-  })
-  newChatMessage.value = ''
+  const messageContent = newChatMessage.value.trim()
+  newChatMessage.value = '' // Clear immediately for UX
+  
+  try {
+    await addDoc(collection(db, 'mentorRelationships', currentRelationshipId.value, 'messages'), {
+      content: messageContent,
+      senderId: authStore.user.uid,
+      senderName: authStore.user.displayName || 'Anonymous',
+      senderPhoto: authStore.user.photoURL,
+      createdAt: serverTimestamp()
+    })
+    
+    // Update last activity on relationship
+    await updateDoc(doc(db, 'mentorRelationships', currentRelationshipId.value), {
+      lastActivity: serverTimestamp()
+    })
+  } catch (error) {
+    console.error('Error sending message:', error)
+    alert('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง')
+  }
 }
 
 // Load Data
@@ -672,6 +724,13 @@ onMounted(async () => {
     await loadSuggestedMentors()
   } finally {
     loading.value = false
+  }
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (chatUnsubscribe) {
+    chatUnsubscribe()
   }
 })
 </script>

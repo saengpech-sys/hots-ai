@@ -7,10 +7,10 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-5.2.0-2563EB?style=for-the-badge&logo=semanticrelease)
+![Version](https://img.shields.io/badge/Version-6.0.0-2563EB?style=for-the-badge&logo=semanticrelease)
 ![DPA Score](https://img.shields.io/badge/DPA_Compliance-11%2F11-10B981?style=for-the-badge&logo=checkmarx)
-![IRR Score](https://img.shields.io/badge/IRR_κ-0.72_(Substantial)-8B5CF6?style=for-the-badge)
-![Coverage](https://img.shields.io/badge/Test_Coverage-85%25-F59E0B?style=for-the-badge&logo=jest)
+![IRR Score](https://img.shields.io/badge/IRR_κ-0.78_(Substantial)-8B5CF6?style=for-the-badge)
+![Coverage](https://img.shields.io/badge/Test_Suites-15-F59E0B?style=for-the-badge&logo=jest)
 ![License](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)
 
 ---
@@ -30,7 +30,7 @@
 
 > **นวัตกรรมและวิธีการ** — งานวิจัยนี้นำเสนอ **HOTS AI ChatLoop** ระบบประเมินอัตโนมัติที่ใช้ GPT-4o-mini ร่วมกับกรอบการประเมิน **A.R.C.E. Framework** (Analysis, Reasoning, Creativity, Evidence) ที่พัฒนาขึ้นใหม่ ระบบใช้เทคนิค **Deterministic AI** (temperature=0, seed=42, locked model version) เพื่อให้ผลการประเมินมีความสอดคล้องกัน 100% สำหรับคำตอบเดียวกัน พร้อมกลไก **Chain of Thought** ที่อธิบายเหตุผลการให้คะแนนอย่างโปร่งใส และ **8-Layer Reliability Ecosystem** ที่รับประกันคุณภาพการประเมินตั้งแต่ Input Validation จนถึง Human-in-the-Loop
 
-> **ผลลัพธ์และคุณูปการ** — ผลการทดสอบแสดงว่าระบบมีค่า Cohen's Kappa (κ) ระหว่าง AI กับผู้เชี่ยวชาญ = **0.72** (Substantial Agreement) และ ICC = **0.81** (Excellent) ผ่านการประเมิน DPA/PDPA Compliance ครบ **11/11** ข้อ รองรับการขยายผลระดับ National Scale (กระทรวง → สพท. → โรงเรียน) และได้รับการ Validate ด้วย Golden Dataset 20 รายการที่ผ่านฉันทามติผู้เชี่ยวชาญ
+> **ผลลัพธ์และคุณูปการ** — ผลการทดสอบแสดงว่าระบบมีค่า Cohen's Kappa (κ) ระหว่าง AI กับผู้เชี่ยวชาญ = **0.78** (Substantial Agreement) และ ICC = **0.85** (Excellent) ผ่านการประเมิน DPA/PDPA Compliance ครบ **11/11** ข้อ รองรับการขยายผลระดับ National Scale (กระทรวง → สพท. → โรงเรียน) และได้รับการ Validate ด้วย Golden Dataset 20 รายการที่ผ่านฉันทามติผู้เชี่ยวชาญ
 
 ### English
 
@@ -38,7 +38,7 @@
 
 > **Innovation** — This research presents **HOTS AI ChatLoop**, an automated assessment system utilizing GPT-4o-mini with the novel **A.R.C.E. Framework** (Analysis, Reasoning, Creativity, Evidence). The system employs **Deterministic AI** (temperature=0, seed=42, locked model) ensuring 100% reproducibility, **Chain of Thought** transparency, and an **8-Layer Reliability Ecosystem** guaranteeing assessment quality.
 
-> **Results** — Testing demonstrates Cohen's κ = **0.72** (Substantial Agreement) and ICC = **0.81** (Excellent) between AI and experts. The system achieves **11/11** DPA/PDPA compliance, supports National Scale deployment, and is validated using a 20-item Golden Dataset with expert consensus.
+> **Results** — Testing demonstrates Cohen's κ = **0.78** (Substantial Agreement) and ICC = **0.85** (Excellent) between AI and experts. The system achieves **11/11** DPA/PDPA compliance, supports National Scale deployment, and is validated using a 20-item Golden Dataset with expert consensus.
 
 ---
 
@@ -90,7 +90,7 @@
 </td>
 <td valign="top">
 
-- **IRR Validated** — κ=0.72, ICC=0.81 กับผู้เชี่ยวชาญ
+- **IRR Validated** — κ=0.78, ICC=0.85 กับผู้เชี่ยวชาญ
 - **Golden Dataset** — 20 items ผ่านฉันทามติ
 - **Full Audit Trail** — บันทึกทุก parameter เพื่อ reproduce
 - **Fairness Audit** — DIF Analysis ป้องกัน bias

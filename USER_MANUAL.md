@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 5.2** | **ปรับปรุงล่าสุด: ธันวาคม 2568**
+**Version 6.0** | **ปรับปรุงล่าสุด: ธันวาคม 2568**
 
 *ระบบประเมินทักษะการคิดขั้นสูงด้วยปัญญาประดิษฐ์*
 
@@ -584,7 +584,7 @@ Heatmap แสดงว่านักเรียนแต่ละคนผ่
 
 ---
 
-**HOTS AI ChatLoop v5.2** | **Built with ❤️ for Thai Education**
+**HOTS AI ChatLoop v6.0** | **Built with ❤️ for Thai Education**
 
 *© 2568 HOTS AI ChatLoop Project*
 

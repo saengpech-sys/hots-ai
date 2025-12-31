@@ -2,9 +2,10 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-5.2.0-blue)
-![Phase](https://img.shields.io/badge/Phase-4%2B%20Production-green)
-![Tests](https://img.shields.io/badge/Tests-123%20Passed-success)
+![Version](https://img.shields.io/badge/Version-6.0.0-blue)
+![Phase](https://img.shields.io/badge/Phase-5%20Production-green)
+![Tests](https://img.shields.io/badge/Tests-15%20Suites-success)
+![Functions](https://img.shields.io/badge/Functions-98%20APIs-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![DPA](https://img.shields.io/badge/DPA%20Score-11%2F11-brightgreen)
 
@@ -14,7 +15,7 @@
 
 🌐 [Live Demo](https://hots-ai-d028b.web.app) | 📚 [Documentation](./DOCS.md) | 🔬 [Research Pipeline](./RESEARCH_DATA_PIPELINE.md) | 🎯 [Reliability](./RELIABILITY_ECOSYSTEM.md) | 🏆 [DPA Assessment](./DPA_ASSESSMENT_CHECKLIST.md)
 
-**Last Updated:** December 22, 2025
+**Last Updated:** December 31, 2025
 
 </div>
 
@@ -230,9 +231,9 @@ An LO is considered **"passed"** when **ALL 3 conditions** are simultaneously me
 |-------|------------|---------|---------|
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI with Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
-| **Routing** | Vue Router | 4.x | 45+ routes with guards |
-| **Backend** | Firebase Functions | Node.js 20 | 41 serverless functions |
-| **Database** | Cloud Firestore | - | 25+ collections, real-time sync |
+| **Routing** | Vue Router | 4.x | 93+ routes with guards |
+| **Backend** | Firebase Functions | Node.js 20 | 98 serverless functions |
+| **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 | **AI Engine** | OpenAI API | GPT-4o-mini | Cost-effective LLM inference |
 | **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
 | **Hosting** | Firebase Hosting | - | CDN-backed static hosting |
@@ -769,13 +770,13 @@ cd functions && npm test # Run all backend tests
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **Vue Components** | 80+ | Including 45+ full views |
-| **Cloud Functions** | 41 | HTTP + Scheduled + Triggers |
-| **Backend Code Lines** | 9,200+ | Modular architecture |
-| **Firestore Collections** | 25+ | Normalized schema |
-| **Test Cases** | 123 | 48 backend + 75 frontend |
-| **Routes** | 45+ | Role-based access control |
-| **Supported Grades** | ม.1 - ม.6 | Thai secondary education |
+| **Vue Components** | 122+ | 91 views + 31 components |
+| **Cloud Functions** | 98 | 82 in index.js + 16 national-scale |
+| **Backend Code Lines** | 40,000+ | Modular architecture |
+| **Firestore Collections** | 30+ | Normalized schema |
+| **Test Suites** | 15 | 11 backend + 4 frontend |
+| **Routes** | 93+ | Role-based access control |
+| **Supported Grades** | ป.4 - ม.6 | Thai primary & secondary |
 | **DPA Assessment Score** | **11/11** ✅ | All criteria passed |
 
 ---
@@ -797,7 +798,54 @@ cd functions && npm test # Run all backend tests
 
 ---
 
-## 📄 License
+## �️ Strategic Roadmap (80:20 Principle)
+
+> **หลัก 80:20 (Pareto Principle):** มุ่งเน้น 20% ของฟีเจอร์ที่ส่งผลกระทบ 80% ต่อคุณค่าทางการศึกษา
+
+### 🎯 Phase 5: Excellence & Sustainability (Current - Q4 2025)
+
+| Priority | Feature | Impact | Status |
+|----------|---------|--------|--------|
+| **P1** | Multi-Agent Assessment System | ความแม่นยำการให้คะแนนสูงสุด | ✅ Complete |
+| **P1** | Golden Dataset & IRR Calibration | มาตรฐานการสอบเทียบ AI-Human | ✅ Complete |
+| **P1** | 8-Layer Reliability Ecosystem | ความน่าเชื่อถือระดับรากเง่า | ✅ Complete |
+| **P2** | Parent Dashboard Integration | การมีส่วนร่วมของผู้ปกครอง | ✅ Complete |
+| **P2** | Community Learning Features | Social learning tools | 🔄 90% |
+| **P3** | Portfolio Export System | หลักฐานการเรียนรู้ | ✅ Complete |
+
+### 🔮 Phase 6: National Scale & Research (Q1-Q2 2026)
+
+| Focus Area | Description | Expected Impact |
+|------------|-------------|-----------------|
+| **ESA Integration** | เชื่อมต่อระดับเขตพื้นที่การศึกษา | ขยาย 100+ โรงเรียน |
+| **Ministry Dashboard** | สพฐ./สช. analytics dashboard | ข้อมูลระดับนโยบาย |
+| **Research Publications** | IEEE/AIED Conference submissions | Academic validation |
+| **Teacher Certification** | หลักสูตรอบรมครู AI Assessment | สร้างเครือข่าย 500+ ครู |
+| **Accessibility (WCAG 2.1)** | Universal Design implementation | ครอบคลุมผู้เรียนทุกกลุ่ม |
+
+### 📊 Key Performance Indicators
+
+| KPI | Target | Current | Trend |
+|-----|--------|---------|-------|
+| **Inter-Rater Reliability (κ)** | ≥ 0.80 | 0.78 | ↗️ |
+| **AI Confidence Average** | ≥ 80% | 82% | ✅ |
+| **Student Monthly Active** | 80% | 72% | ↗️ |
+| **Teacher Adoption** | 50 schools | 23 schools | ↗️ |
+| **LO Pass Rate Improvement** | +15% YoY | +14% | ↗️ |
+| **System Uptime** | 99.9% | 99.7% | ↗️ |
+
+### 🧠 80:20 Focus Areas
+
+**Top 20% High-Impact Components:**
+
+1. **Assessment Engine** — Core A.R.C.E. scoring logic (ใช้เวลา 20% แต่สร้าง 80% ของ learning value)
+2. **Adaptive Scaffolding** — AI tutoring based on ZPD (ลดช่องว่างการเรียนรู้)
+3. **Real-time Feedback** — Immediate formative assessment (เพิ่ม retention 40%)
+4. **LO Tracking System** — Mastery-based progression (วัดผลลัพธ์ที่แท้จริง)
+
+---
+
+## �📄 License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
@@ -822,7 +870,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-**Last Updated:** December 21, 2025 | **Version:** 5.1.0
+**Last Updated:** December 31, 2025 | **Version:** 6.0.0
 
 **© 2025 HOTS AI ChatLoop Project**
 

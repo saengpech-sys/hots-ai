@@ -2,7 +2,7 @@
   <div class="portfolio-container">
     <!-- Header -->
     <div class="header-section">
-      <button @click="$router.back()" class="btn-back">← กลับ</button>
+      <button @click="$router.push('/teacher')" class="btn-back">← กลับ</button>
       <div class="header-content">
         <div class="header-left">
           <img :src="authStore.user?.photoURL || '/default-avatar.png'" class="teacher-avatar" />
@@ -72,7 +72,7 @@
           <div class="course-list">
             <div v-for="course in courses" :key="course.id" class="course-item">
               <div class="course-header">
-                <span class="course-name">{{ course.name }}</span>
+                <span class="course-name">{{ course.code ? course.code + ' - ' : '' }}{{ course.name }}</span>
                 <span class="course-badge">{{ course.studentCount }} นักเรียน</span>
               </div>
               <div class="course-stats">
@@ -109,19 +109,24 @@
           <h3 class="section-title">
             <span class="title-icon">🏆</span>
             รางวัลและเกียรติบัตร
+            <span class="earned-count" v-if="earnedBadges.length > 0">{{ earnedBadges.length }} / {{ allBadges.length }}</span>
           </h3>
           <div class="badges-grid">
             <div v-for="badge in earnedBadges" :key="badge.id" class="badge-card earned">
-              <div class="badge-icon">{{ badge.icon }}</div>
+              <div class="badge-glow"></div>
+              <div class="badge-icon earned-icon">{{ badge.icon }}</div>
               <h4 class="badge-name">{{ badge.name }}</h4>
               <p class="badge-criteria">{{ badge.criteria }}</p>
-              <span class="badge-date">ได้รับเมื่อ {{ formatDate(badge.earnedAt) }}</span>
+              <span class="badge-date">✅ ได้รับเมื่อ {{ formatDate(badge.earnedAt) }}</span>
             </div>
             <div v-for="badge in unearnedBadges" :key="badge.id" class="badge-card locked">
-              <div class="badge-icon">🔒</div>
+              <div class="badge-icon locked-icon">🔒</div>
               <h4 class="badge-name">{{ badge.name }}</h4>
               <p class="badge-criteria">{{ badge.criteria }}</p>
-              <span class="badge-progress">{{ badge.progress }}%</span>
+              <div class="badge-progress-bar">
+                <div class="badge-progress-fill" :style="{ width: badge.progress + '%' }"></div>
+              </div>
+              <span class="badge-progress-text">{{ badge.currentValue || 0 }} / {{ badge.requirement }} ({{ badge.progress }}%)</span>
             </div>
           </div>
         </div>
@@ -153,22 +158,30 @@
         <h3 class="section-title">
           <span class="title-icon">⭐</span>
           นักเรียนดีเด่น
+          <span class="student-count" v-if="topStudents.length > 0">Top {{ topStudents.length }}</span>
         </h3>
         <div v-if="topStudents.length > 0" class="students-grid">
-          <div v-for="student in topStudents" :key="student.id" class="student-card">
-            <div class="student-avatar">{{ student.name?.charAt(0) || '?' }}</div>
+          <div v-for="(student, index) in topStudents" :key="student.id" class="student-card" :class="{ 'top-three': index < 3 }">
+            <div class="student-rank" :class="getRankClass(index)">{{ index + 1 }}</div>
+            <img v-if="student.photoURL" :src="student.photoURL" class="student-avatar-img" />
+            <div v-else class="student-avatar">{{ student.name?.charAt(0) || '?' }}</div>
             <div class="student-info">
+              <span class="student-id-badge">🎫 {{ student.studentId || '-' }}</span>
               <h4>{{ student.name || 'นักเรียน' }}</h4>
-              <p class="student-course">{{ student.courseName }}</p>
+              <p class="student-course">📚 {{ student.courseName }}</p>
             </div>
             <div class="student-stats">
-              <span class="student-score">{{ student.avgScore.toFixed(1) }}/20</span>
-              <span class="student-lo">{{ student.passedLOs }} LO ผ่าน</span>
+              <span class="student-score" :class="getScoreClass(student.avgScore)">
+                {{ student.avgScore.toFixed(1) }}<span class="score-max">/20</span>
+              </span>
+              <span class="student-lo">🎯 {{ student.passedLOs }} LO</span>
             </div>
           </div>
         </div>
         <div v-else class="empty-message">
-          ยังไม่มีข้อมูลนักเรียน
+          <span class="empty-icon">📭</span>
+          <p>ยังไม่มีข้อมูลนักเรียน</p>
+          <small>นักเรียนจะปรากฏเมื่อมีการประเมินคำตอบ</small>
         </div>
       </div>
 
@@ -257,12 +270,17 @@ async function loadPortfolioData() {
   try {
     loading.value = true
     
-    await Promise.all([
-      loadCourses(),
-      loadAssessments(),
-      loadBadges(),
-      loadActivities()
-    ])
+    // Step 1: Load courses first
+    await loadCourses()
+    
+    // Step 2: Load assessments (needs courses)
+    await loadAssessments()
+    
+    // Step 3: Load badges (needs courses + stats from assessments)
+    await loadBadges()
+    
+    // Step 4: Load activities (independent)
+    await loadActivities()
     
   } catch (err) {
     console.error('Error loading portfolio:', err)
@@ -283,6 +301,8 @@ async function loadCourses() {
   const coursesList = []
   let totalStudents = new Set()
   let totalLOs = 0
+  let totalPassedLOsUnique = new Set() // Track unique passed LOs across all students
+  const studentProgressData = {} // Store student progress for later use
   
   for (const courseDoc of coursesSnap.docs) {
     const courseData = courseDoc.data()
@@ -306,15 +326,37 @@ async function loadCourses() {
       where('courseId', '==', courseId)
     ))
     
-    // Count students in this course
+    // Count students and their passed LOs from studentProgress
     const progressSnap = await getDocs(query(
       collection(db, 'studentProgress'),
       where('courseId', '==', courseId)
     ))
     
+    let coursePassedLOCount = 0
     progressSnap.docs.forEach(doc => {
       const data = doc.data()
-      if (data.studentId) totalStudents.add(data.studentId)
+      if (data.studentId) {
+        totalStudents.add(data.studentId)
+        // Store progress data for later
+        if (!studentProgressData[data.studentId]) {
+          studentProgressData[data.studentId] = {
+            passedLOs: [],
+            courses: []
+          }
+        }
+        // Add unique passed LOs
+        if (data.passedLOs && Array.isArray(data.passedLOs)) {
+          coursePassedLOCount += data.passedLOs.length
+          data.passedLOs.forEach(lo => {
+            totalPassedLOsUnique.add(`${courseId}_${lo}`)
+            studentProgressData[data.studentId].passedLOs.push(lo)
+          })
+        }
+        studentProgressData[data.studentId].courses.push({
+          courseId,
+          courseName: courseData.courseName || courseData.name || 'ไม่มีชื่อ'
+        })
+      }
     })
     
     const loCount = courseData.learningOutcomes?.length || 0
@@ -331,12 +373,14 @@ async function loadCourses() {
     
     coursesList.push({
       id: courseId,
-      name: courseData.name || courseData.title || 'ไม่มีชื่อ',
+      name: courseData.courseName || courseData.name || courseData.title || 'ไม่มีชื่อ',
+      code: courseData.courseCode || '',
       studentCount: progressSnap.size,
       questionCount: questionsSnap.size,
       lessonPlanCount: lpSnap.size,
       worksheetCount: wsSnap.size,
       loCount: loCount,
+      passedLOCount: coursePassedLOCount,
       completionRate
     })
   }
@@ -345,6 +389,10 @@ async function loadCourses() {
   stats.value.totalCourses = coursesList.length
   stats.value.totalStudents = totalStudents.size
   stats.value.totalLOs = totalLOs
+  stats.value.totalPassedLOs = totalPassedLOsUnique.size // Use unique count
+  
+  // Store for later use in loadAssessments
+  window._studentProgressData = studentProgressData
 }
 
 async function loadAssessments() {
@@ -357,8 +405,37 @@ async function loadAssessments() {
   let allAssessments = []
   let dimTotals = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
   let dimCounts = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
-  let totalPassedLOs = 0
   let studentScores = {}
+  
+  // First, load all unique student IDs from studentProgress and get their user data
+  const studentUserData = {}
+  const progressData = window._studentProgressData || {}
+  const allStudentIds = Object.keys(progressData)
+  
+  // Load user data for students (batch query)
+  if (allStudentIds.length > 0) {
+    try {
+      // Firebase allows max 10 in 'in' query, so batch
+      for (let i = 0; i < allStudentIds.length; i += 10) {
+        const batch = allStudentIds.slice(i, i + 10)
+        const usersSnap = await getDocs(query(
+          collection(db, 'users'),
+          where('__name__', 'in', batch)
+        ))
+        usersSnap.docs.forEach(doc => {
+          const userData = doc.data()
+          studentUserData[doc.id] = {
+            displayName: userData.displayName || userData.name || 'นักเรียน',
+            studentId: userData.studentId || doc.id.slice(-5),
+            email: userData.email || '',
+            photoURL: userData.photoURL || ''
+          }
+        })
+      }
+    } catch (e) {
+      console.error('Error loading user data:', e)
+    }
+  }
   
   // Load assessments for each course
   for (const courseId of courseIds) {
@@ -384,11 +461,6 @@ async function loadAssessments() {
           })
         }
         
-        // Count passed LOs
-        if (data.loAssessment?.passedLOs) {
-          totalPassedLOs += data.loAssessment.passedLOs.length
-        }
-        
         // Track student scores
         const studentId = data.studentId || data.userId
         const totalScore = data.totalScore || 
@@ -396,18 +468,22 @@ async function loadAssessments() {
         
         if (studentId) {
           if (!studentScores[studentId]) {
+            // Get student info from users collection (preferred) or denormalized data
+            const userInfo = studentUserData[studentId] || {}
+            const studentInfo = data.studentData || {}
+            const progressInfo = progressData[studentId] || {}
+            
             studentScores[studentId] = { 
               scores: [], 
-              passedLOs: 0, 
-              name: data.studentName || 'นักเรียน',
+              passedLOs: progressInfo.passedLOs?.length || 0, // Use from studentProgress
+              name: userInfo.displayName || studentInfo.displayName || data.studentName || 'นักเรียน',
+              studentId: userInfo.studentId || studentInfo.studentId || data.studentCode || studentId.slice(-5),
+              photoURL: userInfo.photoURL || studentInfo.photoURL || '',
               courseId,
               courseName: courses.value.find(c => c.id === courseId)?.name || ''
             }
           }
           studentScores[studentId].scores.push(totalScore)
-          if (data.loAssessment?.passedLOs) {
-            studentScores[studentId].passedLOs += data.loAssessment.passedLOs.length
-          }
         }
       })
     } catch (err) {
@@ -417,7 +493,7 @@ async function loadAssessments() {
   
   // Calculate stats
   stats.value.totalAssessments = allAssessments.length
-  stats.value.totalPassedLOs = totalPassedLOs
+  // Note: totalPassedLOs is already set in loadCourses from studentProgress
   
   if (allAssessments.length > 0) {
     const totalScoreSum = allAssessments.reduce((sum, a) => {
@@ -436,10 +512,11 @@ async function loadAssessments() {
     { key: 'evidence', name: 'Evidence (หลักฐาน)', icon: '📊', color: '#10b981', avgScore: dimCounts.evidence > 0 ? dimTotals.evidence / dimCounts.evidence : 0, count: dimCounts.evidence }
   ]
   
-  // Top students
+  // Top students - with complete data
   const studentList = Object.entries(studentScores).map(([id, data]) => ({
     id,
     name: data.name,
+    studentId: data.studentId,
     courseName: data.courseName,
     avgScore: data.scores.length > 0 ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : 0,
     passedLOs: data.passedLOs
@@ -592,6 +669,20 @@ function formatDate(timestamp) {
   return new Intl.DateTimeFormat('th-TH', {
     day: 'numeric', month: 'short', year: 'numeric'
   }).format(date)
+}
+
+function getRankClass(index) {
+  if (index === 0) return 'gold'
+  if (index === 1) return 'silver'
+  if (index === 2) return 'bronze'
+  return ''
+}
+
+function getScoreClass(score) {
+  if (score >= 16) return 'excellent'
+  if (score >= 12) return 'good'
+  if (score >= 8) return 'fair'
+  return 'needs-improvement'
 }
 
 async function exportPortfolio() {
@@ -875,49 +966,129 @@ ${dimensionStats.value.map(d => `- ${d.name}: ${d.avgScore.toFixed(1)}/5`).join(
 /* Badges */
 .badges-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 1rem;
 }
 
 .badge-card {
   background: var(--bg-tertiary);
-  padding: 1rem;
-  border-radius: 12px;
+  padding: 1.25rem 1rem;
+  border-radius: 16px;
   text-align: center;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
 .badge-card.earned {
   border: 2px solid #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(234, 88, 12, 0.15) 100%);
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3);
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+.badge-card.earned:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 30px rgba(245, 158, 11, 0.4);
+}
+
+.badge-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.1) 50%, transparent 60%);
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%) rotate(45deg); }
+  100% { transform: translateX(100%) rotate(45deg); }
+}
+
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 4px 30px rgba(245, 158, 11, 0.5); }
 }
 
 .badge-card.locked {
-  opacity: 0.6;
+  opacity: 0.7;
+  border: 1px dashed var(--border-color);
+}
+
+.badge-card.locked:hover {
+  opacity: 0.85;
+  border-color: var(--text-secondary);
 }
 
 .badge-icon {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.badge-icon.earned-icon {
+  filter: drop-shadow(0 4px 8px rgba(245, 158, 11, 0.5));
+}
+
+.badge-icon.locked-icon {
+  filter: grayscale(0.5);
 }
 
 .badge-name {
-  margin: 0 0 0.25rem 0;
-  font-size: 0.9rem;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .badge-criteria {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
+  line-height: 1.4;
 }
 
-.badge-date, .badge-progress {
+.badge-date {
+  font-size: 0.75rem;
+  color: #10b981;
+  font-weight: 600;
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.badge-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.badge-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.badge-progress-text {
   font-size: 0.7rem;
-  color: #667eea;
+  color: var(--text-secondary);
   display: block;
   margin-top: 0.5rem;
+}
+
+.earned-count {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-left: 0.75rem;
 }
 
 /* Dimension Section */
@@ -984,8 +1155,18 @@ ${dimensionStats.value.map(d => `- ${d.name}: ${d.avgScore.toFixed(1)}/5`).join(
 /* Students Section */
 .students-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
+}
+
+.student-count {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
 }
 
 .student-card {
@@ -993,13 +1174,64 @@ ${dimensionStats.value.map(d => `- ${d.name}: ${d.avgScore.toFixed(1)}/5`).join(
   align-items: center;
   gap: 1rem;
   background: var(--bg-tertiary);
-  padding: 1rem;
-  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  border-radius: 16px;
+  position: relative;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.student-card:hover {
+  transform: translateX(4px);
+  border-color: var(--border-color);
+}
+
+.student-card.top-three {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.student-rank {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.student-rank.gold {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border-color: #f59e0b;
+  color: white;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+.student-rank.silver {
+  background: linear-gradient(135deg, #d1d5db, #9ca3af);
+  border-color: #9ca3af;
+  color: white;
+  box-shadow: 0 2px 8px rgba(156, 163, 175, 0.4);
+}
+
+.student-rank.bronze {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  border-color: #b45309;
+  color: white;
+  box-shadow: 0 2px 8px rgba(180, 83, 9, 0.4);
 }
 
 .student-avatar {
-  width: 45px;
-  height: 45px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -1008,38 +1240,102 @@ ${dimensionStats.value.map(d => `- ${d.name}: ${d.avgScore.toFixed(1)}/5`).join(
   justify-content: center;
   font-weight: 700;
   font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.student-avatar-img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid var(--border-color);
 }
 
 .student-info {
   flex: 1;
+  min-width: 0;
+}
+
+.student-id-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: monospace;
+  margin-bottom: 0.3rem;
 }
 
 .student-info h4 {
-  margin: 0;
-  font-size: 0.95rem;
+  margin: 0.25rem 0;
+  font-size: 1rem;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .student-course {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .student-stats {
   text-align: right;
+  flex-shrink: 0;
 }
 
 .student-score {
   display: block;
   font-weight: 700;
+  font-size: 1.1rem;
   color: #10b981;
 }
 
+.student-score .score-max {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.student-score.excellent { color: #10b981; }
+.student-score.good { color: #3b82f6; }
+.student-score.fair { color: #f59e0b; }
+.student-score.needs-improvement { color: #ef4444; }
+
 .student-lo {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.empty-message p {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+}
+
+.empty-message small {
+  opacity: 0.7;
 }
 
 /* Timeline */

@@ -30,6 +30,9 @@ export const useChatStore = defineStore('chat', () => {
   const error = ref(null)
   const currentQuestion = ref(null)
   
+  // 🆕 Adaptive Context from Learning Journey (Level 3)
+  const adaptiveContext = ref(null)
+  
   // 🆕 AbortController for cancellable requests
   let currentAbortController = null
   
@@ -399,7 +402,20 @@ export const useChatStore = defineStore('chat', () => {
       // ดึงคำถามจาก Firestore (ที่ยังไม่เคยทำ)
       let question = null
       if (courseId) {
-        question = await getUnusedQuestion(authStore.user.uid, courseId)
+        // 🆕 Level 3: ใช้ adaptive context จาก Learning Journey
+        if (adaptiveContext.value && adaptiveContext.value.weakLOs && adaptiveContext.value.weakLOs.length > 0) {
+          console.log('🎯 Using adaptive context for first question:', adaptiveContext.value.weakLOs)
+          question = await getUnusedQuestionWithLOs(
+            authStore.user.uid, 
+            courseId,
+            adaptiveContext.value.weakLOs
+          )
+        }
+        
+        // Fallback: ใช้ question selection แบบเดิม
+        if (!question) {
+          question = await getUnusedQuestion(authStore.user.uid, courseId)
+        }
       }
       
       // ถ้าไม่มีคำถามใน Firestore หรือทำหมดแล้ว ใช้คำถามสำรอง
@@ -410,7 +426,14 @@ export const useChatStore = defineStore('chat', () => {
       currentQuestion.value = question
       
       // สร้างข้อความคำถาม
-      let questionText = welcomeText + `วันนี้เรามาฝึกคิดวิเคราะห์กันนะคะ\n\n📚 หมวดหมู่: ${question.category}\n\n`
+      let questionText = welcomeText + `วันนี้เรามาฝึกคิดวิเคราะห์กันนะคะ\n\n`
+      
+      // 🆕 Level 3: แสดงข้อความว่า AI ปรับคำถามตามจุดอ่อน
+      if (adaptiveContext.value && adaptiveContext.value.weakLOs && adaptiveContext.value.weakLOs.length > 0) {
+        questionText += `🤖 **โหมด Smart Adaptive:** AI ได้เลือกคำถามที่ตรงกับจุดที่คุณต้องฝึกเพิ่มเติม\n\n`
+      }
+      
+      questionText += `📚 หมวดหมู่: ${question.category}\n\n`
       
       // แสดง LO ที่คำถามนี้วัด (ถ้ามี)
       if (question.relatedLOs && question.relatedLOs.length > 0) {
@@ -516,7 +539,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // Send user message and get AI assessment
   async function sendMessage(text, options = {}) {
-    const { typingFingerprint, researchMetrics } = options
+    const { typingFingerprint, researchMetrics, useMultiAgent = false } = options
     
     try {
       loading.value = true
@@ -559,13 +582,18 @@ export const useChatStore = defineStore('chat', () => {
       currentAbortController = new AbortController()
       const timeoutId = setTimeout(() => {
         currentAbortController?.abort()
-      }, FETCH_TIMEOUT_MS)
+      }, useMultiAgent ? FETCH_TIMEOUT_MS * 2 : FETCH_TIMEOUT_MS) // Multi-Agent needs more time
 
       // Call Cloud Function for assessment with LO context + 🆕 Anti-Cheat fingerprint + 🔬 Research metrics
       const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL
+      
+      // 🤖 Choose endpoint based on Multi-Agent mode
+      const endpoint = useMultiAgent ? 'assessAnswerMultiAgent' : 'assessAnswer'
+      console.log(`🤖 Using ${useMultiAgent ? 'Multi-Agent (6 agents)' : 'Single Agent'} mode`)
+      
       let response
       try {
-        response = await fetch(`${functionsUrl}/assessAnswer`, {
+        response = await fetch(`${functionsUrl}/${endpoint}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -577,6 +605,11 @@ export const useChatStore = defineStore('chat', () => {
             questionId: currentQuestion.value.id || null,
             studentAnswer: text,
             questionContext: contextText,
+            question: currentQuestion.value, // Multi-Agent needs full question object
+            context: { // Additional context for Multi-Agent
+              learningOutcomes: currentSession.value.courseData?.learningOutcomes || [],
+              gradeLevel: currentSession.value.courseData?.gradeLevel || null
+            },
             learningOutcomes: currentSession.value.courseData?.learningOutcomes || [],
             // 🆕 Anti-Cheat: Send typing fingerprint
             typingFingerprint: typingFingerprint || null,
@@ -658,6 +691,16 @@ export const useChatStore = defineStore('chat', () => {
       // สร้าง feedback message พร้อมคะแนน (final assessment)
       const assessment = result.result
       
+      // 🛡️ Validate assessment data exists
+      if (!assessment || !assessment.rubricScores) {
+        console.error('Invalid assessment result:', result)
+        throw new Error('ไม่ได้รับผลการประเมินจากระบบ กรุณาลองใหม่อีกครั้ง')
+      }
+      
+      // Default values for missing fields
+      const rubricScores = assessment.rubricScores || { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+      const overallScore = assessment.overallScore ?? (rubricScores.analysis + rubricScores.reasoning + rubricScores.creativity + rubricScores.evidence)
+      
       // สร้างส่วน LO assessment ถ้ามี
       let loFeedback = ''
       if (assessment.loAssessment && assessment.loAssessment.passedLOs) {
@@ -680,25 +723,25 @@ ${assessment.loAssessment.analysis ? `💡 **การวิเคราะห�
       const feedbackMessage = `
 ✅ **ประเมินคำตอบเสร็จแล้ว!**
 
-📊 **คะแนนของคุณ: ${assessment.overallScore}/20**
+📊 **คะแนนของคุณ: ${overallScore}/20**
 
 **คะแนนรายด้าน:**
-- 🔍 การวิเคราะห์: ${assessment.rubricScores.analysis}/5
-- 🧠 การให้เหตุผล: ${assessment.rubricScores.reasoning}/5
-- 💡 ความคิดสร้างสรรค์: ${assessment.rubricScores.creativity}/5
-- 📚 การใช้หลักฐาน: ${assessment.rubricScores.evidence}/5
+- 🔍 การวิเคราะห์: ${rubricScores.analysis}/5
+- 🧠 การให้เหตุผล: ${rubricScores.reasoning}/5
+- 💡 ความคิดสร้างสรรค์: ${rubricScores.creativity}/5
+- 📚 การใช้หลักฐาน: ${rubricScores.evidence}/5
 ${loFeedback}
 💬 **Feedback:**
-${assessment.feedbackText}
+${assessment.feedbackText || 'กรุณารอการประเมินเพิ่มเติม'}
 
 ✨ **จุดเด่นของคุณ:**
-${assessment.strengths.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+${(assessment.strengths || []).map((s, i) => `${i + 1}. ${s}`).join('\n') || 'ยังไม่มีข้อมูล'}
 
 🎯 **จุดที่ควรพัฒนา:**
-${assessment.weaknesses.map((w, i) => `${i + 1}. ${w}`).join('\n')}
+${(assessment.weaknesses || []).map((w, i) => `${i + 1}. ${w}`).join('\n') || 'ยังไม่มีข้อมูล'}
 
 📝 **คำแนะนำ:**
-${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+${(assessment.suggestions || []).map((s, i) => `${i + 1}. ${s}`).join('\n') || 'ยังไม่มีข้อมูล'}
 
 ---
 
@@ -891,6 +934,18 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     assessments.value = []
     currentQuestion.value = null
     error.value = null
+    adaptiveContext.value = null
+  }
+
+  // 🆕 Set adaptive context from Learning Journey (Level 3)
+  function setAdaptiveContext(context) {
+    adaptiveContext.value = context
+    console.log('🎯 Adaptive context set:', context)
+  }
+
+  // 🆕 Get adaptive context for assessment
+  function getAdaptiveContext() {
+    return adaptiveContext.value
   }
 
   return {
@@ -901,6 +956,7 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     error,
     currentQuestion,
     starterQuestions,
+    adaptiveContext,
     startSession,
     sendMessage,
     requestNewQuestion,
@@ -908,6 +964,8 @@ ${assessment.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
     loadSession,
     subscribeToAssessments,
     cleanup,  // 🔧 Export cleanup function
-    cancelCurrentRequest  // 🆕 Export cancel function for UI
+    cancelCurrentRequest,  // 🆕 Export cancel function for UI
+    setAdaptiveContext,    // 🆕 For Learning Journey Level 3
+    getAdaptiveContext     // 🆕 For Assessment
   }
 })

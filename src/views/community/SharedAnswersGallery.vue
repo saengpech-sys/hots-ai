@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/community')">← กลับ</button>
         <h1>🌟 คลังคำตอบยอดเยี่ยม</h1>
       </div>
       <div class="header-actions">

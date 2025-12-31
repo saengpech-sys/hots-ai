@@ -25,6 +25,77 @@
       @saved="onReflectionSaved"
     />
     
+    <!-- 🆕 Assessment Readiness Modal -->
+    <div v-if="showReadinessModal" class="modal-overlay" @click.self="showReadinessModal = false">
+      <div class="readiness-modal card">
+        <div class="modal-header">
+          <h2>📊 ความพร้อมในการประเมิน</h2>
+          <button @click="showReadinessModal = false" class="close-btn">✕</button>
+        </div>
+        
+        <div class="readiness-content">
+          <!-- Readiness Score Circle -->
+          <div class="readiness-circle" :class="readinessClass">
+            <div class="circle-content">
+              <span class="score">{{ readiness.percent }}%</span>
+              <span class="label">พร้อม</span>
+            </div>
+          </div>
+          
+          <!-- Unit Progress List -->
+          <div class="unit-progress-section" v-if="unitProgressList.length > 0">
+            <h4>📚 ความคืบหน้าแต่ละหน่วย</h4>
+            <div class="unit-list">
+              <div v-for="unit in unitProgressList" :key="unit.unitKey" class="unit-row">
+                <span class="unit-name">{{ unit.unitName }}</span>
+                <div class="unit-badges">
+                  <span class="badge" :class="unit.ksRead ? 'done' : 'pending'">
+                    {{ unit.ksRead ? '✅' : '⬜' }} ใบความรู้
+                  </span>
+                  <span class="badge" :class="unit.wsPassed ? 'done' : 'pending'">
+                    {{ unit.wsPassed ? '✅' : '⬜' }} ใบงาน 
+                    <span v-if="unit.wsScore">({{ unit.wsScore }}%)</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Weak LOs Warning (Level 3) -->
+          <div v-if="readiness.weakLOs?.length > 0 && journeyLevel >= 3" class="weak-los-section">
+            <h4>⚠️ จุดที่ต้องปรับปรุง</h4>
+            <div class="weak-tags">
+              <span v-for="lo in readiness.weakLOs" :key="lo" class="weak-tag">
+                {{ getWeakLOLabel(lo) }}
+              </span>
+            </div>
+            <p class="weak-hint">AI จะเน้นถามคำถามเกี่ยวกับจุดที่ต้องปรับปรุงเหล่านี้</p>
+          </div>
+          
+          <!-- Readiness Message -->
+          <div class="readiness-message" :class="readinessClass">
+            <span class="message-icon">{{ readiness.ready ? '✅' : 'ℹ️' }}</span>
+            <p>{{ readiness.message }}</p>
+          </div>
+        </div>
+        
+        <div class="modal-actions">
+          <button v-if="readiness.ready || journeyLevel === 1" @click="proceedToAssessment" class="btn btn-primary btn-lg">
+            🚀 {{ readiness.ready ? 'เริ่มประเมิน' : 'ทำเลย (ยังไม่พร้อมเต็มที่)' }}
+          </button>
+          <button v-else @click="goToLearningRooms" class="btn btn-primary">
+            📚 ไปเรียนต่อ
+          </button>
+          <button v-if="!readiness.ready && journeyLevel > 1" @click="proceedAnyway" class="btn btn-outline">
+            ยังไงก็ทำ ({{ readiness.percent }}% พร้อม)
+          </button>
+          <button @click="showReadinessModal = false" class="btn btn-text">
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Adaptive Learning Path Banner -->
       <!-- 🆕 Adaptive Learning Path Banner -->
       <div v-if="activePath" class="adaptive-path-banner">
@@ -42,6 +113,12 @@
       <div class="header-content">
         <h2>💬 HOTS Assessment Chat</h2>
         <div class="header-actions">
+          <!-- 🤖 Assessment Mode Indicator (ครูตั้งค่าที่รายวิชา) -->
+          <div class="assessment-mode-indicator" :title="assessmentModeTitle">
+            <span class="mode-badge" :class="useMultiAgent ? 'multi' : 'single'">
+              {{ useMultiAgent ? '🤖×6 Multi-Agent' : '🤖 Single Agent' }}
+            </span>
+          </div>
           <button @click="toggleTheme" class="icon-btn" title="Toggle Theme">
             {{ isDarkMode ? '☀️' : '🌙' }}
           </button>
@@ -163,27 +240,31 @@
       <!-- Traditional Free-form Input -->
       <div v-if="!structuredMode" class="freeform-input">
         <textarea
+          ref="chatTextarea"
           v-model="inputText"
-          @keydown.enter.prevent="handleSend"
+          @keydown.enter.exact.prevent="handleSend"
           @keydown="handleKeyDown"
           @input="handleInputChange"
           @paste.prevent="handlePaste"
           @copy.prevent="handleCopy"
           @cut.prevent="handleCut"
-          @contextmenu.prevent
+          @contextmenu.prevent="!isMobile"
           @dragover.prevent
           @drop.prevent
           @blur="handleFocusLost"
-          @selectstart.prevent="isMobile ? undefined : $event"
-          class="chat-input no-copy"
+          @focus="handleMobileFocus"
+          @touchstart="handleTouchStart"
+          class="chat-input"
           :class="{ 'mobile-input': isMobile }"
           :placeholder="isMobile ? 'พิมพ์คำตอบของคุณที่นี่...' : 'พิมพ์คำตอบของคุณที่นี่... (กด Enter เพื่อส่ง)'"
-          :rows="isMobile ? 4 : 3"
+          :rows="isMobile ? 5 : 3"
           :disabled="loading"
           autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
+          :autocorrect="isMobile ? 'on' : 'off'"
+          :autocapitalize="isMobile ? 'sentences' : 'off'"
+          :spellcheck="isMobile"
+          inputmode="text"
+          enterkeyhint="send"
         ></textarea>
       </div>
       
@@ -211,9 +292,14 @@
               <input 
                 v-model="structuredAnswer.analysis[index]"
                 type="text"
-                class="item-input"
+                :class="['item-input', { 'mobile-input': isMobile }]"
                 placeholder="เขียนการวิเคราะห์ของคุณ..."
                 @paste.prevent="handlePaste"
+                @contextmenu.prevent="!isMobile"
+                :autocorrect="isMobile ? 'on' : 'off'"
+                :autocapitalize="isMobile ? 'sentences' : 'off'"
+                :spellcheck="isMobile"
+                inputmode="text"
               >
               <button 
                 @click="removeItem('analysis', index)" 
@@ -245,9 +331,14 @@
               <input 
                 v-model="structuredAnswer.reasoning[index]"
                 type="text"
-                class="item-input"
+                :class="['item-input', { 'mobile-input': isMobile }]"
                 placeholder="เขียนเหตุผลของคุณ..."
                 @paste.prevent="handlePaste"
+                @contextmenu.prevent="!isMobile"
+                :autocorrect="isMobile ? 'on' : 'off'"
+                :autocapitalize="isMobile ? 'sentences' : 'off'"
+                :spellcheck="isMobile"
+                inputmode="text"
               >
               <button 
                 @click="removeItem('reasoning', index)" 
@@ -279,9 +370,14 @@
               <input 
                 v-model="structuredAnswer.creativity[index]"
                 type="text"
-                class="item-input"
+                :class="['item-input', { 'mobile-input': isMobile }]"
                 placeholder="เขียนไอเดียสร้างสรรค์ของคุณ..."
                 @paste.prevent="handlePaste"
+                @contextmenu.prevent="!isMobile"
+                :autocorrect="isMobile ? 'on' : 'off'"
+                :autocapitalize="isMobile ? 'sentences' : 'off'"
+                :spellcheck="isMobile"
+                inputmode="text"
               >
               <button 
                 @click="removeItem('creativity', index)" 
@@ -313,9 +409,14 @@
               <input 
                 v-model="structuredAnswer.evidence[index]"
                 type="text"
-                class="item-input"
+                :class="['item-input', { 'mobile-input': isMobile }]"
                 placeholder="เขียนหลักฐานหรือตัวอย่างของคุณ..."
                 @paste.prevent="handlePaste"
+                @contextmenu.prevent="!isMobile"
+                :autocorrect="isMobile ? 'on' : 'off'"
+                :autocapitalize="isMobile ? 'sentences' : 'off'"
+                :spellcheck="isMobile"
+                inputmode="text"
               >
               <button 
                 @click="removeItem('evidence', index)" 
@@ -444,6 +545,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useThemeStore } from '@/stores/theme'
 import { useGamificationStore } from '@/stores/gamification'
+import { useLearningProgressStore } from '@/stores/learningProgress'
 import BadgeNotification from '@/components/BadgeNotification.vue'
 import PointsNotification from '@/components/PointsNotification.vue'
 import ReflectionJournal from '@/components/ReflectionJournal.vue'
@@ -465,19 +567,32 @@ const { executeWithLimit, isLimited, errorMessage: rateLimitMessage } = useRateL
 const chatStore = useChatStore()
 const themeStore = useThemeStore()
 const gamificationStore = useGamificationStore()
+const learningProgress = useLearningProgressStore()
+
+// 🆕 Readiness Check State
+const showReadinessModal = ref(false)
+const readiness = ref({ ready: true, percent: 100, unitsCompleted: 0, totalUnits: 0, weakLOs: [], message: '' })
+const unitProgressList = ref([])
+const hasCheckedReadiness = ref(false)
+
+// 🆕 Journey Level
+const journeyLevel = computed(() => learningProgress.journeySettings?.level || 2)
 
 // 🆕 Sequence Tracking
 const sequenceId = ref(null)
 
 const inputText = ref('')
 const messagesContainer = ref(null)
+const chatTextarea = ref(null)
 const sendingInProgress = ref(false)
 const lastSendTime = ref(0)
 const showConfirmDialog = ref(false)
 const pendingMessage = ref('')
 
 // 🆕 Auto-save draft state
+// ใช้ทั้ง session-specific key และ user-level key เพื่อกู้คืนได้แม้ session เปลี่ยน
 const draftKey = computed(() => `chat_draft_${chatStore.currentSession?.id || 'temp'}`)
+const userDraftKey = computed(() => `chat_draft_user_${authStore.user?.uid || 'temp'}`)
 const sendError = ref(null)
 const retryCount = ref(0)
 const MAX_RETRIES = 3
@@ -499,6 +614,20 @@ const sessionSummary = ref({
   averageScore: 0,
   questionsAnswered: 0,
   totalPoints: 0
+})
+
+// 🤖 Multi-Agent Mode - ดึงจาก Course Setting (ครูตั้งค่า)
+const useMultiAgent = computed(() => {
+  const courseData = chatStore.currentSession?.courseData
+  return courseData?.assessmentMode === 'multi-agent'
+})
+
+// 🤖 Assessment Mode Title for tooltip
+const assessmentModeTitle = computed(() => {
+  if (useMultiAgent.value) {
+    return 'Multi-Agent Mode: AI 6 ตัวตรวจสอบข้ามกัน (ครูตั้งค่าที่รายวิชา)'
+  }
+  return 'Single Agent Mode: AI 1 ตัว (ครูตั้งค่าที่รายวิชา)'
 })
 
 // 🆕 Structured Answer Mode
@@ -569,13 +698,17 @@ onMounted(async () => {
   // 🆕 Start sequence tracking
   await startSequenceTracking()
   
+  // 🆕 Load learning progress and check readiness
+  await learningProgress.loadAllProgress()
+  await checkAssessmentReadiness()
+  
   // If adaptive path is active, handle current step
   if (activePath.value && currentStep.value) {
     await handleCurrentPathStep()
   }
   
-  // 🆕 Restore draft from localStorage
-  const savedDraft = localStorage.getItem(draftKey.value)
+  // 🆕 Restore draft from localStorage (ลองทั้ง session key และ user key)
+  const savedDraft = localStorage.getItem(draftKey.value) || localStorage.getItem(userDraftKey.value)
   if (savedDraft && savedDraft.trim().length > 0) {
     const preview = savedDraft.length > 100 ? savedDraft.substring(0, 100) + '...' : savedDraft
     const shouldRestore = confirm(
@@ -587,6 +720,7 @@ onMounted(async () => {
       inputText.value = savedDraft
     } else {
       localStorage.removeItem(draftKey.value)
+      localStorage.removeItem(userDraftKey.value)
     }
   }
   
@@ -613,11 +747,14 @@ onUnmounted(() => {
 })
 
 // 🆕 Auto-save draft to localStorage whenever inputText changes
+// บันทึกทั้ง session-specific และ user-level เพื่อกู้คืนได้แม้ session เปลี่ยน
 watch(inputText, (newValue) => {
   if (newValue && newValue.trim().length > 0) {
     localStorage.setItem(draftKey.value, newValue)
+    localStorage.setItem(userDraftKey.value, newValue)  // Backup ระดับ user
   } else {
     localStorage.removeItem(draftKey.value)
+    localStorage.removeItem(userDraftKey.value)
   }
 })
 
@@ -695,6 +832,69 @@ function getSenderName(from) {
     'system': 'ระบบ'
   }
   return names[from] || from
+}
+
+// 🆕 Assessment Readiness Functions
+async function checkAssessmentReadiness() {
+  if (hasCheckedReadiness.value) return
+  
+  const courseId = chatStore.currentSession?.courseId || localStorage.getItem('selectedCourseId')
+  if (!courseId) return
+  
+  // Get readiness from store
+  const result = learningProgress.assessmentReadiness(courseId)
+  readiness.value = result
+  
+  // Get unit progress list
+  unitProgressList.value = learningProgress.getUnitProgressList(courseId)
+  
+  hasCheckedReadiness.value = true
+  
+  // Show readiness modal if not ready and level >= 2
+  if (!result.ready && journeyLevel.value >= 2) {
+    showReadinessModal.value = true
+  } else if (result.softWarning && journeyLevel.value === 1) {
+    // Level 1: Just log a soft warning
+    console.log('⚠️ Assessment readiness warning:', result.message)
+  }
+}
+
+const readinessClass = computed(() => {
+  if (readiness.value.percent >= 80) return 'high'
+  if (readiness.value.percent >= 50) return 'medium'
+  return 'low'
+})
+
+function getWeakLOLabel(lo) {
+  const labels = {
+    'analysis': '🔍 การวิเคราะห์',
+    'reasoning': '🧠 การให้เหตุผล',
+    'creativity': '💡 ความคิดสร้างสรรค์',
+    'evidence': '📚 การใช้หลักฐาน'
+  }
+  return labels[lo] || lo
+}
+
+function proceedToAssessment() {
+  showReadinessModal.value = false
+  
+  // Level 3: Pass weak LOs to chat store for adaptive questions
+  if (journeyLevel.value >= 3 && readiness.value.weakLOs?.length > 0) {
+    const courseId = chatStore.currentSession?.courseId
+    if (courseId) {
+      const context = learningProgress.getAssessmentContext(courseId)
+      chatStore.setAdaptiveContext(context)
+    }
+  }
+}
+
+function proceedAnyway() {
+  showReadinessModal.value = false
+}
+
+function goToLearningRooms() {
+  showReadinessModal.value = false
+  router.push('/learning-rooms')
 }
 
 function formatTime(timestamp) {
@@ -942,8 +1142,11 @@ async function sendMessageConfirmed(text = null, isRequestNewQuestion = false) {
             await chatStore.requestNewQuestion()
           }
         } else {
-          // ส่งคำตอบ พร้อม typing fingerprint
-          const assessment = await chatStore.sendMessage(messageText, { typingFingerprint })
+          // ส่งคำตอบ พร้อม typing fingerprint และ Multi-Agent mode
+          const assessment = await chatStore.sendMessage(messageText, { 
+            typingFingerprint,
+            useMultiAgent: useMultiAgent.value 
+          })
           
           // 🆕 Log assessment event for sequence tracking
           logSequenceEvent('assessment_submitted', {
@@ -959,9 +1162,10 @@ async function sendMessageConfirmed(text = null, isRequestNewQuestion = false) {
         }
       })
       
-      // Success - clear backup and draft, reset anti-cheat
+      // Success - clear backup and draft (ทั้ง session key และ user key), reset anti-cheat
       localStorage.removeItem(backupKey)
       localStorage.removeItem(draftKey.value)
+      localStorage.removeItem(userDraftKey.value)
       sendError.value = null
       resetAntiCheat() // Reset tracker for next answer
       
@@ -1277,6 +1481,24 @@ function handleFocusLost() {
   if (isMobile.value) {
     typingTracker.value.recordFocusLost()
     console.log('📱 Mobile focus lost - tracked')
+  }
+}
+
+// 📱 Mobile: Handle focus - scroll input into view
+function handleMobileFocus() {
+  if (isMobile.value && chatTextarea.value) {
+    // รอให้ keyboard เปิดก่อนแล้วค่อย scroll
+    setTimeout(() => {
+      chatTextarea.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 300)
+  }
+}
+
+// 📱 Mobile: Handle touch start - ensure input is interactive
+function handleTouchStart(e) {
+  // ไม่ prevent default เพื่อให้ focus และ keyboard ทำงานได้
+  if (isMobile.value) {
+    console.log('📱 Touch start on textarea')
   }
 }
 
@@ -1763,6 +1985,24 @@ function validateTypingBehavior(text) {
   font-family: inherit;
   font-size: 1rem;
   min-height: 80px;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--input-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  line-height: 1.5;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--primary, #667eea);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.chat-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Mobile-specific input styles */
@@ -1772,6 +2012,11 @@ function validateTypingBehavior(text) {
   -webkit-appearance: none;
   appearance: none;
   touch-action: manipulation;
+  min-height: 120px;
+  padding: 1rem;
+  /* Allow text selection for cursor positioning */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Disable text selection styling on mobile */
@@ -1782,18 +2027,32 @@ function validateTypingBehavior(text) {
 
 /* Mobile keyboard-friendly padding */
 @media (max-width: 768px) {
+  .chat-container {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  
+  .input-container {
+    position: sticky;
+    bottom: 0;
+    background: var(--card-bg);
+    padding: 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
+    z-index: 100;
+    border-top: 1px solid var(--border-color);
+  }
+  
   .chat-input {
     min-height: 100px;
     padding: 1rem;
     font-size: 16px;
   }
   
-  .chat-input-container {
-    position: sticky;
-    bottom: 0;
-    background: var(--card-bg);
-    padding-bottom: env(safe-area-inset-bottom);
-    z-index: 100;
+  .freeform-input {
+    margin-bottom: 0.5rem;
+  }
+  
+  .messages-container {
+    padding-bottom: 180px; /* Space for input area */
   }
 }
 
@@ -2191,6 +2450,19 @@ function validateTypingBehavior(text) {
   opacity: 0.7;
 }
 
+/* Mobile-specific item-input styles */
+.item-input.mobile-input {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
+  padding: 0.875rem 1rem;
+  min-height: 44px;
+}
+
 .item-remove {
   width: 32px;
   height: 32px;
@@ -2432,5 +2704,278 @@ function validateTypingBehavior(text) {
   .btn-clear {
     justify-content: center;
   }
+}
+
+/* 🤖 Assessment Mode Indicator Styles */
+.assessment-mode-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.mode-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 1rem;
+  white-space: nowrap;
+}
+
+.mode-badge.single {
+  background: var(--bg-secondary, #f3f4f6);
+  color: var(--text-secondary, #6b7280);
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.mode-badge.multi {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  border: none;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(168, 85, 247, 0.5); }
+}
+
+/* Dark mode support */
+.dark-mode .mode-badge.single {
+  background: var(--bg-tertiary, #374151);
+  color: var(--text-secondary, #9ca3af);
+  border-color: var(--border-color, #4b5563);
+}
+
+/* 🆕 Assessment Readiness Modal Styles */
+.readiness-modal {
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.readiness-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.readiness-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.readiness-modal .close-btn {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0.25rem;
+}
+
+.readiness-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Readiness Circle */
+.readiness-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.readiness-circle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 8px solid var(--border-color);
+}
+
+.readiness-circle.high::before {
+  border-color: #10b981;
+}
+
+.readiness-circle.medium::before {
+  border-color: #f59e0b;
+}
+
+.readiness-circle.low::before {
+  border-color: #ef4444;
+}
+
+.circle-content {
+  text-align: center;
+}
+
+.circle-content .score {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.readiness-circle.high .score { color: #10b981; }
+.readiness-circle.medium .score { color: #f59e0b; }
+.readiness-circle.low .score { color: #ef4444; }
+
+.circle-content .label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Unit Progress */
+.unit-progress-section h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.unit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.unit-name {
+  font-weight: 500;
+}
+
+.unit-badges {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.unit-badges .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.unit-badges .badge.done {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.unit-badges .badge.pending {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+}
+
+/* Weak LOs */
+.weak-los-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #f59e0b;
+}
+
+.weak-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.weak-tag {
+  padding: 0.25rem 0.625rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #f59e0b;
+}
+
+.weak-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Readiness Message */
+.readiness-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 10px;
+}
+
+.readiness-message.high {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.readiness-message.medium {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.readiness-message.low {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.readiness-message .message-icon {
+  font-size: 1.25rem;
+}
+
+.readiness-message p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Modal Actions */
+.readiness-modal .modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  justify-content: center;
+}
+
+.readiness-modal .btn-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+}
+
+.readiness-modal .btn-text {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.readiness-modal .btn-text:hover {
+  color: var(--text-primary);
 }
 </style>

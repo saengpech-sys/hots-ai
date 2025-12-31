@@ -11,7 +11,7 @@
       <span class="material-icons">error_outline</span>
       <h2>ไม่พบใบความรู้</h2>
       <p>{{ error }}</p>
-      <button @click="$router.back()" class="btn btn-primary">
+      <button @click="$router.push('/learning-rooms')" class="btn btn-primary">
         <span class="material-icons">arrow_back</span>
         กลับ
       </button>
@@ -22,7 +22,7 @@
       <!-- Header -->
       <div class="ks-header" :class="{ 'print-mode': isPrintMode }">
         <div class="header-top">
-          <button v-if="!isPrintMode" @click="$router.back()" class="btn-back">
+          <button v-if="!isPrintMode" @click="$router.push('/learning-rooms')" class="btn-back">
             <span class="material-icons">arrow_back</span>
           </button>
           <div class="header-badges">
@@ -429,24 +429,49 @@
         </section>
       </main>
 
-      <!-- Progress Bar (for students) -->
-      <div v-if="isStudent && !isPrintMode" class="reading-progress">
+      <!-- 🆕 Reading Complete Banner -->
+      <div v-if="isReadingComplete && !isPrintMode" class="reading-complete-banner">
+        <div class="banner-content">
+          <span class="banner-icon">✅</span>
+          <div class="banner-text">
+            <strong>อ่านจบแล้ว!</strong>
+            <p>คุณพร้อมทำใบงานประกอบใบความรู้นี้แล้ว</p>
+          </div>
+          <button @click="goToRelatedWorksheet" class="btn btn-primary btn-sm">
+            📝 ไปทำใบงาน
+          </button>
+        </div>
+      </div>
+
+      <!-- 🆕 Manual Confirm Button (แสดงเสมอจนกว่าจะอ่านเสร็จ) -->
+      <div v-if="!isReadingComplete && !isPrintMode" class="manual-confirm-section">
+        <p class="confirm-hint">📖 อ่านแล้ว {{ Math.round(readingProgress) }}%</p>
+        <button @click="manualConfirmReading" class="btn btn-secondary btn-sm">
+          ✅ ยืนยันว่าอ่านเสร็จแล้ว
+        </button>
+      </div>
+
+      <!-- Progress Bar -->
+      <div v-if="!isPrintMode" class="reading-progress">
         <div class="progress-fill" :style="{ width: readingProgress + '%' }"></div>
+        <span class="progress-label">{{ Math.round(readingProgress) }}%</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
+import { useLearningProgressStore } from '@/stores/learningProgress'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const learningProgress = useLearningProgressStore()
 
 const knowledgeSheet = ref(null)
 const loading = ref(true)
@@ -456,6 +481,11 @@ const isBookmarked = ref(false)
 const showAnswers = ref({})
 const tfAnswers = ref({})
 const readingProgress = ref(0)
+
+// 🆕 Reading Tracking for Learning Journey
+const readingStartTime = ref(null)
+const isReadingComplete = ref(false)
+const hasTrackedReading = ref(false)
 
 const ks = computed(() => knowledgeSheet.value?.knowledgeSheet || knowledgeSheet.value || {})
 const isStudent = computed(() => authStore.user?.role === 'student')
@@ -548,7 +578,166 @@ async function toggleBookmark() {
 function updateReadingProgress() {
   const scrollTop = window.scrollY
   const docHeight = document.documentElement.scrollHeight - window.innerHeight
-  readingProgress.value = Math.min(100, (scrollTop / docHeight) * 100)
+  
+  // ถ้าหน้าสั้นมาก (ไม่ต้อง scroll) ให้ถือว่าอ่าน 100%
+  if (docHeight <= 100) {
+    readingProgress.value = 100
+  } else {
+    readingProgress.value = Math.min(100, Math.round((scrollTop / docHeight) * 100))
+  }
+  
+  // 🆕 Track reading completion for Learning Journey
+  if (readingProgress.value >= 80 && !hasTrackedReading.value && authStore.user?.role === 'student') {
+    trackReadingComplete()
+  }
+}
+
+// 🆕 Track when reading is complete (>= 80%)
+async function trackReadingComplete() {
+  if (hasTrackedReading.value || !knowledgeSheet.value?.id) return
+  
+  hasTrackedReading.value = true
+  isReadingComplete.value = true
+  
+  const timeSpent = readingStartTime.value 
+    ? Math.round((Date.now() - readingStartTime.value) / 1000) 
+    : 0
+  
+  try {
+    await learningProgress.markKnowledgeSheetRead(
+      knowledgeSheet.value.id,
+      readingProgress.value,
+      timeSpent,
+      {
+        courseId: knowledgeSheet.value.courseId || knowledgeSheet.value.metadata?.courseId,
+        unitNumber: knowledgeSheet.value.metadata?.unitNumber,
+        planNumber: knowledgeSheet.value.metadata?.planNumber,
+        title: knowledgeSheet.value.metadata?.title || ks.value.metadata?.title
+      }
+    )
+    
+    console.log('✅ Reading tracked:', {
+      ksId: knowledgeSheet.value.id,
+      readPercent: readingProgress.value,
+      timeSpent
+    })
+  } catch (err) {
+    console.error('Error tracking reading:', err)
+    hasTrackedReading.value = false // Allow retry
+  }
+}
+
+// 🆕 Manual confirm reading (สำหรับกรณี scroll tracking ไม่ทำงาน)
+async function manualConfirmReading() {
+  console.log('🔵 manualConfirmReading called', {
+    hasTracked: hasTrackedReading.value,
+    ksId: knowledgeSheet.value?.id,
+    role: authStore.user?.role,
+    uid: authStore.user?.uid,
+    user: authStore.user
+  })
+  
+  if (hasTrackedReading.value || !knowledgeSheet.value?.id) {
+    console.log('⚠️ Already tracked or no KS id')
+    return
+  }
+  
+  // Force set to 100%
+  readingProgress.value = 100
+  hasTrackedReading.value = true
+  isReadingComplete.value = true
+  
+  // ถ้าไม่มี uid ให้ข้าม
+  if (!authStore.user?.uid) {
+    console.log('⚠️ No user uid')
+    alert('⚠️ ไม่พบข้อมูลผู้ใช้ กรุณา login ใหม่')
+    return
+  }
+  
+  const timeSpent = readingStartTime.value 
+    ? Math.round((Date.now() - readingStartTime.value) / 1000) 
+    : 60 // Default 60 seconds if no start time
+  
+  try {
+    console.log('🔵 Calling markKnowledgeSheetRead...', {
+      ksId: knowledgeSheet.value.id,
+      courseId: knowledgeSheet.value.courseId || knowledgeSheet.value.metadata?.courseId
+    })
+    
+    const result = await learningProgress.markKnowledgeSheetRead(
+      knowledgeSheet.value.id,
+      100, // Force 100%
+      timeSpent,
+      {
+        courseId: knowledgeSheet.value.courseId || knowledgeSheet.value.metadata?.courseId,
+        unitNumber: knowledgeSheet.value.metadata?.unitNumber,
+        planNumber: knowledgeSheet.value.metadata?.planNumber,
+        title: knowledgeSheet.value.metadata?.title || ks.value.metadata?.title,
+        manualConfirm: true
+      }
+    )
+    
+    console.log('✅ Manual reading confirmed:', {
+      ksId: knowledgeSheet.value.id,
+      timeSpent,
+      result
+    })
+    
+    alert('✅ บันทึกการอ่านสำเร็จ! กลับไปที่ห้องกิจกรรมได้เลย')
+    
+  } catch (err) {
+    console.error('❌ Error confirming reading:', err)
+    alert('❌ เกิดข้อผิดพลาด: ' + err.message)
+    hasTrackedReading.value = false
+    isReadingComplete.value = false
+  }
+}
+
+// 🆕 Track reading on page leave if partially read
+async function trackPartialReading() {
+  if (hasTrackedReading.value || !knowledgeSheet.value?.id || readingProgress.value < 10) return
+  if (authStore.user?.role !== 'student') return
+  
+  const timeSpent = readingStartTime.value 
+    ? Math.round((Date.now() - readingStartTime.value) / 1000) 
+    : 0
+  
+  try {
+    await learningProgress.markKnowledgeSheetRead(
+      knowledgeSheet.value.id,
+      readingProgress.value,
+      timeSpent,
+      {
+        courseId: knowledgeSheet.value.courseId || knowledgeSheet.value.metadata?.courseId,
+        unitNumber: knowledgeSheet.value.metadata?.unitNumber,
+        planNumber: knowledgeSheet.value.metadata?.planNumber,
+        title: knowledgeSheet.value.metadata?.title || ks.value.metadata?.title
+      }
+    )
+  } catch (err) {
+    console.error('Error tracking partial reading:', err)
+  }
+}
+
+// 🆕 Navigate to related worksheet
+function goToRelatedWorksheet() {
+  const ksData = knowledgeSheet.value
+  const metadata = ksData?.metadata || ks.value?.metadata
+  
+  // ถ้ามี roomId ใน query params ให้กลับไปที่ห้องนั้น
+  if (route.query.roomId) {
+    router.push(`/learning-room/${route.query.roomId}`)
+    return
+  }
+  
+  // ถ้ามี returnTo ให้ไปตามนั้น
+  if (route.query.returnTo) {
+    router.push(route.query.returnTo)
+    return
+  }
+  
+  // ไปที่ Learning Rooms
+  router.push('/learning-rooms')
 }
 
 async function loadKnowledgeSheet() {
@@ -612,13 +801,29 @@ async function loadKnowledgeSheet() {
   }
 }
 
-onMounted(() => {
-  loadKnowledgeSheet()
+onMounted(async () => {
+  await loadKnowledgeSheet()
   window.addEventListener('scroll', updateReadingProgress)
+  
+  // 🆕 Start tracking reading time
+  readingStartTime.value = Date.now()
+  
+  // 🆕 Load existing progress
+  if (authStore.user?.role === 'student') {
+    await learningProgress.loadAllProgress()
+  }
+  
+  // 🆕 เช็คสถานะ scroll หลังโหลดเสร็จ (กรณีหน้าสั้นไม่ต้อง scroll)
+  setTimeout(() => {
+    updateReadingProgress()
+  }, 500)
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', updateReadingProgress)
+  
+  // 🆕 Track partial reading when leaving
+  trackPartialReading()
 })
 </script>
 
@@ -1330,7 +1535,7 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 4px;
+  height: 6px;
   background: var(--border-color);
   z-index: 100;
 }
@@ -1339,6 +1544,117 @@ onUnmounted(() => {
   height: 100%;
   background: linear-gradient(90deg, #10b981, #3b82f6);
   transition: width 0.1s;
+}
+
+.reading-progress .progress-label {
+  position: absolute;
+  right: 8px;
+  top: -20px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 🆕 Reading Complete Banner */
+.reading-complete-banner {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-radius: 16px;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+  z-index: 101;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.reading-complete-banner .banner-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: white;
+}
+
+.reading-complete-banner .banner-icon {
+  font-size: 2rem;
+}
+
+.reading-complete-banner .banner-text {
+  flex: 1;
+}
+
+.reading-complete-banner .banner-text strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.reading-complete-banner .banner-text p {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.reading-complete-banner .btn-primary {
+  background: white;
+  color: #059669;
+  border: none;
+  white-space: nowrap;
+}
+
+.reading-complete-banner .btn-primary:hover {
+  background: #f0fdf4;
+}
+
+/* Manual Confirm Section */
+.manual-confirm-section {
+  margin-top: 2rem;
+  margin-bottom: 80px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.confirm-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.manual-confirm-section .btn-secondary {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.manual-confirm-section .btn-secondary:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 }
 
 /* Print Mode */

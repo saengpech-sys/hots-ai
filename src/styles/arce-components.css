@@ -1,0 +1,391 @@
+/**
+ * 📊 A.R.C.E. Component Styles
+ * Higher-Order Thinking Skills UI Components
+ * 
+ * Components:
+ * 1. Score Badge - Individual dimension scores
+ * 2. Rubric Card - Full assessment display
+ * 3. Score Bar - Horizontal progress bars
+ * 4. Dimension Icon - SVG icons for each dimension
+ * 5. Assessment Card - Complete assessment summary
+ */
+
+/* ============================================
+   1. A.R.C.E. SCORE BADGE
+   ============================================ */
+
+.arce-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+.arce-badge--analysis {
+  background: var(--arce-analysis-light);
+  color: var(--arce-analysis-dark);
+}
+
+.arce-badge--reasoning {
+  background: var(--arce-reasoning-light);
+  color: var(--arce-reasoning-dark);
+}
+
+.arce-badge--creativity {
+  background: var(--arce-creativity-light);
+  color: var(--arce-creativity-dark);
+}
+
+.arce-badge--evidence {
+  background: var(--arce-evidence-light);
+  color: var(--arce-evidence-dark);
+}
+
+/* Score level variants */
+.arce-badge--score-0 { background: var(--error-100); color: var(--error-700); }
+.arce-badge--score-1 { background: #FED7AA; color: #9A3412; }
+.arce-badge--score-2 { background: var(--warning-100); color: var(--warning-700); }
+.arce-badge--score-3 { background: #ECFCCB; color: #3F6212; }
+.arce-badge--score-4 { background: var(--success-100); color: var(--success-700); }
+.arce-badge--score-5 { background: #CCFBF1; color: #115E59; }
+
+/* ============================================
+   2. A.R.C.E. RUBRIC CARD
+   ============================================ */
+
+.arce-rubric-card {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--surface-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 768px) {
+  .arce-rubric-card {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .arce-rubric-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arce-dimension {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  transition: transform var(--duration-200) var(--ease-out);
+}
+
+.arce-dimension:hover {
+  transform: translateY(-2px);
+}
+
+.arce-dimension--analysis { border-top: 3px solid var(--arce-analysis); }
+.arce-dimension--reasoning { border-top: 3px solid var(--arce-reasoning); }
+.arce-dimension--creativity { border-top: 3px solid var(--arce-creativity); }
+.arce-dimension--evidence { border-top: 3px solid var(--arce-evidence); }
+
+.arce-dimension__icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arce-dimension--analysis .arce-dimension__icon { background: var(--arce-analysis-light); color: var(--arce-analysis); }
+.arce-dimension--reasoning .arce-dimension__icon { background: var(--arce-reasoning-light); color: var(--arce-reasoning); }
+.arce-dimension--creativity .arce-dimension__icon { background: var(--arce-creativity-light); color: var(--arce-creativity); }
+.arce-dimension--evidence .arce-dimension__icon { background: var(--arce-evidence-light); color: var(--arce-evidence); }
+
+.arce-dimension__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.arce-dimension__score {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.arce-dimension__max {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+/* ============================================
+   3. A.R.C.E. SCORE BAR (Horizontal Progress)
+   ============================================ */
+
+.arce-score-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.arce-score-bar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.arce-score-bar__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.arce-score-bar__value {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.arce-score-bar__track {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.arce-score-bar__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--duration-500) var(--ease-out);
+}
+
+.arce-score-bar--analysis .arce-score-bar__fill { background: var(--arce-analysis); }
+.arce-score-bar--reasoning .arce-score-bar__fill { background: var(--arce-reasoning); }
+.arce-score-bar--creativity .arce-score-bar__fill { background: var(--arce-creativity); }
+.arce-score-bar--evidence .arce-score-bar__fill { background: var(--arce-evidence); }
+
+/* Large variant */
+.arce-score-bar--lg .arce-score-bar__track {
+  height: 12px;
+}
+
+.arce-score-bar--lg .arce-score-bar__label {
+  font-size: var(--text-base);
+}
+
+/* ============================================
+   4. A.R.C.E. TOTAL SCORE DISPLAY
+   ============================================ */
+
+.arce-total-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: linear-gradient(135deg, var(--primary-500), var(--secondary-500));
+  border-radius: var(--radius-2xl);
+  color: white;
+  text-align: center;
+}
+
+.arce-total-score__value {
+  font-size: var(--text-5xl);
+  font-weight: var(--font-bold);
+  line-height: var(--leading-none);
+}
+
+.arce-total-score__max {
+  font-size: var(--text-xl);
+  opacity: 0.8;
+}
+
+.arce-total-score__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  opacity: 0.9;
+  margin-top: var(--space-2);
+}
+
+/* Score level styles */
+.arce-total-score--low {
+  background: linear-gradient(135deg, var(--error-500), var(--warning-500));
+}
+
+.arce-total-score--medium {
+  background: linear-gradient(135deg, var(--warning-500), var(--success-400));
+}
+
+.arce-total-score--high {
+  background: linear-gradient(135deg, var(--success-500), var(--info-500));
+}
+
+/* ============================================
+   5. A.R.C.E. ASSESSMENT CARD
+   ============================================ */
+
+.arce-assessment-card {
+  background: var(--surface-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.arce-assessment-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-6);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.arce-assessment-card__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.arce-assessment-card__date {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.arce-assessment-card__body {
+  padding: var(--space-6);
+}
+
+.arce-assessment-card__scores {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .arce-assessment-card__scores {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.arce-assessment-card__feedback {
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border-left: 4px solid var(--primary-500);
+}
+
+.arce-assessment-card__feedback-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.arce-assessment-card__feedback-text {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  line-height: var(--leading-relaxed);
+}
+
+/* ============================================
+   6. SCORE DOT INDICATORS
+   ============================================ */
+
+.arce-score-dots {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.arce-score-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  transition: background var(--duration-200) var(--ease-out);
+}
+
+.arce-score-dot--filled.arce-score-dot--analysis { background: var(--arce-analysis); }
+.arce-score-dot--filled.arce-score-dot--reasoning { background: var(--arce-reasoning); }
+.arce-score-dot--filled.arce-score-dot--creativity { background: var(--arce-creativity); }
+.arce-score-dot--filled.arce-score-dot--evidence { background: var(--arce-evidence); }
+
+/* ============================================
+   7. LO (Learning Outcome) STATUS
+   ============================================ */
+
+.lo-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
+.lo-status--passed {
+  background: var(--success-100);
+  color: var(--success-700);
+}
+
+.lo-status--in-progress {
+  background: var(--warning-100);
+  color: var(--warning-700);
+}
+
+.lo-status--not-started {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.lo-status--failed {
+  background: var(--error-100);
+  color: var(--error-700);
+}
+
+/* ============================================
+   8. ANIMATIONS FOR A.R.C.E. COMPONENTS
+   ============================================ */
+
+@keyframes arce-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+}
+
+@keyframes arce-score-reveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.arce-dimension--animate {
+  animation: arce-score-reveal var(--duration-500) var(--ease-out);
+}
+
+.arce-dimension--pulse .arce-dimension__score {
+  animation: arce-pulse var(--duration-1000) var(--ease-in-out) infinite;
+}
+
+/* Score fill animation */
+@keyframes arce-fill {
+  from { width: 0; }
+}
+
+.arce-score-bar--animate .arce-score-bar__fill {
+  animation: arce-fill var(--duration-700) var(--ease-out);
+}

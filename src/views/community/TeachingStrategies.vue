@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="$router.back()">← กลับ</button>
+        <button class="back-btn" @click="$router.push('/community')">← กลับ</button>
         <h1>🎯 กลยุทธ์การสอน HOTS</h1>
       </div>
       <button class="btn-share" @click="showNewModal = true">+ แชร์เทคนิค</button>

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { db } from '@/firebase/config'
+import { db, auth } from '@/firebase/config'
 import { collection, query, where, onSnapshot, orderBy, limit, doc, getDoc } from 'firebase/firestore'
 
 export const useDashboardStore = defineStore('dashboard', () => {
@@ -56,10 +56,17 @@ export const useDashboardStore = defineStore('dashboard', () => {
     try {
       const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001/hots-ai-chatloop/us-central1'
       
+      // 🔐 Get Firebase ID Token for authentication
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) {
+        throw new Error('Not authenticated. Please login again.')
+      }
+      
       const response = await fetch(`${functionsUrl}/generateClassAnalytics`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           courseId,
