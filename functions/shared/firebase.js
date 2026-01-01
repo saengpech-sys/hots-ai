@@ -35,6 +35,7 @@ const db = new Proxy({}, {
 
 module.exports = {
   admin,
+  getDb,
   get db() { return getDb() },
   FieldValue: admin.firestore.FieldValue,
   Timestamp: admin.firestore.Timestamp
