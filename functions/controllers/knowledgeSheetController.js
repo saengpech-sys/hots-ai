@@ -20,7 +20,11 @@ const getOpenAI = () => getOpenAIClient()
  * Generate Knowledge Sheet
  */
 exports.generateKnowledgeSheet = functions
-  .runWith({ memory: '1GB', timeoutSeconds: 300 })
+  .runWith({ 
+    secrets: [openaiApiKeySecret],
+    memory: '2GB', 
+    timeoutSeconds: 540 
+  })
   .https.onRequest(async (req, res) => {
     return cors(req, res, async () => {
       try {
@@ -126,7 +130,11 @@ ${includeExamples ? 'ต้องมีตัวอย่างประกอ�
  * Generate Unit Knowledge Sheet
  */
 exports.generateUnitKnowledgeSheet = functions
-  .runWith({ memory: '1GB', timeoutSeconds: 300 })
+  .runWith({ 
+    secrets: [openaiApiKeySecret],
+    memory: '1GB', 
+    timeoutSeconds: 300 
+  })
   .https.onRequest(async (req, res) => {
     return cors(req, res, async () => {
       try {
@@ -236,7 +244,11 @@ exports.generateUnitKnowledgeSheet = functions
  * Generate Batch Knowledge Sheets
  */
 exports.generateBatchKnowledgeSheets = functions
-  .runWith({ memory: '2GB', timeoutSeconds: 540 })
+  .runWith({ 
+    secrets: [openaiApiKeySecret],
+    memory: '2GB', 
+    timeoutSeconds: 540 
+  })
   .https.onRequest(async (req, res) => {
     return cors(req, res, async () => {
       try {

@@ -10,7 +10,8 @@ const functions = require('firebase-functions')
 const admin = require('firebase-admin')
 const cors = require('cors')({ origin: true })
 
-const db = admin.firestore()
+// Lazy initialization - db is accessed only when functions are called
+const getDb = () => admin.firestore()
 
 // School registration status
 const REGISTRATION_STATUS = {
@@ -81,7 +82,7 @@ exports.registerSchool = functions.https.onRequest((req, res) => {
       }
 
       // Check if school already registered
-      const existingSchool = await db.collection('schools')
+      const existingSchool = await getDb().collection('schools')
         .where('schoolCode', '==', schoolCode)
         .limit(1)
         .get()
@@ -95,7 +96,7 @@ exports.registerSchool = functions.https.onRequest((req, res) => {
       }
 
       // Check if registration request exists
-      const existingRequest = await db.collection('schoolRegistrations')
+      const existingRequest = await getDb().collection('schoolRegistrations')
         .where('schoolCode', '==', schoolCode)
         .where('status', 'in', ['pending', 'verifying'])
         .limit(1)
@@ -163,7 +164,7 @@ exports.registerSchool = functions.https.onRequest((req, res) => {
         rejectionReason: null
       }
 
-      await db.collection('schoolRegistrations').doc(registrationId).set(registrationData)
+      await getDb().collection('schoolRegistrations').doc(registrationId).set(registrationData)
 
       // Log event
       await logOnboardingEvent({
@@ -210,7 +211,7 @@ exports.verifyRegistration = functions.https.onRequest((req, res) => {
         })
       }
 
-      const regDoc = await db.collection('schoolRegistrations').doc(registrationId).get()
+      const regDoc = await getDb().collection('schoolRegistrations').doc(registrationId).get()
 
       if (!regDoc.exists) {
         return res.status(404).json({ success: false, error: 'Registration not found' })
@@ -300,7 +301,7 @@ exports.approveRegistration = functions.https.onRequest((req, res) => {
         })
       }
 
-      const regDoc = await db.collection('schoolRegistrations').doc(registrationId).get()
+      const regDoc = await getDb().collection('schoolRegistrations').doc(registrationId).get()
 
       if (!regDoc.exists) {
         return res.status(404).json({ success: false, error: 'Registration not found' })
@@ -316,7 +317,7 @@ exports.approveRegistration = functions.https.onRequest((req, res) => {
       }
 
       // Begin provisioning
-      const batch = db.batch()
+      const batch = getDb().batch()
 
       // Update registration status
       batch.update(regDoc.ref, {
@@ -379,7 +380,7 @@ exports.rejectRegistration = functions.https.onRequest((req, res) => {
         })
       }
 
-      const regDoc = await db.collection('schoolRegistrations').doc(registrationId).get()
+      const regDoc = await getDb().collection('schoolRegistrations').doc(registrationId).get()
 
       if (!regDoc.exists) {
         return res.status(404).json({ success: false, error: 'Registration not found' })
@@ -434,7 +435,7 @@ exports.getRegistrationStatus = functions.https.onRequest((req, res) => {
         return res.status(400).json({ success: false, error: 'Missing registrationId' })
       }
 
-      const regDoc = await db.collection('schoolRegistrations').doc(registrationId).get()
+      const regDoc = await getDb().collection('schoolRegistrations').doc(registrationId).get()
 
       if (!regDoc.exists) {
         return res.status(404).json({ success: false, error: 'Registration not found' })
@@ -474,7 +475,7 @@ exports.getPendingRegistrations = functions.https.onRequest((req, res) => {
     try {
       const { esaId, status, limit = 50 } = req.query
 
-      let query = db.collection('schoolRegistrations')
+      let query = getDb().collection('schoolRegistrations')
 
       if (esaId) {
         query = query.where('esaId', '==', esaId)
@@ -532,7 +533,7 @@ async function provisionSchool(registrationId, regData) {
   try {
     const schoolId = `SCHOOL-${regData.schoolCode}`
     
-    const batch = db.batch()
+    const batch = getDb().batch()
 
     // Create school document
     const schoolData = {
@@ -575,7 +576,7 @@ async function provisionSchool(registrationId, regData) {
     batch.set(db.collection('schools').doc(schoolId), schoolData)
 
     // Create admin user for registrant (if not exists)
-    const existingUser = await db.collection('users')
+    const existingUser = await getDb().collection('users')
       .where('email', '==', regData.registrantEmail)
       .limit(1)
       .get()
@@ -684,7 +685,7 @@ exports.getOnboardingAnalytics = functions.https.onRequest((req, res) => {
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - days)
 
-      let query = db.collection('schoolRegistrations')
+      let query = getDb().collection('schoolRegistrations')
 
       if (esaId) {
         query = query.where('esaId', '==', esaId)
@@ -826,7 +827,7 @@ function getStatusInfo(status) {
  */
 async function logOnboardingEvent(event) {
   try {
-    await db.collection('onboardingEvents').add({
+    await getDb().collection('onboardingEvents').add({
       ...event,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
     })

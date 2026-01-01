@@ -609,51 +609,437 @@ Q2 2026
 
 ### Module Decomposition Plan
 
-#### Phase 1: Extract Controllers (Jan 2026)
+> **🎯 เป้าหมาย:** ลดขนาด `index.js` จาก 13,473 → ~300 lines  
+> **📈 ผลลัพธ์:** Cold start ลดลง 40-60%, maintainability สูงขึ้น, team scalability 3-5 คน
 
-| Controller | Functions | Lines | Priority |
-|------------|-----------|-------|----------|
-| `assessmentController.js` | assessAnswer, assessWorksheet | ~2,000 | P1 |
-| `generationController.js` | generateLO, generateQuestion | ~1,500 | P1 |
-| `worksheetController.js` | worksheet CRUD, reports | ~1,200 | P2 |
-| `analyticsController.js` | class, student analytics | ~1,000 | P2 |
-| `researchController.js` | IRR, export, calibration | ~800 | P2 |
-| `gamificationController.js` | points, badges, leaderboard | ~600 | P3 |
+---
 
-#### Phase 2: Service Layer (Feb 2026)
+### 📊 สถานะ index.js ปัจจุบัน (v6.0)
+
+| Metric | Value |
+|--------|-------|
+| **Total Lines** | 13,473 |
+| **Exported Functions** | 90+ |
+| **Existing Controllers** | 15 files |
+| **Existing Services** | 1 file |
+| **Helper Functions** | ~10 (auth, db, utils) |
+
+---
+
+### 🗂️ Function Grouping by Domain
+
+#### 🔴 Domain 1: Assessment Core (HIGH PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `assessAnswer` | ~2,000 | openai, reliability, aiDetection, gamification | `assessmentController.js` |
+| `assessAnswerMultiAgent` | ~200 | multiAgentAssessment, openai | `assessmentController.js` |
+| `assessSubmissionMultiPass` | ~150 | openai | `assessmentController.js` |
+| `getDetailedExplanation` | ~80 | openai | `assessmentController.js` |
+
+**Service ที่ต้องสร้าง:** `assessmentService.js` (มีแล้วบางส่วน)
+
+---
+
+#### 🟠 Domain 2: Content Generation (HIGH PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `generateLearningOutcomes` | ~120 | openai | `courseController.js` |
+| `generateCourseStructure` | ~300 | openai | `courseController.js` |
+| `generateLearningUnit` | ~300 | openai | `courseController.js` |
+| `getCourses` | ~50 | db | `courseController.js` |
+| `generateHOTSQuestion` | ~200 | openai | `questionController.js` |
+| `validateQuestionQuality` | ~80 | questionQualityChecker | `questionController.js` |
+| `generateFallbackQuestion` | ~150 | openai | `questionController.js` |
+| `generateSolution` | ~200 | openai | `questionController.js` |
+
+**Services ที่ต้องสร้าง:** `courseService.js`, `questionService.js`
+
+---
+
+#### 🟡 Domain 3: Lesson & Worksheet (MEDIUM PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `generateLessonPlan` | ~700 | openai | `lessonPlanController.js` |
+| `generateMicroLesson` | ~100 | openai | `lessonPlanController.js` |
+| `generateInterventions` | ~100 | openai | `lessonPlanController.js` |
+| `generateWorksheet` | ~400 | openai | `worksheetController.js` (merge) |
+| `generateElectronicWorksheet` | ~700 | openai | `worksheetController.js` (merge) |
+| `assessWorksheetSubmission` | ~1,000 | openai, gamification | `worksheetController.js` (merge) |
+| `getWorksheetReports` | ~250 | db | `worksheetController.js` (merge) |
+| `syncLearningRoomWorksheets` | ~100 | db | `worksheetController.js` (merge) |
+
+**Services ที่ต้องสร้าง:** `lessonPlanService.js`, `worksheetService.js`
+
+---
+
+#### 🟢 Domain 4: Knowledge Sheets (MEDIUM PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `generateKnowledgeSheet` | ~650 | openai | `knowledgeSheetController.js` (merge) |
+| `generateUnitKnowledgeSheet` | ~500 | openai | `knowledgeSheetController.js` (merge) |
+| `generateBatchKnowledgeSheets` | ~350 | openai | `knowledgeSheetController.js` (merge) |
+
+**Service ที่ต้องสร้าง:** `knowledgeSheetService.js`
+
+---
+
+#### 🔵 Domain 5: Analytics & Progress (MEDIUM PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `generateClassAnalytics` | ~200 | db | `analyticsController.js` (merge) |
+| `getStudentTrajectory` | ~100 | learningTrajectory | `trajectoryController.js` |
+| `exportSEMData` | ~100 | SEMDataExporter | `trajectoryController.js` |
+| `getMentalModelMap` | ~50 | db | `trajectoryController.js` |
+| `getConceptualChangeAnalysis` | ~150 | db | `trajectoryController.js` |
+| `recalculateStudentProgress` | ~150 | db | `progressController.js` |
+| `getGrowthHistory` | ~50 | researchData | `progressController.js` |
+| `syncProgress` | ~50 | dataConsistency | `progressController.js` |
+
+**Services ที่ต้องสร้าง:** `trajectoryService.js`, `progressService.js`
+
+---
+
+#### ⚪ Domain 6: Gamification & Rewards (LOW PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `getLeaderboard` | ~100 | gamification | `leaderboardController.js` |
+| `getBadgeDefinitions` | ~20 | gamification | `leaderboardController.js` |
+| `claimDailyReward` | ~100 | gamification | `leaderboardController.js` |
+| `generateAdaptivePath` | ~250 | openai, db | `adaptiveController.js` |
+| `updateAdaptivePath` | ~70 | db | `adaptiveController.js` |
+
+**Services ที่ต้องสร้าง:** `gamificationService.js`, `adaptiveService.js`
+
+---
+
+#### 🟣 Domain 7: Research & IRR (LOW PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `calculateIRR` | ~100 | interRaterReliability | `irrController.js` |
+| `irrReport` | ~150 | interRaterReliability | `irrController.js` |
+| `calculateEffectSize` | ~100 | interRaterReliability | `irrController.js` |
+| `calculateRealTimeIRR` | ~120 | interRaterReliability | `irrController.js` |
+| `exportResearchData` | ~80 | researchData | `researchController.js` (merge) |
+| `researchSummary` | ~30 | researchData | `researchController.js` (merge) |
+| `correlationAnalysis` | ~30 | researchData | `researchController.js` (merge) |
+| `logInterventionEvent` | ~60 | researchData | `researchController.js` (merge) |
+| `researchDataQuality` | ~200 | db | `researchController.js` (merge) |
+| `researchReadinessV2` | ~30 | researchData | `researchController.js` (merge) |
+
+**Service ที่ต้องสร้าง:** `irrService.js`
+
+---
+
+#### ⚫ Domain 8: AI Detection & Review (LOW PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `analyzeAIContent` | ~70 | aiDetection | `aiDetectionController.js` |
+| `getFlaggedAssessments` | ~80 | db | `aiDetectionController.js` |
+| `aiDetectionStats` | ~150 | db | `aiDetectionController.js` |
+| `submitTeacherReview` | ~100 | db | `reviewController.js` (merge) |
+| `submitAppeal` | ~80 | db | `reviewController.js` (merge) |
+| `resolveAppeal` | ~80 | db | `reviewController.js` (merge) |
+
+---
+
+#### 🔘 Domain 9: Evidence & Certification (LOW PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `verifyEvidence` | ~100 | db | `evidenceController.js` |
+| `createEvidencePack` | ~120 | db | `evidenceController.js` |
+| `getGoldenDatasetStats` | ~40 | reliabilityEcosystem | `goldenDatasetController.js` |
+| `addGoldenSample` | ~70 | reliabilityEcosystem | `goldenDatasetController.js` |
+| `runBiasDetection` | ~70 | reliabilityEcosystem | `goldenDatasetController.js` |
+| `getExpertValidationData` | ~120 | db | `goldenDatasetController.js` |
+| `getGoldenDatasetStatsCallable` | ~80 | reliabilityEcosystem | `goldenDatasetController.js` |
+
+**Service ที่ต้องสร้าง:** `evidenceService.js`, `goldenDatasetService.js`
+
+---
+
+#### ⏰ Domain 10: Scheduled Tasks (LOW PRIORITY)
+
+| Function | Lines | Dependencies | Target |
+|----------|-------|--------------|--------|
+| `generateDailyReport` | ~40 | db | `scheduledController.js` |
+| `analyzeTalentTracks` | ~100 | db | `scheduledController.js` |
+| `dailyConsistencyCheck` | ~120 | db | `scheduledController.js` |
+| `scheduledCleanupRateLimits` | ~30 | rateLimiter | `scheduledController.js` |
+| `scheduledCleanupAuditLogs` | ~60 | db | `scheduledController.js` |
+| `scheduledReconciliation` | ~140 | db | `scheduledController.js` |
+| `onUserDelete` | ~100 | db | `scheduledController.js` |
+
+**Service ที่ต้องสร้าง:** `schedulerService.js`
+
+---
+
+#### 🔧 Domain 11: System & Health (KEEP IN index.js)
+
+| Function | Lines | Status |
+|----------|-------|--------|
+| `healthCheck` | ~100 | Keep - entry point |
+| `systemDebug` | ~150 | Keep - admin tool |
+| `reliabilityReport` | ~180 | Keep - monitoring |
+| `triggerReconciliation` | ~80 | Keep - admin |
+
+---
+
+### 📁 โครงสร้างไฟล์เป้าหมาย (v7.0)
+
+```
+functions/
+├── index.js                          # ~300 lines (exports + routing)
+├── shared/
+│   ├── firebase.js                   # admin, db instance
+│   ├── auth.js                       # verifyTeacherRole, verifyAuthenticated
+│   ├── openai.js                     # getOpenAIClient, apiKeySecret
+│   └── constants.js                  # RATE_LIMITS, THRESHOLDS
+├── controllers/
+│   ├── assessmentController.js       # ✅ มีแล้ว (ต้อง merge ~2,400 lines)
+│   ├── courseController.js           # 🆕 ใหม่ (~700 lines)
+│   ├── questionController.js         # 🆕 ใหม่ (~650 lines)
+│   ├── lessonPlanController.js       # 🆕 ใหม่ (~900 lines)
+│   ├── worksheetController.js        # ✅ มีแล้ว (ต้อง merge ~2,450 lines)
+│   ├── knowledgeSheetController.js   # ✅ มีแล้ว (ต้อง merge ~1,500 lines)
+│   ├── analyticsController.js        # ✅ มีแล้ว
+│   ├── progressController.js         # 🆕 ใหม่ (~250 lines)
+│   ├── trajectoryController.js       # 🆕 ใหม่ (~400 lines)
+│   ├── leaderboardController.js      # 🆕 ใหม่ (~220 lines)
+│   ├── adaptiveController.js         # 🆕 ใหม่ (~320 lines)
+│   ├── irrController.js              # 🆕 ใหม่ (~470 lines)
+│   ├── aiDetectionController.js      # 🆕 ใหม่ (~300 lines)
+│   ├── evidenceController.js         # 🆕 ใหม่ (~220 lines)
+│   ├── goldenDatasetController.js    # 🆕 ใหม่ (~380 lines)
+│   ├── scheduledController.js        # 🆕 ใหม่ (~590 lines)
+│   ├── researchController.js         # ✅ มีแล้ว (ต้อง merge)
+│   ├── reviewController.js           # ✅ มีแล้ว (ต้อง merge)
+│   └── ... (other existing)
+├── services/
+│   ├── assessmentService.js          # ✅ มีแล้ว
+│   ├── courseService.js              # 🆕 ใหม่
+│   ├── questionService.js            # 🆕 ใหม่
+│   ├── lessonPlanService.js          # 🆕 ใหม่
+│   ├── worksheetService.js           # 🆕 ใหม่
+│   ├── knowledgeSheetService.js      # 🆕 ใหม่
+│   ├── progressService.js            # 🆕 ใหม่
+│   ├── trajectoryService.js          # 🆕 ใหม่
+│   ├── gamificationService.js        # 🆕 ใหม่
+│   ├── adaptiveService.js            # 🆕 ใหม่
+│   ├── irrService.js                 # 🆕 ใหม่
+│   ├── evidenceService.js            # 🆕 ใหม่
+│   ├── goldenDatasetService.js       # 🆕 ใหม่
+│   └── schedulerService.js           # 🆕 ใหม่
+└── utils/                            # (คงเดิม - 30+ files)
+```
+
+---
+
+### 🔗 Dependencies Tree
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DEPENDENCIES DIAGRAM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   shared/firebase.js ◄───────────────────────────────────────────────────┐  │
+│         │                                                                 │  │
+│   shared/auth.js ◄────────────────────────────────────────────────────┐  │  │
+│         │                                                              │  │  │
+│   shared/openai.js ◄──────────────────────────────────────────┐       │  │  │
+│         │                                                      │       │  │  │
+│   ┌─────┴─────────────────────────────────────────────────────┴───────┴──┴┐ │
+│   │                         CONTROLLERS                                    │ │
+│   ├────────────────────────────────────────────────────────────────────────┤ │
+│   │                                                                        │ │
+│   │   assessmentController ──▶ assessmentService ──▶ utils/prompts        │ │
+│   │          │                        │              utils/aiParser        │ │
+│   │          │                        │              utils/reliability     │ │
+│   │          │                        │              utils/aiDetection     │ │
+│   │          │                        │              gamification.js       │ │
+│   │          │                        │                                    │ │
+│   │   courseController ──────▶ courseService ────▶ utils/prompts          │ │
+│   │                                                                        │ │
+│   │   questionController ────▶ questionService ──▶ utils/questionQuality  │ │
+│   │                                                                        │ │
+│   │   worksheetController ───▶ worksheetService ─▶ utils/prompts          │ │
+│   │          │                                     gamification.js         │ │
+│   │          │                                                             │ │
+│   │   lessonPlanController ──▶ lessonPlanService ▶ utils/prompts          │ │
+│   │                                                                        │ │
+│   │   analyticsController ───▶ (no service)                               │ │
+│   │                                                                        │ │
+│   │   gamificationController ▶ gamificationService ▶ gamification.js      │ │
+│   │                                                                        │ │
+│   │   researchController ────▶ (no service) ──────▶ utils/researchData    │ │
+│   │                                                 utils/interRater       │ │
+│   │                                                                        │ │
+│   └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 📅 Implementation Timeline (Detailed)
+
+| Week | Tasks | Files | Est. Hours | Deliverables |
+|------|-------|-------|------------|--------------|
+| **Week 1** | Create shared modules | `shared/firebase.js`, `shared/auth.js`, `shared/openai.js` | 4h | Shared infrastructure |
+| **Week 2** | Extract Assessment | `assessmentController.js` merge, update tests | 8h | Assessment domain complete |
+| **Week 3** | Extract Course + Question | `courseController.js`, `questionController.js` | 6h | Generation domain complete |
+| **Week 4** | Extract Worksheet + Lesson | `worksheetController.js`, `lessonPlanController.js` | 8h | Content domain complete |
+| **Week 5** | Extract Knowledge Sheet | `knowledgeSheetController.js` merge | 4h | KS domain complete |
+| **Week 6** | Extract Analytics + Progress | `trajectoryController.js`, `progressController.js` | 5h | Analytics domain complete |
+| **Week 7** | Extract Gamification + Adaptive | `leaderboardController.js`, `adaptiveController.js` | 4h | Gamification domain complete |
+| **Week 8** | Extract Research + IRR | `irrController.js`, `researchController.js` merge | 5h | Research domain complete |
+| **Week 9** | Extract AI Detection + Review | `aiDetectionController.js`, `reviewController.js` merge | 4h | Moderation domain complete |
+| **Week 10** | Extract Evidence + Golden Dataset | `evidenceController.js`, `goldenDatasetController.js` | 4h | Quality domain complete |
+| **Week 11** | Extract Scheduled Tasks | `scheduledController.js` | 3h | Scheduled domain complete |
+| **Week 12** | Cleanup + Testing + Deploy | Update `index.js`, integration tests | 8h | **v7.0 Release** |
+
+**Total: ~63 hours (8 weeks part-time หรือ 2 weeks full-time)**
+
+---
+
+### ⚠️ Risk Mitigation
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Circular imports | Build fails | Use dependency injection, shared modules |
+| Breaking changes | Production down | Feature flags, staged rollout |
+| Test coverage gap | Bugs in prod | Write tests before refactor |
+| Cold start regression | Slower APIs | Benchmark before/after each phase |
+
+---
+
+### ✅ Pre-Flight Checklist (Per Controller)
+
+```
+□ Create controller file with CORS wrapper
+□ Move function logic from index.js
+□ Update imports (shared/auth, shared/firebase, shared/openai)
+□ Update exports in index.js
+□ Run existing tests
+□ Add new unit tests for controller
+□ Deploy to staging
+□ Verify in Firebase Console
+□ Remove old code from index.js
+□ Deploy to production
+```
+
+---
+
+### 📊 Success Metrics
+
+| Metric | Before | Target | How to Measure |
+|--------|--------|--------|----------------|
+| `index.js` lines | 13,473 | <500 | `wc -l functions/index.js` |
+| Cold start time | ~3-5s | <2s | Firebase Console metrics |
+| Build time | ~45s | <30s | CI/CD logs |
+| Test coverage | ~40% | >70% | Jest coverage report |
+| Deploy time | ~3min | <2min | Firebase deploy logs |
+
+---
+
+### 🔄 Migration Strategy
+
+#### Step 1: Create Shared Module First
 
 ```javascript
-// services/assessmentService.js
-class AssessmentService {
-  constructor(openaiClient, firestoreClient) {
-    this.ai = openaiClient;
-    this.db = firestoreClient;
-  }
+// shared/firebase.js
+const admin = require('firebase-admin')
+admin.initializeApp()
+const db = admin.firestore()
+module.exports = { admin, db }
 
-  async assessAnswer(studentAnswer, question, config) {
-    // 1. Input validation
-    const validated = this.validateInput(studentAnswer);
-    
-    // 2. Build prompt with Chain of Thought
-    const prompt = this.buildPrompt(validated, question);
-    
-    // 3. Call AI with retry
-    const response = await this.ai.createCompletion(prompt, {
-      temperature: 0,
-      seed: 42,
-      maxRetries: 3
-    });
-    
-    // 4. Parse and validate response
-    const result = this.parseResponse(response);
-    
-    // 5. Save to database
-    await this.saveAssessment(result);
-    
-    return result;
-  }
-}
+// shared/auth.js
+const { db } = require('./firebase')
+async function verifyTeacherRole(req, res) { /* ... */ }
+async function verifyAuthenticated(req, res) { /* ... */ }
+async function verifyAdminRole(req, res) { /* ... */ }
+module.exports = { verifyTeacherRole, verifyAuthenticated, verifyAdminRole }
+
+// shared/openai.js
+const { getOpenAIClient, openaiApiKeySecret, getDefaultModel, MODELS } = require('../utils/openaiClient')
+module.exports = { getOpenAIClient, openaiApiKeySecret, getDefaultModel, MODELS }
 ```
+
+#### Step 2: Controller Pattern
+
+```javascript
+// controllers/courseController.js
+const functions = require('firebase-functions')
+const cors = require('cors')({ origin: true })
+const { db } = require('../shared/firebase')
+const { verifyTeacherRole } = require('../shared/auth')
+const { getOpenAIClient, openaiApiKeySecret } = require('../shared/openai')
+
+exports.generateLearningOutcomes = functions
+  .runWith({ secrets: [openaiApiKeySecret] })
+  .https.onRequest(async (req, res) => {
+    return cors(req, res, async () => {
+      // ... logic moved from index.js
+    })
+  })
+
+exports.generateCourseStructure = functions
+  .runWith({ secrets: [openaiApiKeySecret], timeoutSeconds: 540, memory: '2GB' })
+  .https.onRequest(async (req, res) => {
+    return cors(req, res, async () => {
+      // ... logic moved from index.js
+    })
+  })
+```
+
+#### Step 3: Update index.js Exports
+
+```javascript
+// index.js (after refactoring)
+// ============================================================
+// 📦 CONTROLLERS - Modular Backend Architecture (v7.0)
+// ============================================================
+
+// Course & Content Generation
+const courseController = require('./controllers/courseController')
+exports.generateLearningOutcomes = courseController.generateLearningOutcomes
+exports.generateCourseStructure = courseController.generateCourseStructure
+exports.generateLearningUnit = courseController.generateLearningUnit
+exports.getCourses = courseController.getCourses
+
+// Questions
+const questionController = require('./controllers/questionController')
+exports.generateHOTSQuestion = questionController.generateHOTSQuestion
+exports.validateQuestionQuality = questionController.validateQuestionQuality
+exports.generateFallbackQuestion = questionController.generateFallbackQuestion
+exports.generateSolution = questionController.generateSolution
+
+// ... (export all controllers)
+
+// Keep only system-level functions in index.js
+exports.healthCheck = /* ... */
+exports.systemDebug = /* ... */
+```
+
+---
+
+### 🎯 Next Steps
+
+1. **Immediate:** สร้าง `shared/` directory และ migrate auth functions
+2. **Week 1-2:** เริ่ม Domain 1 (Assessment) - impact สูงสุด
+3. **Week 3-4:** ทำ Domain 2-3 (Course, Question, Worksheet)
+4. **Week 5-8:** Complete remaining domains
+5. **Week 9-12:** Testing, optimization, v7.0 release
+
+---
 
 #### Phase 3: Middleware Pipeline (Mar 2026)
 

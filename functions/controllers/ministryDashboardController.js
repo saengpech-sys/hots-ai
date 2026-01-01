@@ -10,7 +10,7 @@ const functions = require('firebase-functions')
 const admin = require('firebase-admin')
 const cors = require('cors')({ origin: true })
 
-const db = admin.firestore()
+const getDb = () => admin.firestore()
 
 /**
  * Get National Dashboard Overview
@@ -27,22 +27,22 @@ exports.getNationalOverview = functions.https.onRequest((req, res) => {
       startDate.setDate(startDate.getDate() - days)
 
       // Get all ESAs
-      const esaSnapshot = await db.collection('organizations')
+      const esaSnapshot = await getDb().collection('organizations')
         .where('type', '==', 'esa')
         .get()
       
       // Get all schools
-      const schoolSnapshot = await db.collection('schools')
+      const schoolSnapshot = await getDb().collection('schools')
         .where('status', '==', 'active')
         .get()
 
       // Get users (students)
-      const studentSnapshot = await db.collection('users')
+      const studentSnapshot = await getDb().collection('users')
         .where('role', '==', 'student')
         .get()
 
       // Get assessments in time range
-      const assessmentSnapshot = await db.collection('assessments')
+      const assessmentSnapshot = await getDb().collection('assessments')
         .where('createdAt', '>=', startDate)
         .get()
 
@@ -78,7 +78,7 @@ exports.getNationalOverview = functions.https.onRequest((req, res) => {
 
       // Count talent students (score >= 16/20)
       let talentCount = 0
-      const talentSnapshot = await db.collection('assessments')
+      const talentSnapshot = await getDb().collection('assessments')
         .where('totalScore', '>=', 16)
         .get()
       talentCount = new Set(talentSnapshot.docs.map(d => d.data().userId)).size
@@ -126,14 +126,14 @@ exports.getESARankings = functions.https.onRequest((req, res) => {
       const { sortBy = 'avgScore', limit = 50 } = req.query
 
       // Get all ESAs with their stats
-      const esaSnapshot = await db.collection('organizations')
+      const esaSnapshot = await getDb().collection('organizations')
         .where('type', '==', 'esa')
         .get()
 
       const esaIds = esaSnapshot.docs.map(d => d.id)
       
       // Get schools by ESA
-      const schoolSnapshot = await db.collection('schools')
+      const schoolSnapshot = await getDb().collection('schools')
         .where('status', '==', 'active')
         .get()
 
@@ -214,7 +214,7 @@ exports.getNationalHOTSGap = functions.https.onRequest((req, res) => {
       const { threshold = 10 } = req.query // Schools below this score need support
 
       // Get all schools with scores
-      const schoolSnapshot = await db.collection('schools')
+      const schoolSnapshot = await getDb().collection('schools')
         .where('status', '==', 'active')
         .get()
 
@@ -410,7 +410,7 @@ exports.getTalentPipeline = functions.https.onRequest((req, res) => {
       const { minScore = 16, limit = 100 } = req.query
 
       // Get high-scoring assessments
-      const assessmentSnapshot = await db.collection('assessments')
+      const assessmentSnapshot = await getDb().collection('assessments')
         .where('totalScore', '>=', parseInt(minScore))
         .orderBy('totalScore', 'desc')
         .limit(500)
@@ -633,7 +633,7 @@ exports.exportNationalReport = functions.https.onRequest((req, res) => {
 
 async function calculateRegionalBreakdown() {
   try {
-    const schoolSnapshot = await db.collection('schools')
+    const schoolSnapshot = await getDb().collection('schools')
       .where('status', '==', 'active')
       .get()
 
