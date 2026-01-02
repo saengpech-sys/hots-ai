@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 6.0** | **Last Updated: December 31, 2025**
+**Version 6.1** | **Last Updated: January 2, 2026**
 
 *แผนพัฒนาเชิงกลยุทธ์ตามหลัก 80:20 (Pareto Principle)*
 
@@ -66,7 +66,7 @@
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| **Version** | 6.0.0 | - |
+| **Version** | 6.1.0 | - |
 | **Cloud Functions** | 98 | - |
 | **Vue Components** | 122+ | - |
 | **Routes** | 93+ | - |
@@ -144,17 +144,17 @@
 
 ## 3. Current State Analysis
 
-### System Statistics (December 31, 2025)
+### System Statistics (January 2, 2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          SYSTEM ARCHITECTURE v6.0                           │
+│                          SYSTEM ARCHITECTURE v6.1                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   FRONTEND                           BACKEND                                │
 │   ────────                           ───────                                │
 │   • Vue 3.4 + Vite 5                 • Node.js 20                           │
-│   • 91 Views                         • 98 Cloud Functions                   │
+│   • 91 Views                         • 99 Cloud Functions                   │
 │   • 31 Components                    • 40,000+ lines                        │
 │   • 8 Pinia Stores                   • 30+ Utils modules                    │
 │   • 93+ Routes                       • 11 Test suites                       │
@@ -1652,7 +1652,7 @@ describe('Deterministic AI', () => {
 
 ---
 
-**Last Updated:** December 31, 2025 | **Version:** 6.0.0
+**Last Updated:** January 2, 2026 | **Version:** 6.1.0
 
 **© 2025 HOTS AI ChatLoop Project**
 

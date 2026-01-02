@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Schema Version 3.1** | **Last Updated: December 31, 2025**
+**Schema Version 3.2** | **Last Updated: January 2, 2026**
 
 *Comprehensive guide for exporting and analyzing research data from HOTS AI ChatLoop*
 
@@ -875,6 +875,6 @@ For research data access requests, contact:
 
 **HOTS AI ChatLoop — Research Data Pipeline**
 
-*Schema Version 3.1 | December 31, 2025*
+*Schema Version 3.2 | January 2, 2026*
 
 </div>

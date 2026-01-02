@@ -7,7 +7,7 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-6.0.0-2563EB?style=for-the-badge&logo=semanticrelease)
+![Version](https://img.shields.io/badge/Version-6.1.0-2563EB?style=for-the-badge&logo=semanticrelease)
 ![DPA Score](https://img.shields.io/badge/DPA_Compliance-11%2F11-10B981?style=for-the-badge&logo=checkmarx)
 ![IRR Score](https://img.shields.io/badge/IRR_κ-0.78_(Substantial)-8B5CF6?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/Test_Suites-15-F59E0B?style=for-the-badge&logo=jest)
@@ -252,6 +252,6 @@ Production URL: https://hots-ai-d028b.web.app
 ![Powered by Firebase](https://img.shields.io/badge/Powered_by-Firebase-FFCA28?style=flat-square&logo=firebase)
 ![AI by OpenAI](https://img.shields.io/badge/AI_by-OpenAI-412991?style=flat-square&logo=openai)
 
-*Academic Documentation Suite | December 2025*
+*Academic Documentation Suite | January 2026*
 
 </div>

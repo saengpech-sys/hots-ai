@@ -442,19 +442,16 @@ function isKnowledgeSheetRead(ksId) {
 
 // 🆕 Get related Knowledge Sheet for a worksheet
 function getRelatedKnowledgeSheet(ws, index) {
-  // Match by planNumber/unitNumber or by index
-  const wsPlan = ws.metadata?.planNumber || ws.planNumber
-  const wsUnit = ws.metadata?.unitNumber || ws.unitNumber
+  // Match by worksheet number to knowledge sheet number (1:1 mapping)
+  const wsNumber = ws.metadata?.worksheetNumber || (index + 1)
   
-  // Try to match by planNumber or unitNumber
+  // Find KS with matching planNumber (KS 1 → WS 1, KS 2 → WS 2, etc.)
   let matched = knowledgeSheets.value.find(ks => {
-    const ksPlan = ks.metadata?.planNumber
-    const ksUnit = ks.metadata?.unitNumber
-    return (wsPlan && ksPlan && wsPlan === ksPlan) || 
-           (wsUnit && ksUnit && wsUnit === ksUnit)
+    const ksNumber = ks.metadata?.planNumber
+    return ksNumber && ksNumber === wsNumber
   })
   
-  // Fallback: match by index (KS 1 → WS 1)
+  // Fallback: use same index position
   if (!matched && knowledgeSheets.value[index]) {
     matched = knowledgeSheets.value[index]
   }
@@ -483,10 +480,15 @@ function canStartWorksheetGated(ws, index) {
   
   // Check if KS is read
   if (!isKnowledgeSheetRead(relatedKs.id)) {
+    // Get proper KS number (index + 1 based)
+    const ksNumber = relatedKs.metadata?.planNumber || (knowledgeSheets.value.indexOf(relatedKs) + 1)
+    const ksTitle = relatedKs.metadata?.title || `ใบความรู้ที่ ${ksNumber}`
+    
     return {
       allowed: false,
-      reason: `ต้องอ่าน "${relatedKs.metadata?.title || 'ใบความรู้'}" ก่อน`,
-      requiredKsId: relatedKs.id
+      reason: `ต้องอ่าน "${ksTitle}" ก่อน`,
+      requiredKsId: relatedKs.id,
+      ksNumber: ksNumber
     }
   }
   
@@ -696,9 +698,13 @@ async function generateFromPlan() {
     const planContent = plan.content || plan
     
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
+    const token = await authStore.getIdToken()
     const response = await fetch(`${functionsUrl}/generateElectronicWorksheet`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         lessonPlanId: plan.id,
         teacherId: authStore.user?.uid,
@@ -788,10 +794,19 @@ async function loadWorksheets() {
   }
   
   try {
-    const worksheetPromises = room.value.worksheetIds.map(async (wsId) => {
+    const worksheetPromises = room.value.worksheetIds.map(async (wsId, index) => {
       const wsDoc = await getDoc(doc(db, 'eWorksheets', wsId))
       if (wsDoc.exists()) {
-        return { id: wsDoc.id, ...wsDoc.data() }
+        const data = wsDoc.data()
+        return { 
+          id: wsDoc.id, 
+          ...data,
+          // Add worksheet number for matching with knowledge sheets
+          metadata: {
+            ...(data.metadata || {}),
+            worksheetNumber: index + 1 // WS 1, WS 2, WS 3...
+          }
+        }
       }
       return null
     })
@@ -826,6 +841,7 @@ async function loadKnowledgeSheets() {
       const ksDoc = await getDoc(doc(db, 'knowledgeSheets', ksId))
       if (ksDoc.exists()) {
         const data = ksDoc.data()
+        const parsedMetadata = parseIfString(data.metadata) || {}
         return { 
           id: ksDoc.id, 
           ...data,
@@ -840,8 +856,9 @@ async function loadKnowledgeSheets() {
           reflection: parseIfString(data.reflection),
           references: parseIfString(data.references),
           metadata: {
-            ...(parseIfString(data.metadata) || {}),
-            planNumber: index + 1 // Add plan number for display
+            ...parsedMetadata,
+            // Use stored planNumber if available, fallback to index + 1
+            planNumber: parsedMetadata.planNumber || (index + 1)
           }
         }
       }

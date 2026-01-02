@@ -576,3 +576,335 @@ exports.getCalibrationReport = functions.https.onRequest((req, res) => {
 })
 
 module.exports = exports
+
+// ============================================================
+// 🔬 Golden Dataset & Bias Detection APIs (migrated from index.js)
+// ============================================================
+
+exports.getGoldenDatasetStats = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const goldenManager = new GoldenDatasetManager(db)
+      const stats = await goldenManager.getDatasetStats()
+
+      return res.status(200).send({
+        success: true,
+        stats
+      })
+    } catch (error) {
+      console.error('Error getting golden dataset stats:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * ➕ Add to Golden Dataset - Expert-validated sample
+ * POST /addGoldenSample { assessmentId, expertScores, expertId }
+ */
+
+exports.addGoldenSample = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { assessmentId, expertScores, expertId, notes } = req.body
+
+      if (!assessmentId || !expertScores) {
+        return res.status(400).send({ 
+          error: 'Missing required fields: assessmentId, expertScores' 
+        })
+      }
+
+      // Fetch original assessment
+      const assessmentDoc = await db.collection('assessments').doc(assessmentId).get()
+      if (!assessmentDoc.exists) {
+        return res.status(404).send({ error: 'Assessment not found' })
+      }
+
+      const assessment = assessmentDoc.data()
+
+      const goldenManager = new GoldenDatasetManager(db)
+      const result = await goldenManager.addSample({
+        originalAssessmentId: assessmentId,
+        studentAnswer: assessment.studentAnswer,
+        question: assessment.question,
+        aiScores: assessment.rubricScores,
+        expertScores,
+        expertId: expertId || auth.uid,
+        notes,
+        metadata: {
+          courseId: assessment.courseId,
+          gradeLevel: assessment.gradeLevel
+        }
+      })
+
+      return res.status(200).send({
+        success: true,
+        sampleId: result.id,
+        message: 'Sample added to golden dataset'
+      })
+    } catch (error) {
+      console.error('Error adding golden sample:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 🔍 Run Bias Detection - Check for systematic biases
+ * POST /runBiasDetection { assessmentIds }
+ */
+
+exports.runBiasDetection = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { courseId, limit = 100 } = req.body
+
+      // Fetch recent assessments
+      let query = db.collection('assessments')
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+      
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+
+      const snapshot = await query.get()
+      const assessments = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      const biasDetector = new BiasDetectionSystem()
+      const biasReport = biasDetector.analyzeForBias(assessments)
+
+      // Save report
+      await db.collection('biasReports').add({
+        ...biasReport,
+        courseId,
+        assessmentCount: assessments.length,
+        analyzedBy: auth.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      return res.status(200).send({
+        success: true,
+        report: biasReport
+      })
+    } catch (error) {
+      console.error('Error running bias detection:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 📊 Get Expert Validation Dashboard Data
+ * GET /getExpertValidationData
+ */
+
+exports.getExpertValidationData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      // Get golden dataset stats
+      const goldenSnapshot = await db.collection('goldenDataset')
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get()
+
+      const goldenSamples = goldenSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      // Calculate IRR if we have expert validations
+      let irrMetrics = null
+      if (goldenSamples.length >= 10) {
+        const aiScores = goldenSamples.map(s => s.aiScores)
+        const expertScores = goldenSamples.map(s => s.expertScores)
+        
+        // Calculate for each dimension
+        const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+        irrMetrics = {}
+        
+        for (const dim of dimensions) {
+          const aiDim = aiScores.map(s => s[dim] || 0)
+          const expertDim = expertScores.map(s => s[dim] || 0)
+          
+          irrMetrics[dim] = {
+            pearson: calculatePearsonCorrelation(aiDim, expertDim),
+            mae: calculateMAE(aiDim, expertDim),
+            weightedKappa: calculateWeightedKappa(aiDim, expertDim)
+          }
+        }
+
+        // Overall
+        const aiTotal = aiScores.map(s => 
+          (s.analysis || 0) + (s.reasoning || 0) + (s.creativity || 0) + (s.evidence || 0)
+        )
+        const expertTotal = expertScores.map(s => 
+          (s.analysis || 0) + (s.reasoning || 0) + (s.creativity || 0) + (s.evidence || 0)
+        )
+        
+        irrMetrics.overall = {
+          pearson: calculatePearsonCorrelation(aiTotal, expertTotal),
+          mae: calculateMAE(aiTotal, expertTotal),
+          icc: calculateICC(aiTotal.map((ai, i) => [ai, expertTotal[i]]))
+        }
+      }
+
+      // Get recent bias reports
+      const biasSnapshot = await db.collection('biasReports')
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get()
+
+      const biasReports = biasSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      // Get pending validations (assessments needing expert review)
+      const pendingSnapshot = await db.collection('assessments')
+        .where('needsExpertReview', '==', true)
+        .orderBy('createdAt', 'desc')
+        .limit(20)
+        .get()
+
+      const pendingValidations = pendingSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      return res.status(200).send({
+        success: true,
+        data: {
+          goldenDataset: {
+            totalSamples: goldenSamples.length,
+            samples: goldenSamples.slice(0, 10)
+          },
+          irrMetrics,
+          biasReports,
+          pendingValidations,
+          publicationReadiness: irrMetrics?.overall?.icc?.value > 0.75 
+            ? 'Ready' 
+            : irrMetrics?.overall?.icc?.value > 0.6 
+              ? 'Moderate' 
+              : 'Needs Improvement'
+        }
+      })
+    } catch (error) {
+      console.error('Error getting expert validation data:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+// =============================================================================
+// 🧠 MENTAL MODEL MAPPING API (NEW)
+// =============================================================================
+
+const { MentalModelMapper } = require('../utils/mentalModelMapping')
+
+/**
+ * 🧠 Get Student Mental Model Map
+ * สร้างแผนภาพโครงข่ายแนวคิดของนักเรียน
+ * GET /getMentalModelMap?studentId=xxx&sessionId=yyy
+ */
+
+exports.getGoldenDatasetStatsCallable = functions.https.onCall(async (data, context) => {
+  try {
+    // Get golden samples
+    const goldenSnapshot = await db.collection('goldenDataset').get()
+    
+    // Calculate stats
+    const counts = {
+      total: goldenSnapshot.size,
+      high: 0,
+      medium: 0,
+      low: 0
+    }
+    
+    const dimensions = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+    let totalDiffSum = 0
+    
+    goldenSnapshot.forEach(doc => {
+      const d = doc.data()
+      
+      // Count by stratum (based on AI score total)
+      const aiTotal = (d.aiScores?.analysis || 0) + (d.aiScores?.reasoning || 0) + 
+                     (d.aiScores?.creativity || 0) + (d.aiScores?.evidence || 0)
+      if (aiTotal >= 16) counts.high++
+      else if (aiTotal >= 10) counts.medium++
+      else counts.low++
+      
+      // Calculate diff per dimension
+      if (d.aiScores && d.expertScores) {
+        for (const dim of Object.keys(dimensions)) {
+          const diff = Math.abs((d.aiScores[dim] || 0) - (d.expertScores[dim] || 0))
+          dimensions[dim] += diff
+          totalDiffSum += diff
+        }
+      }
+    })
+    
+    // Average differences
+    const n = Math.max(1, goldenSnapshot.size)
+    const avgDiff = {
+      analysis: dimensions.analysis / n,
+      reasoning: dimensions.reasoning / n,
+      creativity: dimensions.creativity / n,
+      evidence: dimensions.evidence / n,
+      overall: totalDiffSum / (n * 4)
+    }
+    
+    return {
+      success: true,
+      stats: {
+        counts,
+        avgDiff,
+        lastUpdated: new Date().toISOString()
+      }
+    }
+  } catch (error) {
+    console.error('Error in getGoldenDatasetStats:', error)
+    throw new functions.https.HttpsError('internal', error.message)
+  }
+})
+
+module.exports = exports

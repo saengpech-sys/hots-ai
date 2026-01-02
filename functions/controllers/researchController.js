@@ -716,3 +716,400 @@ exports.getLearningSequences = functions.https.onRequest(async (req, res) => {
 })
 
 module.exports = exports
+
+// ============================================================
+// 🔬 Additional Research APIs (migrated from index.js)
+// ============================================================
+
+exports.exportSEMData = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const auth = await verifyTeacherRole(req, res)
+      if (!auth) return
+
+      const { 
+        courseId, 
+        minAssessments = 3, 
+        kAnonymityThreshold = 5 
+      } = req.body
+
+      // Fetch students with enough assessments
+      const studentsQuery = await db.collection('users')
+        .where('role', '==', 'student')
+        .get()
+
+      const studentTrajectories = []
+
+      for (const studentDoc of studentsQuery.docs) {
+        const studentId = studentDoc.id
+        
+        let assessmentQuery = db.collection('assessments')
+          .where('studentId', '==', studentId)
+          .orderBy('createdAt', 'asc')
+        
+        if (courseId) {
+          assessmentQuery = assessmentQuery.where('courseId', '==', courseId)
+        }
+
+        const assessmentsSnap = await assessmentQuery.limit(200).get()
+        
+        if (assessmentsSnap.size >= minAssessments) {
+          const assessments = assessmentsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || new Date()
+          }))
+
+          const analyzer = new LearningTrajectoryAnalyzer(studentId)
+          const trajectory = analyzer.analyzeTrajectory(assessments)
+          
+          studentTrajectories.push({
+            studentId,
+            studentData: studentDoc.data(),
+            trajectory,
+            assessmentCount: assessments.length
+          })
+        }
+      }
+
+      // Export to SEM format with k-anonymity
+      const exporter = new SEMDataExporter()
+      const semData = exporter.exportForSEM(studentTrajectories, {
+        kAnonymityThreshold,
+        includeRawScores: false
+      })
+
+      return res.status(200).send({
+        success: true,
+        data: semData,
+        studentCount: studentTrajectories.length,
+        exportedAt: new Date().toISOString()
+      })
+    } catch (error) {
+      console.error('Error exporting SEM data:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+// =============================================================================
+// 🔬 RELIABILITY ECOSYSTEM (Golden Dataset, Bias, Drift)
+// =============================================================================
+
+/**
+ * 🎯 Get Golden Dataset Stats - For research validation
+ * GET /getGoldenDatasetStats
+ */
+
+exports.getMentalModelMap = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const studentId = req.query.studentId || req.body?.studentId
+      const sessionId = req.query.sessionId || req.body?.sessionId
+      const includeRaw = req.query.includeRaw === 'true'
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      const mapper = new MentalModelMapper(db)
+      const result = await mapper.buildMentalModelMap(studentId, sessionId, {
+        includeRawResponses: includeRaw,
+        maxAssessments: 50
+      })
+
+      if (!result.success) {
+        return res.status(200).send({
+          success: false,
+          error: result.error,
+          assessmentCount: result.assessmentCount
+        })
+      }
+
+      return res.status(200).send({
+        success: true,
+        mentalModelMap: result.mentalModelMap
+      })
+    } catch (error) {
+      console.error('Mental model mapping error:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * 🧠 Get Conceptual Change Analysis
+ * วิเคราะห์การเปลี่ยนแปลงมโนทัศน์เชิงลึก
+ */
+
+exports.getConceptualChangeAnalysis = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const { studentId, courseId, startDate, endDate } = req.query
+
+      if (!studentId) {
+        return res.status(400).send({ error: 'Missing studentId' })
+      }
+
+      // Get assessments with filters
+      let query = db.collection('assessments')
+        .where('studentId', '==', studentId)
+        .orderBy('createdAt', 'asc')
+
+      if (courseId) {
+        query = query.where('courseId', '==', courseId)
+      }
+
+      const snapshot = await query.limit(100).get()
+      const assessments = []
+      
+      snapshot.forEach(doc => {
+        const data = doc.data()
+        const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt)
+        
+        // Filter by date range if provided
+        if (startDate && createdAt < new Date(startDate)) return
+        if (endDate && createdAt > new Date(endDate)) return
+        
+        if (data.studentAnswer && data.rubricScores) {
+          assessments.push({
+            id: doc.id,
+            ...data,
+            createdAt
+          })
+        }
+      })
+
+      if (assessments.length < 3) {
+        return res.status(200).send({
+          success: false,
+          error: 'Need at least 3 assessments for conceptual change analysis',
+          assessmentCount: assessments.length
+        })
+      }
+
+      // Analyze conceptual changes
+      const mapper = new MentalModelMapper(db)
+      const conceptSequence = mapper.extractConceptSequence(assessments)
+      const conceptualChanges = mapper.detectConceptualChanges(conceptSequence)
+      const dimensionModels = mapper.buildDimensionModels(conceptSequence)
+
+      // Generate narrative
+      const narrative = generateConceptualChangeNarrative(
+        assessments,
+        conceptualChanges,
+        dimensionModels
+      )
+
+      return res.status(200).send({
+        success: true,
+        studentId,
+        courseId: courseId || 'all',
+        assessmentCount: assessments.length,
+        timeSpan: {
+          start: assessments[0].createdAt,
+          end: assessments[assessments.length - 1].createdAt,
+          durationDays: Math.ceil(
+            (assessments[assessments.length - 1].createdAt - assessments[0].createdAt) / (1000 * 60 * 60 * 24)
+          )
+        },
+        conceptualChanges,
+        dimensionModels,
+        narrative,
+        generatedAt: new Date().toISOString()
+      })
+    } catch (error) {
+      console.error('Conceptual change analysis error:', error)
+      return res.status(500).send({ 
+        success: false, 
+        error: error.message 
+      })
+    }
+  })
+})
+
+/**
+ * Generate narrative for conceptual change analysis
+ */
+function generateConceptualChangeNarrative(assessments, changes, dimensionModels) {
+  const parts = []
+  
+  // Opening
+  parts.push(`จากการวิเคราะห์คำตอบ ${assessments.length} รายการ พบการเปลี่ยนแปลงทางมโนทัศน์ดังนี้:`)
+  
+  // Major changes
+  if (changes.significantChanges && changes.significantChanges.length > 0) {
+    parts.push(`\n**การเปลี่ยนแปลงที่สำคัญ:**`)
+    for (const change of changes.significantChanges.slice(0, 3)) {
+      const typeName = {
+        'BELIEF_REVISION': 'การปรับความเชื่อ',
+        'MENTAL_MODEL_TRANSFORMATION': 'การเปลี่ยนรูปแบบความคิด',
+        'CATEGORICAL_SHIFT': 'การเปลี่ยนหมวดหมู่',
+        'KNOWLEDGE_ENRICHMENT': 'การเสริมความรู้'
+      }[change.type] || change.type
+      
+      parts.push(`- ${typeName}: ${change.description || 'ตรวจพบการเปลี่ยนแปลงในมิติ ' + change.dimension}`)
+    }
+  }
+  
+  // Dimension progress
+  parts.push(`\n**พัฒนาการรายมิติ:**`)
+  const dims = ['analysis', 'reasoning', 'creativity', 'evidence']
+  const dimNames = {
+    analysis: 'การวิเคราะห์',
+    reasoning: 'การให้เหตุผล',
+    creativity: 'ความคิดสร้างสรรค์',
+    evidence: 'การใช้หลักฐาน'
+  }
+  
+  for (const dim of dims) {
+    const model = dimensionModels[dim]
+    if (model) {
+      const growth = model.growth || 0
+      const trend = growth > 0 ? '↑ เพิ่มขึ้น' : growth < 0 ? '↓ ลดลง' : '→ คงที่'
+      parts.push(`- ${dimNames[dim]}: ${trend}${Math.abs(growth) > 0 ? ` (${growth > 0 ? '+' : ''}${growth.toFixed(1)})` : ''}`)
+    }
+  }
+  
+  // Recommendations
+  parts.push(`\n**ข้อเสนอแนะ:**`)
+  if (changes.summary?.totalChanges > 0) {
+    parts.push(`- นักเรียนแสดงพัฒนาการที่ดี ควรส่งเสริมการเรียนรู้เชิงลึกต่อไป`)
+  } else {
+    parts.push(`- ควรใช้คำถามกระตุ้นที่ท้าทายขึ้นเพื่อสร้างการเปลี่ยนแปลงทางมโนทัศน์`)
+  }
+  
+  return parts.join('\n')
+}
+
+/**
+ * 📊 Calculate Real-Time IRR (Callable version)
+ * For ExpertValidationDashboard
+ */
+
+exports.calculateRealTimeIRR = functions.https.onCall(async (data, context) => {
+  try {
+    // Optional: Verify auth
+    // if (!context.auth) {
+    //   throw new functions.https.HttpsError('unauthenticated', 'Must be logged in')
+    // }
+
+    const dimension = data?.dimension || 'total'
+    
+    // Get validated assessments
+    const snapshot = await db.collection('assessments')
+      .where('expertValidation.isValidated', '==', true)
+      .get()
+    
+    if (snapshot.empty) {
+      return {
+        success: false,
+        error: 'No validated assessments found',
+        validatedCount: 0
+      }
+    }
+    
+    // Extract validation data
+    const validations = []
+    snapshot.forEach(doc => {
+      const d = doc.data()
+      const expert = d.expertValidation
+      
+      if (expert && d.rubricScores) {
+        validations.push({
+          assessmentId: doc.id,
+          aiScores: {
+            analysis: d.rubricScores.analysis || 0,
+            reasoning: d.rubricScores.reasoning || 0,
+            creativity: d.rubricScores.creativity || 0,
+            evidence: d.rubricScores.evidence || 0
+          },
+          expertScores: {
+            analysis: expert.expertScores?.analysis || 0,
+            reasoning: expert.expertScores?.reasoning || 0,
+            creativity: expert.expertScores?.creativity || 0,
+            evidence: expert.expertScores?.evidence || 0
+          }
+        })
+      }
+    })
+    
+    if (validations.length < 5) {
+      return {
+        success: false,
+        error: `Insufficient validated assessments. Need at least 5, got ${validations.length}`,
+        validatedCount: validations.length
+      }
+    }
+    
+    // Calculate IRR for each dimension
+    const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+    const byDimension = {}
+    
+    for (const dim of dimensions) {
+      const irrResult = comprehensiveIRRAnalysis(validations, dim)
+      byDimension[dim] = {
+        kappa: irrResult.cohensKappa || 0,
+        spearman: irrResult.spearmanRho || 0,
+        agreement: irrResult.percentAgreement || 0,
+        status: getIRRStatus(irrResult.cohensKappa || 0)
+      }
+    }
+    
+    // Overall status
+    const avgKappa = dimensions.reduce((sum, d) => sum + (byDimension[d].kappa || 0), 0) / 4
+    const overallStatus = {
+      kappa: avgKappa,
+      status: getIRRStatus(avgKappa),
+      interpretation: getKappaInterpretation(avgKappa)
+    }
+    
+    return {
+      success: true,
+      byDimension,
+      overallStatus,
+      sampleSize: validations.length
+    }
+  } catch (error) {
+    console.error('Error in calculateRealTimeIRR:', error)
+    throw new functions.https.HttpsError('internal', error.message)
+  }
+})
+
+/**
+ * Helper: Get IRR Status from Kappa
+ */
+function getIRRStatus(kappa) {
+  if (kappa >= 0.81) return 'excellent'
+  if (kappa >= 0.61) return 'good'
+  if (kappa >= 0.41) return 'moderate'
+  if (kappa >= 0.21) return 'fair'
+  return 'poor'
+}
+
+/**
+ * Helper: Get Kappa Interpretation
+ */
+function getKappaInterpretation(kappa) {
+  if (kappa >= 0.81) return 'Almost Perfect Agreement'
+  if (kappa >= 0.61) return 'Substantial Agreement'
+  if (kappa >= 0.41) return 'Moderate Agreement'
+  if (kappa >= 0.21) return 'Fair Agreement'
+  return 'Slight Agreement'
+}
+
+/**
+ * 📊 Get Golden Dataset Stats (Callable version)
+ * For ExpertValidationDashboard
+ */

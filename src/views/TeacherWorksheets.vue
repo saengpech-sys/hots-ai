@@ -596,9 +596,13 @@ async function generateFromPlan() {
     const topic = plan.topic || planContent.header?.topic || 'ใบงาน'
     
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
+    const token = await authStore.getIdToken()
     const response = await fetch(`${functionsUrl}/generateElectronicWorksheet`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         lessonPlanId: plan.id,
         teacherId: authStore.user?.uid,

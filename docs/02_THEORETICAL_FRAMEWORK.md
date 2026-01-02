@@ -621,6 +621,6 @@ Webb, N. L. (1997). *Criteria for alignment of expectations and assessments in m
 ---
 
 *HOTS AI ChatLoop — Academic Documentation Suite*  
-*Version 5.2 | December 2025*
+*Version 6.1 | January 2026*
 
 </div>

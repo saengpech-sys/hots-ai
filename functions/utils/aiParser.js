@@ -327,9 +327,24 @@ function createFallbackAssessment(reason = 'Unknown error') {
   }
 }
 
+/**
+ * Legacy alias for backward compatibility
+ * @deprecated Use safeParseJSON instead
+ */
+function parseAIResponse(responseText) {
+  const result = safeParseJSON(responseText)
+  if (result.success) {
+    return result.data
+  }
+  // Try basic clean for backward compatibility
+  let cleanedText = cleanAIResponse(responseText)
+  return JSON.parse(cleanedText)
+}
+
 module.exports = {
   cleanAIResponse,
   safeParseJSON,
+  parseAIResponse,  // Legacy alias
   validateRubricScores,
   compareScoresWithTolerance,
   shouldFlagForReview,

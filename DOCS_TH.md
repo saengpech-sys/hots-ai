@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**เวอร์ชัน 6.0** | **อัปเดตล่าสุด: 31 ธันวาคม 2568**
+**เวอร์ชัน 6.1** | **อัปเดตล่าสุด: 2 มกราคม 2569**
 
 *คู่มือทางเทคนิคสำหรับนักพัฒนา นักวิจัย และผู้ดูแลระบบ*
 
@@ -38,7 +38,7 @@
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI ด้วย Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
 | **Routing** | Vue Router | 4.x | 93+ routes พร้อม guards |
-| **Backend** | Firebase Cloud Functions | Node.js 20 | 98 serverless functions |
+| **Backend** | Firebase Cloud Functions | Node.js 20 | 99 serverless functions |
 | **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 | **AI Engine** | OpenAI API | GPT-4o-mini | LLM ประหยัด (ถูกกว่า 15-20 เท่า) |
 | **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
@@ -1004,6 +1004,6 @@ firebase emulators:start       # เริ่ม emulators ทั้งหมด
 
 **HOTS AI ChatLoop — คู่มือทางเทคนิค**
 
-*เวอร์ชัน 6.0 | 31 ธันวาคม 2568*
+*เวอร์ชัน 6.1 | 2 มกราคม 2569*
 
 </div>

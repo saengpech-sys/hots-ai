@@ -576,16 +576,44 @@
                 <textarea v-model="unit.essentialContent" class="form-control" rows="2" placeholder="สาระสำคัญของหน่วย"></textarea>
               </div>
 
-              <!-- Unit ARCE Distribution -->
-              <div v-if="unit.arce" class="unit-arce-section">
-                <h4>🎯 A.R.C.E. ของหน่วยนี้</h4>
-                <div class="arce-grid">
-                  <div v-for="(desc, key) in unit.arce" :key="key" class="arce-unit-item" :class="key">
-                    <div class="arce-unit-header">
-                      <span class="arce-badge" :class="key">{{ arceLabels[key] || key }}</span>
+              <!-- Unit ARCE Distribution - แสดงเด่นชัด -->
+              <div v-if="unit.arce || unit.arceDistribution || unit.arceFocus?.length" class="unit-arce-section">
+                <h4>
+                  <span class="arce-icon">🎯</span>
+                  A.R.C.E. ของหน่วยนี้
+                </h4>
+                
+                <!-- แสดง arceFocus badges ถ้ามี -->
+                <div v-if="unit.arceFocus?.length" class="arce-focus-badges">
+                  <span v-for="focus in unit.arceFocus" :key="focus" class="arce-focus-tag" :class="focus">
+                    <span class="arce-letter">{{ arceShortLabels[focus] }}</span>
+                    <span class="arce-name">{{ arceLabels[focus] }}</span>
+                  </span>
+                </div>
+
+                <!-- แสดงรายละเอียด arceDistribution -->
+                <div v-if="unit.arceDistribution || unit.arce" class="arce-distribution-grid">
+                  <div v-for="(desc, key) in (unit.arceDistribution || unit.arce)" :key="key" class="arce-distribution-item" :class="key">
+                    <div class="arce-item-header">
+                      <span class="arce-item-icon" :class="key">{{ arceShortLabels[key] }}</span>
+                      <span class="arce-item-label">{{ arceLabels[key] }}</span>
                     </div>
-                    <p class="arce-unit-desc">{{ desc }}</p>
+                    <p class="arce-item-desc">{{ desc }}</p>
                   </div>
+                </div>
+
+                <!-- ถ้าไม่มีข้อมูลละเอียด แสดงข้อความแนะนำ -->
+                <div v-if="!unit.arceDistribution && !unit.arce && unit.arceFocus?.length" class="arce-hint">
+                  <p>หน่วยนี้เน้นทักษะ HOTS ด้าน: {{ unit.arceFocus.map(f => arceLabels[f]).join(', ') }}</p>
+                </div>
+              </div>
+
+              <!-- ถ้าไม่มี ARCE เลย แสดง placeholder -->
+              <div v-else class="unit-arce-placeholder">
+                <div class="arce-placeholder-content">
+                  <span class="arce-placeholder-icon">🎯</span>
+                  <span class="arce-placeholder-text">A.R.C.E. Strategy</span>
+                  <p>กด "สร้างรายละเอียด" เพื่อให้ AI ออกแบบกลยุทธ์ A.R.C.E. สำหรับหน่วยนี้</p>
                 </div>
               </div>
 
@@ -1292,14 +1320,25 @@ async function saveCurriculumToDatabase() {
         los: u.los || [],
         essentialContent: u.essentialContent || '',
         learningObjectives: u.learningObjectives || {},
-        arce: u.arce || [],
+        // A.R.C.E. fields - บันทึกทั้ง 3 fields ให้ครบ!
+        arce: u.arce || null,
+        arceFocus: u.arceFocus || [],
+        arceDistribution: u.arceDistribution || null,
+        // Other fields
+        knowledgeScope: u.knowledgeScope || null,
+        assessmentPlan: u.assessmentPlan || null,
+        materialsNeeded: u.materialsNeeded || [],
         generated: u.generated || false,
         plans: (u.plans || []).map(p => {
           const cleanedPlan = {
             topic: p.topic || '',
-            periods: p.periods || 2,
+            periods: p.periods || 1,
             los: p.los || [],
-            arceFocus: p.arceFocus || [],
+            // A.R.C.E. fields for plan
+            arceFocus: p.arceFocus || null,
+            arce: p.arce || null,
+            uniqueKeyTopics: p.uniqueKeyTopics || [],
+            activities5E: p.activities5E || null,
             status: p.status || 'pending'
           }
           // Only add id if it exists
@@ -1440,6 +1479,12 @@ async function generateCourseStructure() {
     
     if (data.success) {
       courseStructure.value = data.structure
+      
+      // Validate unitsPreview exists
+      if (!data.structure.unitsPreview || !Array.isArray(data.structure.unitsPreview)) {
+        throw new Error('AI ไม่ได้ส่งข้อมูลหน่วยการเรียนรู้กลับมา กรุณาลองใหม่อีกครั้ง')
+      }
+      
       // Initialize units from preview - 1 แผน = 1 คาบ
       units.value = data.structure.unitsPreview.map((u, idx) => {
         const periodCount = u.periods || u.hours || 4
@@ -1883,9 +1928,11 @@ async function generateLessonPlan(unitIdx, planIdx) {
         periods: 1, // 1 คาบต่อแผน
         planLOs: plan.los || unit.los,
         
-        // ข้อมูล ARCE จากหน่วย (ถ้ามี)
+        // ข้อมูล ARCE จากหน่วย (ถ้ามี) - ส่งทั้ง arceFocus และ arceDistribution เพื่อความสอดคล้อง
         arce: plan.arce || unit.arce,
-        arceFocus: plan.arceFocus,
+        arceFocus: plan.arceFocus || unit.arceFocus?.[planIdx] || unit.arceFocus?.[0],
+        unitArceDistribution: unit.arceDistribution,  // การกระจาย ARCE ของหน่วย
+        unitArceFocus: unit.arceFocus,                // ARCE หลักของหน่วย
         
         // ข้อมูลอื่นๆ
         teacherId: authStore.user?.uid,
@@ -3634,12 +3681,187 @@ onMounted(async () => {
   padding: 0.25rem;
 }
 
-/* Unit ARCE Section */
+/* Unit ARCE Section - Enhanced Design */
 .unit-arce-section {
-  margin-top: 1rem;
-  padding: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.unit-arce-section h4 {
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+}
+
+.unit-arce-section h4 .arce-icon {
+  font-size: 1.25rem;
+}
+
+/* ARCE Focus Badges */
+.arce-focus-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.arce-focus-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.arce-focus-tag:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.arce-focus-tag .arce-letter {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.arce-focus-tag.analysis { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.arce-focus-tag.analysis .arce-letter { background: #3b82f6; color: white; }
+.arce-focus-tag.reasoning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.arce-focus-tag.reasoning .arce-letter { background: #f59e0b; color: white; }
+.arce-focus-tag.creativity { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.arce-focus-tag.creativity .arce-letter { background: #10b981; color: white; }
+.arce-focus-tag.evidence { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.arce-focus-tag.evidence .arce-letter { background: #8b5cf6; color: white; }
+
+/* ARCE Distribution Grid */
+.arce-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .arce-distribution-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arce-distribution-item {
+  padding: 0.875rem;
+  border-radius: 10px;
   background: var(--bg-primary);
+  border-left: 4px solid;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.arce-distribution-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.arce-distribution-item.analysis { border-left-color: #3b82f6; }
+.arce-distribution-item.reasoning { border-left-color: #f59e0b; }
+.arce-distribution-item.creativity { border-left-color: #10b981; }
+.arce-distribution-item.evidence { border-left-color: #8b5cf6; }
+
+.arce-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.arce-item-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: white;
+}
+
+.arce-item-icon.analysis { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+.arce-item-icon.reasoning { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.arce-item-icon.creativity { background: linear-gradient(135deg, #10b981, #34d399); }
+.arce-item-icon.evidence { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+
+.arce-item-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.arce-item-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ARCE Hint */
+.arce-hint {
+  padding: 0.75rem;
+  background: rgba(59, 130, 246, 0.1);
   border-radius: 8px;
+  margin-top: 0.75rem;
+}
+
+.arce-hint p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ARCE Placeholder */
+.unit-arce-placeholder {
+  margin-top: 1.25rem;
+  padding: 1.5rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 2px dashed var(--border-color);
+  text-align: center;
+}
+
+.arce-placeholder-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.arce-placeholder-icon {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.arce-placeholder-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.arce-placeholder-content p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .unit-arce-section h4 {

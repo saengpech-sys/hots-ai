@@ -874,13 +874,26 @@ async function loadData() {
     const roomsSnap = await getDocs(roomsQuery)
     existingRooms.value = roomsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
-    // Load existing knowledge sheets
+    // Load existing knowledge sheets - check both root and metadata for teacherId
     const ksQuery = query(
       collection(db, 'knowledgeSheets'),
       where('teacherId', '==', authStore.user?.uid)
     )
     const ksSnap = await getDocs(ksQuery)
-    existingKnowledgeSheets.value = ksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    
+    // Also check for metadata.teacherId for older records
+    const ksQueryMeta = query(
+      collection(db, 'knowledgeSheets'),
+      where('metadata.teacherId', '==', authStore.user?.uid)
+    )
+    const ksSnapMeta = await getDocs(ksQueryMeta)
+    
+    // Combine and deduplicate
+    const allKs = new Map()
+    ksSnap.docs.forEach(doc => allKs.set(doc.id, { id: doc.id, ...doc.data(), lessonPlanId: doc.data().lessonPlanId || doc.data().metadata?.lessonPlanId }))
+    ksSnapMeta.docs.forEach(doc => allKs.set(doc.id, { id: doc.id, ...doc.data(), lessonPlanId: doc.data().lessonPlanId || doc.data().metadata?.lessonPlanId }))
+    
+    existingKnowledgeSheets.value = Array.from(allKs.values())
 
   } catch (error) {
     console.error('Error loading data:', error)
@@ -1347,6 +1360,15 @@ async function generatePlanSheet() {
     clearInterval(interval)
     progressPercent.value = 100
 
+    // Handle 409 Conflict (duplicate)
+    if (response.status === 409) {
+      const errorData = await response.json()
+      alert(`⚠️ ${errorData.message || 'แผนการสอนนี้มีใบความรู้อยู่แล้ว'}`)
+      // Refresh the knowledge sheet list
+      await loadData()
+      return
+    }
+
     const result = await response.json()
     if (result.success) {
       emit('generated', { 
@@ -1355,7 +1377,7 @@ async function generatePlanSheet() {
         roomId: result.roomId
       })
     } else {
-      throw new Error(result.error || 'Failed to generate')
+      throw new Error(result.error || result.message || 'Failed to generate')
     }
   } catch (error) {
     clearInterval(interval)

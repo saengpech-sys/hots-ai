@@ -6,9 +6,9 @@
 
 ---
 
-![Version](https://img.shields.io/badge/Version-6.0.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
+![Version](https://img.shields.io/badge/Version-6.1.0-2563EB?style=for-the-badge&logo=semantic-release&logoColor=white)
 ![DPA](https://img.shields.io/badge/DPA_Award-11%2F11_Passed-10B981?style=for-the-badge&logo=checkmarx&logoColor=white)
-![Functions](https://img.shields.io/badge/Functions-98_APIs-8B5CF6?style=for-the-badge&logo=firebase&logoColor=white)
+![Functions](https://img.shields.io/badge/Functions-99_APIs-8B5CF6?style=for-the-badge&logo=firebase&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?style=for-the-badge&logo=vue.js&logoColor=white)
 ![Firebase](https://img.shields.io/badge/Firebase-Cloud-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)
@@ -93,7 +93,7 @@ flowchart TB
 | **Frontend** | Vue 3.4 + Vite 5 | SPA, PWA Ready, 122+ Components |
 | **State** | Pinia (8 Stores) | Global State, Persistence |
 | **Styling** | TailwindCSS + DaisyUI | Responsive, Dark Mode |
-| **Backend** | Cloud Functions (Node.js 20) | 98 Functions, 40,000+ Lines |
+| **Backend** | Cloud Functions (Node.js 20) | 99 Functions, 40,000+ Lines |
 | **Database** | Firestore | 25+ Collections, Real-time Sync |
 | **AI Engine** | GPT-4o-mini | Deterministic Assessment |
 | **Auth** | Firebase Auth + Google SSO | Role-based Access Control |
@@ -556,7 +556,7 @@ copies of the Software...
 
 ---
 
-**Version 6.0.0** · **31 ธันวาคม 2568**
+**Version 6.1.0** · **2 มกราคม 2569**
 
 [🌐 Website](https://hots-ai-d028b.web.app) · [📖 Docs](DOCS_TH.md) · [🐛 Issues](https://github.com/saengpech-sys/hots-ai/issues) · [💬 Discussions](https://github.com/saengpech-sys/hots-ai/discussions)
 

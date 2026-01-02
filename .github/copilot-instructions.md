@@ -3,7 +3,7 @@
 ## Project Overview
 Educational AI chatbot for assessing Higher-Order Thinking Skills (HOTS) using OpenAI GPT-4o-mini. Real-time assessment with structured rubric scoring (Analysis, Reasoning, Creativity, Evidence). Built with Vue 3 + Firebase + Cloud Functions. Now includes Electronic Worksheets, Lesson Plans, National Scale features, and 8-Layer Reliability Ecosystem.
 
-**Version:** 6.0.0 | **Last Updated:** December 31, 2025
+**Version:** 6.1.0 | **Last Updated:** January 2, 2026
 
 ## 🗺️ Navigation & Access
 **Complete Guide**: See [NAVIGATION_GUIDE.md](../NAVIGATION_GUIDE.md)
@@ -41,7 +41,7 @@ All accessible from `/teacher` Dashboard Quick Actions:
 
 ### Tech Stack
 - **Frontend**: Vue 3.4 + Vite 5 + Pinia (Composition API pattern) — 91 views, 31 components
-- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20) — 98 APIs (82 + 16 national-scale)
+- **Backend**: Firebase (Auth, Firestore, Cloud Functions Node.js 20) — 99 APIs (83 + 16 national-scale)
 - **AI**: OpenAI GPT-4o-mini with Deterministic Mode (temperature=0, seed=42)
 - **Deployment**: Firebase Hosting + Functions
 - **Code**: 40,000+ lines backend, 93+ routes
@@ -178,11 +178,16 @@ CSS variables in `src/styles/main.css`, toggled via `.dark-mode` class on `<html
 - ❌ Don't forget BOM when exporting Thai CSV
 
 ## Key Files Reference
-- `functions/index.js` (4000+ lines): All Cloud Functions, AI prompts
+- `functions/index.js` (4000+ lines): All Cloud Functions exports, AI prompts
+- `functions/controllers/generationController.js`: generateLessonPlan, AI generation functions
+- `functions/controllers/courseController.js`: generateCourseStructure, generateLearningUnit
 - `functions/national-scale.js`: National-level analytics functions
+- `functions/utils/authMiddleware.js`: verifyTeacherRole with CORS support
 - `src/stores/chat.js` (600+ lines): Question selection, LO tracking logic
 - `src/stores/lessonPlan.js`: Lesson plan state management
 - `src/views/ChatView.vue`: Confirmation dialog, copy-paste blocking
+- `src/views/CurriculumDesigner.vue`: AI Curriculum Designer (Course → Unit → Plan)
+- `src/views/LessonPlanDetail.vue`: Lesson plan detail with knowledge sheet button
 - `src/views/QuestionBank.vue`: Solution generation UI
 - `src/views/LessonPlans.vue`: Lesson plan list and management
 - `src/views/TeacherWorksheets.vue`: Worksheet management for teachers
@@ -190,16 +195,26 @@ CSS variables in `src/styles/main.css`, toggled via `.dark-mode` class on `<html
 - `src/views/StudentDetail.vue`: Comprehensive assessment history with export
 - `firestore.rules`: Role-based security, helper functions
 
-## Recent Major Features
-- **Electronic Worksheet System**: AI-generated worksheets with A.R.C.E. rubric scoring (Phase 4)
+## Recent Major Features (v6.1.0)
+- **AI Curriculum Designer**: 3-level curriculum generation (Course → Unit → Lesson Plan)
+- **A.R.C.E. Flow Consistency**: arceStrategy flows from course to unit to lesson plan
+- **Unit A.R.C.E. Distribution**: Visual display of arceFocus and arceDistribution per unit
+- **Knowledge Sheet Integration**: Auto-generation per lesson plan with duplicate prevention
+- **generateLessonPlan API**: New secured API (99th function) with teacher auth
+- **Electronic Worksheet System**: AI-generated worksheets with A.R.C.E. rubric scoring
 - **Lesson Plan Builder**: 5E model + A.R.C.E. integration, AI generation support
 - **Learning Rooms**: Student-facing activity rooms for worksheet access
 - **Knowledge Sheets**: Unit-level content for pre-learning preparation
-- **Solution Generation System**: Teachers generate AI model answers (20/20 score) for questions
-- **Confirmation Dialog**: Anti-accidental-send with answer preview, stats, tips
-- **LO-Based Assessment**: AI evaluates which Learning Outcomes student demonstrated
-- **Smart Question Selection**: Prioritizes weak areas using student progress data
+- **Solution Generation System**: Teachers generate AI model answers (20/20 score)
 - **National Scale**: Ministry → ESA → School hierarchy with dashboards
+
+## A.R.C.E. Data Flow (Curriculum Designer)
+```
+Course (arceStrategy) → Unit (arceFocus + arceDistribution) → Plan (5E with arceFocus per step)
+```
+- Level 1: generateCourseStructure creates `arceStrategy`
+- Level 2: generateLearningUnit receives strategy, creates `arceFocus[]` + `arceDistribution{}`
+- Level 3: generateLessonPlan receives unit context, creates 5E activities aligned with ARCE
 
 ## Model Preference
 Use **gpt-4o-mini** for all operations (15-20x cheaper than gpt-4o). Already configured in functions/.env as `OPENAI_MODEL=gpt-4o-mini`.

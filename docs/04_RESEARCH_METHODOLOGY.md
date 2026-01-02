@@ -10,7 +10,7 @@
 ---
 
 **เอกสารฉบับ:** Academic Documentation Suite  
-**ปรับปรุงล่าสุด:** ธันวาคม 2568 (December 2025)
+**ปรับปรุงล่าสุด:** มกราคม 2569 (January 2026)
 
 </div>
 
@@ -752,6 +752,6 @@ Sweeney, L. (2002). K-anonymity: A model for protecting privacy. *International 
 ---
 
 *HOTS AI ChatLoop — Academic Documentation Suite*  
-*Version 5.2 | December 2025*
+*Version 6.1 | January 2026*
 
 </div>

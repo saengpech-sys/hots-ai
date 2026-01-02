@@ -2,10 +2,10 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-6.0.0-blue)
+![Version](https://img.shields.io/badge/Version-6.1.0-blue)
 ![Phase](https://img.shields.io/badge/Phase-5%20Production-green)
 ![Tests](https://img.shields.io/badge/Tests-15%20Suites-success)
-![Functions](https://img.shields.io/badge/Functions-98%20APIs-orange)
+![Functions](https://img.shields.io/badge/Functions-99%20APIs-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![DPA](https://img.shields.io/badge/DPA%20Score-11%2F11-brightgreen)
 
@@ -15,7 +15,7 @@
 
 🌐 [Live Demo](https://hots-ai-d028b.web.app) | 📚 [Documentation](./DOCS.md) | 🔬 [Research Pipeline](./RESEARCH_DATA_PIPELINE.md) | 🎯 [Reliability](./RELIABILITY_ECOSYSTEM.md) | 🏆 [DPA Assessment](./DPA_ASSESSMENT_CHECKLIST.md)
 
-**Last Updated:** December 31, 2025
+**Last Updated:** January 2, 2026
 
 </div>
 
@@ -232,7 +232,7 @@ An LO is considered **"passed"** when **ALL 3 conditions** are simultaneously me
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI with Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
 | **Routing** | Vue Router | 4.x | 93+ routes with guards |
-| **Backend** | Firebase Functions | Node.js 20 | 98 serverless functions |
+| **Backend** | Firebase Functions | Node.js 20 | 99 serverless functions |
 | **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 | **AI Engine** | OpenAI API | GPT-4o-mini | Cost-effective LLM inference |
 | **Authentication** | Firebase Auth | - | Google Sign-In, role-based |
@@ -288,6 +288,39 @@ An LO is considered **"passed"** when **ALL 3 conditions** are simultaneously me
 ---
 
 ## 🚀 Recent Developments (Phase 4+)
+
+### 🎨 Version 6.1.0 (January 2026) - AI Curriculum Designer Enhancement
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **AI Curriculum Designer** | Complete 3-level curriculum generation (Course → Unit → Lesson Plan) | ✅ Complete |
+| **A.R.C.E. Flow Consistency** | A.R.C.E. strategy flows from course to unit to lesson plan | ✅ Complete |
+| **Unit A.R.C.E. Distribution** | Visual display of A.R.C.E. focus and distribution per unit | ✅ Complete |
+| **Knowledge Sheet Integration** | Automatic knowledge sheet generation per lesson plan | ✅ Complete |
+| **Duplicate Prevention** | 409 Conflict protection for duplicate knowledge sheets | ✅ Complete |
+| **generateLessonPlan API** | New secured API with teacher authentication (99th function) | ✅ Complete |
+
+#### A.R.C.E. Data Flow Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Level 1: Course Structure (generateCourseStructure)               │
+│  → Creates arceStrategy with weights, focusAreas, unitsEmphasis    │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  Level 2: Learning Unit (generateLearningUnit)                     │
+│  → Receives arceStrategy, creates arceFocus + arceDistribution     │
+│  → Assigns arceFocus per plan (A/R/C/E rotation)                   │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  Level 3: Lesson Plan (generateLessonPlan)                         │
+│  → Receives unitArceFocus + unitArceDistribution                   │
+│  → Creates 5E activities with arceFocus per step                   │
+│  → Ensures alignment with unit-level A.R.C.E. goals                │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ### 🔬 Phase 2: AI Precision & Integrity
 
@@ -870,7 +903,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-**Last Updated:** December 31, 2025 | **Version:** 6.0.0
+**Last Updated:** January 2, 2026 | **Version:** 6.1.0
 
 **© 2025 HOTS AI ChatLoop Project**
 

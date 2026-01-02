@@ -9,7 +9,7 @@
 ---
 
 **เวอร์ชัน:** 6.0  
-**ปรับปรุงล่าสุด:** 31 ธันวาคม 2568 (December 2025)
+**ปรับปรุงล่าสุด:** 2 มกราคม 2569 (January 2026)
 
 </div>
 
@@ -56,7 +56,7 @@
 | **จำนวนหน้ารวม** | ~150 หน้า (A4) |
 | **ภาษา** | ไทย (วิชาการ) |
 | **Format** | Markdown + ASCII Diagrams |
-| **Last Updated** | December 2025 |
+| **Last Updated** | January 2026 |
 
 ---
 
@@ -75,6 +75,6 @@
 <div align="center">
 
 *HOTS AI ChatLoop — Academic Documentation Suite*  
-*Version 5.2 | December 2025*
+*Version 6.1 | January 2026*
 
 </div>

@@ -27,6 +27,15 @@
           {{ generatingWorksheet ? 'กำลังสร้าง...' : 'สร้างใบงาน' }}
         </button>
         <button 
+          class="btn btn-ai"
+          @click="showKnowledgeSheetModal = true"
+          :disabled="generatingKnowledge || plan?.knowledgeSheetId"
+          :title="plan?.knowledgeSheetId ? 'มีใบความรู้แล้ว' : 'สร้างใบความรู้ด้วย AI'"
+        >
+          <span class="material-icons">{{ generatingKnowledge ? 'hourglass_empty' : (plan?.knowledgeSheetId ? 'check_circle' : 'auto_awesome') }}</span>
+          {{ generatingKnowledge ? 'กำลังสร้าง...' : (plan?.knowledgeSheetId ? 'มีใบความรู้แล้ว' : 'สร้างใบความรู้') }}
+        </button>
+        <button 
           v-if="plan?.status === 'draft'"
           class="btn btn-success"
           @click="publishPlan"
@@ -597,10 +606,6 @@
       <section class="plan-section">
         <div class="section-header-with-btn">
           <h2 class="section-title">📄 ใบงาน</h2>
-          <button class="btn btn-ai btn-sm" @click="openWorksheetGenerator" :disabled="generatingWorksheet">
-            <span class="material-icons">{{ generatingWorksheet ? 'hourglass_empty' : 'auto_awesome' }}</span>
-            {{ generatingWorksheet ? 'กำลังสร้าง...' : 'สร้างใบงานด้วย AI' }}
-          </button>
         </div>
         <div class="worksheets-grid" v-if="plan.worksheets?.length || generatedWorksheets.length">
           <!-- Existing worksheets from plan -->
@@ -669,17 +674,13 @@
             </div>
           </div>
         </div>
-        <p v-else class="empty-text">ยังไม่มีใบงาน กดปุ่ม "สร้างใบงานด้วย AI" เพื่อสร้าง</p>
+        <p v-else class="empty-text">ยังไม่มีใบงาน</p>
       </section>
 
       <!-- Knowledge Sheets -->
       <section class="plan-section">
         <div class="section-header-with-btn">
           <h2 class="section-title">📖 ใบความรู้</h2>
-          <button class="btn btn-ai btn-sm" @click="showKnowledgeSheetModal = true" :disabled="generatingKnowledge">
-            <span class="material-icons">{{ generatingKnowledge ? 'hourglass_empty' : 'auto_awesome' }}</span>
-            {{ generatingKnowledge ? 'กำลังสร้าง...' : 'สร้างใบความรู้ด้วย AI' }}
-          </button>
         </div>
         
         <!-- Link to knowledge sheet created via Modal (stored in separate collection) -->
@@ -763,7 +764,7 @@
             </div>
           </div>
         </div>
-        <p v-else class="empty-text">ยังไม่มีใบความรู้ กดปุ่ม "สร้างใบความรู้ด้วย AI" เพื่อสร้าง</p>
+        <p v-else class="empty-text">ยังไม่มีใบความรู้</p>
       </section>
 
       <!-- Post Teaching Record -->
@@ -847,7 +848,7 @@ import { ref, onMounted } from 'vue'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
-import { doc, getDoc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, serverTimestamp, arrayUnion, query, where, getDocs, collection } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'  // 🔐 For authenticated API calls
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import WorksheetGeneratorModal from '@/components/WorksheetGeneratorModal.vue'
@@ -981,6 +982,40 @@ async function loadPlan() {
       if (data.generatedKnowledgeSheets && Array.isArray(data.generatedKnowledgeSheets)) {
         generatedKnowledgeSheets.value = data.generatedKnowledgeSheets
       }
+      
+      // 🆕 เช็คว่ามี knowledge sheet จาก collection หรือไม่ (สำหรับ records เก่าที่ไม่มี knowledgeSheetId)
+      if (!plan.value.knowledgeSheetId) {
+        try {
+          const ksQuery = query(
+            collection(db, 'knowledgeSheets'),
+            where('lessonPlanId', '==', docSnap.id)
+          )
+          const ksSnap = await getDocs(ksQuery)
+          if (!ksSnap.empty) {
+            const existingKsId = ksSnap.docs[0].id
+            console.log('Found existing knowledge sheet:', existingKsId)
+            plan.value.knowledgeSheetId = existingKsId
+            // Update the lessonPlan document to link the knowledge sheet
+            await updateDoc(docRef, { knowledgeSheetId: existingKsId })
+          } else {
+            // Also check metadata.lessonPlanId for older records
+            const ksQueryMeta = query(
+              collection(db, 'knowledgeSheets'),
+              where('metadata.lessonPlanId', '==', docSnap.id)
+            )
+            const ksSnapMeta = await getDocs(ksQueryMeta)
+            if (!ksSnapMeta.empty) {
+              const existingKsId = ksSnapMeta.docs[0].id
+              console.log('Found existing knowledge sheet (via metadata):', existingKsId)
+              plan.value.knowledgeSheetId = existingKsId
+              // Update the lessonPlan document to link the knowledge sheet
+              await updateDoc(docRef, { knowledgeSheetId: existingKsId })
+            }
+          }
+        } catch (ksError) {
+          console.warn('Error checking knowledge sheets:', ksError)
+        }
+      }
     } else {
       console.error('Plan not found:', planId)
     }
@@ -1099,9 +1134,13 @@ async function createElectronicWorksheet() {
   
   try {
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
+    const token = await authStore.getIdToken()
     const response = await fetch(`${functionsUrl}/generateElectronicWorksheet`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         lessonPlanId: plan.value.id,
         teacherId: plan.value.teacherId,

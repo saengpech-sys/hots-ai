@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 6.0** | **Last Updated: December 31, 2025**
+**Version 6.1** | **Last Updated: January 2, 2026**
 
 *Comprehensive technical reference for developers, researchers, and system administrators*
 
@@ -38,7 +38,7 @@
 | **Frontend** | Vue 3 + Vite | 3.4 / 5.0 | Reactive UI with Composition API |
 | **State Management** | Pinia | 2.x | 8 modular stores |
 | **Routing** | Vue Router | 4.x | 93+ routes with guards |
-| **Backend** | Firebase Cloud Functions | Node.js 20 | 98 serverless functions |
+| **Backend** | Firebase Cloud Functions | Node.js 20 | 99 serverless functions |
 | **Database** | Cloud Firestore | - | 30+ collections, real-time sync |
 
 | Metric | Count | Notes |
@@ -1270,6 +1270,6 @@ firebase emulators:start       # Start all emulators
 
 **HOTS AI ChatLoop — Technical Documentation**
 
-*Version 6.0 | December 31, 2025*
+*Version 6.1 | January 2, 2026*
 
 </div>

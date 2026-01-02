@@ -185,11 +185,11 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th v-for="(header, hIdx) in table.headers" :key="hIdx">{{ header }}</th>
+                    <th v-for="(header, hIdx) in normalizeTableHeaders(table.headers)" :key="hIdx">{{ header }}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, rIdx) in table.rows" :key="rIdx">
+                  <tr v-for="(row, rIdx) in normalizeTableRows(table.rows)" :key="rIdx">
                     <td v-for="(cell, cIdx) in row" :key="cIdx">{{ cell }}</td>
                   </tr>
                 </tbody>
@@ -529,6 +529,46 @@ function getQuestionTypeLabel(type) {
 function getResourceIcon(type) {
   const icons = { video: '🎬', article: '📄', book: '📚', website: '🌐' }
   return icons[type] || '📎'
+}
+
+// 🆕 Normalize table data - fix string being iterated as characters
+function normalizeTableHeaders(headers) {
+  if (!headers) return []
+  if (typeof headers === 'string') {
+    try {
+      const parsed = JSON.parse(headers)
+      return Array.isArray(parsed) ? parsed : [headers]
+    } catch {
+      return [headers]
+    }
+  }
+  return Array.isArray(headers) ? headers : [headers]
+}
+
+function normalizeTableRows(rows) {
+  if (!rows) return []
+  if (typeof rows === 'string') {
+    try {
+      const parsed = JSON.parse(rows)
+      return Array.isArray(parsed) ? parsed.map(r => normalizeTableRow(r)) : [[rows]]
+    } catch {
+      return [[rows]]
+    }
+  }
+  return Array.isArray(rows) ? rows.map(r => normalizeTableRow(r)) : [[rows]]
+}
+
+function normalizeTableRow(row) {
+  if (!row) return []
+  if (typeof row === 'string') {
+    try {
+      const parsed = JSON.parse(row)
+      return Array.isArray(parsed) ? parsed : [row]
+    } catch {
+      return [row]
+    }
+  }
+  return Array.isArray(row) ? row : [row]
 }
 
 function scrollTo(id) {
