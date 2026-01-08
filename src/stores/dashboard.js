@@ -175,6 +175,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   async function fetchStudentDetails(studentId) {
+    // Guard against invalid studentId
+    if (!studentId || typeof studentId !== 'string') {
+      console.warn('fetchStudentDetails: Invalid studentId:', studentId)
+      return null
+    }
+    
     // Check cache first
     if (studentDetails.value[studentId]) {
       return studentDetails.value[studentId]

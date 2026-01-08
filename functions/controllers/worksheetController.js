@@ -11,6 +11,7 @@ const {
   openaiApiKeySecret, 
   getDefaultModel 
 } = require('../utils/openaiClient')
+const { getLLMProvider } = require('../utils/llmProvider')
 const { verifyTeacherRole } = require('../utils/authMiddleware')
 const { calculatePointsSimple, calculateStreak, checkBadges } = require('../gamification')
 const { 
@@ -18,8 +19,16 @@ const {
   updateGrowthHistory, 
   EVENT_TYPES 
 } = require('../utils/researchData')
-const { runMultiAgentAssessment } = require('../utils/multiAgentAssessment')
+const { runMultiAgentAssessment, runMultiAgentPerQuestion } = require('../utils/multiAgentAssessment')
 const { assessLearningOutcomes } = require('../utils/loAssessment')
+// 🆕 Import shared scoring components
+const {
+  ARCE_SCORING_ANCHORS,
+  BIAS_PREVENTION_PROMPT,
+  FLUFFY_DETECTION_PROMPT,
+  CONSERVATIVE_SCORING_PROMPT,
+  generateSimpleScoringGuide
+} = require('../utils/prompts')
 
 const openaiApiKey = openaiApiKeySecret
 
@@ -28,6 +37,247 @@ const getDb = () => admin.firestore()
 
 // Get OpenAI instance - use centralized client
 const getOpenAI = () => getOpenAIClient()
+
+/**
+ * 📦 Build Batch Assessment Prompt (Mode B)
+ * สร้าง prompt สำหรับประเมินกลุ่มคำถาม
+ */
+function buildBatchAssessmentPrompt(batch, worksheet, batchNumber) {
+  return `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS)
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
+- รายวิชา: ${worksheet.metadata?.courseName || ''}
+- ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+- กลุ่มที่: ${batchNumber}
+
+📋 คำตอบที่ต้องประเมิน (${batch.length} ข้อ):
+${batch.map((q, i) => `
+[ข้อที่ ${i + 1}]
+- คำถาม: ${q.prompt}
+${q.context ? `- บริบท: ${q.context}` : ''}
+- A.R.C.E. Focus: ${Array.isArray(q.arceFocus) ? q.arceFocus.join(', ') : q.arceFocus}
+- คะแนนเต็ม: ${q.maxScore || 5}
+- คำตอบนักเรียน: """${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}"""
+`).join('\n---\n')}
+
+📝 ตอบเป็น JSON:
+{
+  "batchNumber": ${batchNumber},
+  "questionResults": [
+    {
+      "questionId": "q1",
+      "score": 0,
+      "maxScore": 5,
+      "passed": false,
+      "arceScores": { "analysis": 0, "reasoning": 0, "creativity": 0, "evidence": 0 },
+      "feedback": "ข้อเสนอแนะเฉพาะข้อนี้"
+    }
+  ],
+  "batchSummary": {
+    "totalScore": 0,
+    "maxScore": ${batch.reduce((sum, q) => sum + (q.maxScore || 5), 0)},
+    "passedCount": 0
+  }
+}`
+}
+
+/**
+ * 🔍 Build Per-Question Assessment Prompt (Mode C)
+ * สร้าง prompt สำหรับประเมินทีละข้อ
+ */
+function buildPerQuestionPrompt(question, worksheet, questionNumber) {
+  return `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS)
+
+📚 ข้อมูล:
+- ใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
+- รายวิชา: ${worksheet.metadata?.courseName || ''}
+- ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+
+📋 คำถามที่ ${questionNumber}:
+- คำถาม: ${question.prompt}
+${question.context ? `- บริบท: ${question.context}` : ''}
+- A.R.C.E. Focus: ${Array.isArray(question.arceFocus) ? question.arceFocus.join(', ') : question.arceFocus}
+- คะแนนเต็ม: ${question.maxScore || 5}
+- คำตอบนักเรียน: """${typeof question.studentAnswer === 'object' ? JSON.stringify(question.studentAnswer) : question.studentAnswer}"""
+
+📝 ตอบเป็น JSON:
+{
+  "questionId": "${question.questionId}",
+  "question": "${question.prompt.replace(/"/g, '\\"').substring(0, 200)}",
+  "context": "${(question.context || '').replace(/"/g, '\\"').substring(0, 200)}",
+  "studentAnswer": "${typeof question.studentAnswer === 'object' ? JSON.stringify(question.studentAnswer).replace(/"/g, '\\"').substring(0, 300) : (question.studentAnswer || '').replace(/"/g, '\\"').substring(0, 300)}",
+  "arceFocus": "${Array.isArray(question.arceFocus) ? question.arceFocus[0] : question.arceFocus}",
+  "score": 0,
+  "maxScore": ${question.maxScore || 5},
+  "passed": false,
+  "bloomLevel": 4,
+  "bloomName": "Analyze",
+  "arceScores": {
+    "analysis": 0,
+    "reasoning": 0,
+    "creativity": 0,
+    "evidence": 0
+  },
+  "feedback": "ข้อเสนอแนะละเอียดสำหรับข้อนี้",
+  "suggestion": "คำแนะนำเพื่อพัฒนา",
+  "evidenceFromAnswer": "หลักฐานจากคำตอบที่ใช้ให้คะแนน"
+}`
+}
+
+/**
+ * 📦 Summarize Batch Results (Mode B)
+ * รวมผลจากทุก batch ด้วย Summary Agent
+ */
+async function summarizeBatchResults(batchResults, worksheet, allQuestions, openai, model) {
+  const summaryPrompt = `คุณเป็น Summary Agent รวมผลการประเมินใบงานจากหลาย batch
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
+- จำนวนข้อทั้งหมด: ${allQuestions.length}
+
+📊 ผลการประเมินจากแต่ละ batch:
+${batchResults.map((result, i) => `
+Batch ${i + 1}: ${result.batchSummary?.totalScore || 0}/${result.batchSummary?.maxScore || 0} (${result.batchSummary?.passedCount || 0} ข้อผ่าน)
+`).join('')}
+
+📋 รวบรวมทุก questionResults:
+${JSON.stringify(batchResults.flatMap(b => b.questionResults), null, 2)}
+
+📝 สร้างสรุปผลรวมเป็น JSON:
+{
+  "summary": {
+    "totalScore": 0,
+    "maxScore": ${worksheet.scoring?.totalPoints || allQuestions.length * 5},
+    "percentage": 0,
+    "paLevel": 1,
+    "paLevelText": "ระดับ X: คำอธิบาย",
+    "overallFeedback": "สรุปภาพรวมผลงาน",
+    "recommendation": "ข้อเสนอแนะหลัก"
+  },
+  "arceScores": {
+    "analysis": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "reasoning": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "creativity": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "evidence": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" }
+  },
+  "questionResults": [...],
+  "statistics": {
+    "totalQuestions": ${allQuestions.length},
+    "passedQuestions": 0,
+    "failedQuestions": 0,
+    "passRate": 0,
+    "avgScorePerQuestion": 0
+  },
+  "strengths": ["จุดแข็ง 1", "จุดแข็ง 2"],
+  "weaknesses": ["จุดที่ควรพัฒนา 1"],
+  "nextSteps": ["ขั้นตอนถัดไป 1"],
+  "teacherNotes": "บันทึกสำหรับครู"
+}`
+
+  const completion = await openai.chat.completions.create({
+    model: model,
+    messages: [
+      { role: 'system', content: 'คุณเป็น Summary Agent รวมผลการประเมินและสร้างสรุปภาพรวม ตอบเป็น JSON เท่านั้น' },
+      { role: 'user', content: summaryPrompt }
+    ],
+    temperature: 0.3,
+    max_tokens: 8000
+  })
+  
+  let cleanedText = completion.choices[0].message.content.trim()
+  if (cleanedText.startsWith('```')) {
+    cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
+  }
+  return JSON.parse(cleanedText)
+}
+
+/**
+ * 🔍 Summarize Per-Question Results (Mode C)
+ * รวมผลจากทุกข้อด้วย Summary Agent
+ */
+async function summarizePerQuestionResults(perQuestionResults, worksheet, allQuestions, openai, model) {
+  const summaryPrompt = `คุณเป็น Summary Agent รวมผลการประเมินใบงานจากการประเมินทีละข้อ
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
+- จำนวนข้อทั้งหมด: ${allQuestions.length}
+
+📋 ผลการประเมินแต่ละข้อ:
+${JSON.stringify(perQuestionResults, null, 2)}
+
+📝 สร้างสรุปผลรวมเป็น JSON:
+{
+  "summary": {
+    "totalScore": 0,
+    "maxScore": ${worksheet.scoring?.totalPoints || allQuestions.length * 5},
+    "percentage": 0,
+    "paLevel": 1,
+    "paLevelText": "ระดับ X: คำอธิบาย",
+    "overallFeedback": "สรุปภาพรวมผลงาน",
+    "recommendation": "ข้อเสนอแนะหลัก"
+  },
+  "arceScores": {
+    "analysis": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "reasoning": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "creativity": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" },
+    "evidence": { "raw": 0, "max": 5, "percentage": 0, "feedback": "" }
+  },
+  "questionResults": [...ผลแต่ละข้อพร้อม question, studentAnswer, feedback],
+  "bloomAnalysis": {
+    "dominantLevel": 4,
+    "levelBreakdown": { "1": { "count": 0, "avgScore": 0 }, ... },
+    "insight": "วิเคราะห์ระดับการคิด"
+  },
+  "statistics": {
+    "totalQuestions": ${allQuestions.length},
+    "passedQuestions": 0,
+    "failedQuestions": 0,
+    "passRate": 0,
+    "avgScorePerQuestion": 0,
+    "highestScore": { "questionId": "", "score": 0, "maxScore": 5 },
+    "lowestScore": { "questionId": "", "score": 0, "maxScore": 5 },
+    "scoreDistribution": {
+      "excellent": { "count": 0, "range": "80-100%" },
+      "good": { "count": 0, "range": "60-79%" },
+      "fair": { "count": 0, "range": "40-59%" },
+      "needImprovement": { "count": 0, "range": "0-39%" }
+    }
+  },
+  "arceAnalysis": {
+    "strongestDimension": { "name": "", "score": 0 },
+    "weakestDimension": { "name": "", "score": 0 },
+    "dimensionComparison": "วิเคราะห์เปรียบเทียบ",
+    "developmentPriority": ["ลำดับการพัฒนา"]
+  },
+  "strengths": ["จุดแข็ง"],
+  "weaknesses": ["จุดที่ควรพัฒนา"],
+  "nextSteps": ["ขั้นตอนถัดไป"],
+  "teacherNotes": "บันทึกสำหรับครู",
+  "researchInsights": {
+    "learningPattern": "รูปแบบการเรียนรู้",
+    "cognitiveStrengths": ["จุดแข็งด้านการรับรู้"],
+    "areasForIntervention": ["ด้านที่ต้องการช่วยเหลือ"],
+    "recommendedStrategies": ["กลยุทธ์การสอน"]
+  }
+}`
+
+  const completion = await openai.chat.completions.create({
+    model: model,
+    messages: [
+      { role: 'system', content: 'คุณเป็น Summary Agent รวมผลการประเมินและสร้างสรุปภาพรวมระดับงานวิจัย ตอบเป็น JSON เท่านั้น' },
+      { role: 'user', content: summaryPrompt }
+    ],
+    temperature: 0.3,
+    max_tokens: 12000
+  })
+  
+  let cleanedText = completion.choices[0].message.content.trim()
+  if (cleanedText.startsWith('```')) {
+    cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
+  }
+  return JSON.parse(cleanedText)
+}
 
 /**
  * Generate Electronic Worksheet
@@ -1021,20 +1271,29 @@ exports.assessWorksheetSubmission = functions.runWith({
         })
       }
 
-      // 🆕 Get course setting for assessmentMode
-      let useMultiAgent = false
+      // 🆕 Get course setting for worksheet assessment mode (A/B/C/Multi-Agent)
+      // Mode A: single - Single AI call for entire worksheet (default)
+      // Mode B: batch - Batch assessment (5 questions per call)
+      // Mode C: per-question - Single AI per question
+      // Mode Multi-Agent: multi-agent-per-question - 6 Agents × each question (most accurate)
+      //   - 3 questions = 19 API calls, 5 questions = 31 calls, 15 questions = 91 calls
+      let worksheetAssessmentMode = 'single' // Default: Mode A
       if (courseId) {
         try {
           const courseDoc = await db.collection('courses').doc(courseId).get()
           if (courseDoc.exists) {
             const courseData = courseDoc.data()
-            useMultiAgent = courseData.assessmentMode === 'multi-agent'
-            console.log(`📚 Course ${courseId} assessmentMode: ${courseData.assessmentMode || 'single'} (Multi-Agent: ${useMultiAgent})`)
+            // ใช้ worksheetAssessmentMode แยกจาก assessmentMode ของ Chat
+            worksheetAssessmentMode = courseData.worksheetAssessmentMode || 'single'
+            console.log(`📚 Course ${courseId} worksheetAssessmentMode: ${worksheetAssessmentMode}`)
           }
         } catch (err) {
           console.warn('Could not fetch course settings:', err.message)
         }
       }
+
+      // Determine if using Multi-Agent Per-Question mode
+      const useMultiAgentPerQuestion = worksheetAssessmentMode === 'multi-agent-per-question' || worksheetAssessmentMode === 'multi-agent'
 
       // Get OpenAI client
       let openai
@@ -1124,6 +1383,7 @@ exports.assessWorksheetSubmission = functions.runWith({
 - รายวิชา: ${worksheet.metadata?.courseName || ''}
 - หัวข้อ: ${worksheet.metadata?.topic || ''}
 - ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+- **จำนวนข้อที่ต้องประเมิน: ${questionsForAssessment.length} ข้อ** ⬅️ สำคัญ! ต้องประเมินครบทุกข้อ
 
 📋 คำตอบของนักเรียนที่ต้องประเมิน:
 ${questionsForAssessment.map((q, i) => {
@@ -1154,39 +1414,10 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
 }).join('\n---\n')}
 
 🎯 วิธีการประเมิน ARCE (แต่ละด้าน 0-5 คะแนน):
+${CONSERVATIVE_SCORING_PROMPT}
+
 สำหรับคำถามประเภท ARCE Situation ให้ประเมินแยกแต่ละด้าน:
-
-**A - Analysis (การวิเคราะห์):** 
-- 5 = วิเคราะห์ได้ลึกซึ้ง ครอบคลุม แยกแยะประเด็นได้ครบถ้วน
-- 4 = วิเคราะห์ได้ดี มีประเด็นสำคัญครบ
-- 3 = วิเคราะห์ได้พอสมควร ยังขาดบางประเด็น
-- 2 = วิเคราะห์ได้บางส่วน ไม่ครบถ้วน
-- 1 = พยายามวิเคราะห์แต่ยังไม่ตรงประเด็น
-- 0 = ไม่ได้วิเคราะห์
-
-**R - Reasoning (การให้เหตุผล):**
-- 5 = อ้างเหตุผล/หลักการได้ชัดเจน ถูกต้อง มีตรรกะดีเยี่ยม
-- 4 = อ้างเหตุผลได้ดี มีหลักการสนับสนุน
-- 3 = มีเหตุผลพอสมควร แต่ยังไม่ชัดเจนบางส่วน
-- 2 = มีเหตุผลบ้าง แต่ยังไม่เพียงพอ
-- 1 = พยายามให้เหตุผลแต่ยังไม่ถูกต้อง
-- 0 = ไม่ได้ให้เหตุผล
-
-**C - Creativity (ความคิดสร้างสรรค์):**
-- 5 = มีความคิดริเริ่มโดดเด่น นำเสนอแนวทางใหม่ที่น่าสนใจมาก
-- 4 = มีความคิดสร้างสรรค์ดี นำเสนอได้น่าสนใจ
-- 3 = มีความคิดสร้างสรรค์พอสมควร
-- 2 = มีความคิดบ้าง แต่ยังไม่โดดเด่น
-- 1 = พยายามนำเสนอแต่ยังไม่ชัดเจน
-- 0 = ไม่แสดงความคิดสร้างสรรค์
-
-**E - Evidence (หลักฐาน):**
-- 5 = ยกตัวอย่าง/หลักฐานได้ครบถ้วน ชัดเจน น่าเชื่อถือมาก
-- 4 = มีหลักฐานดี ยกตัวอย่างได้เหมาะสม
-- 3 = มีหลักฐานบางส่วน ยกตัวอย่างได้พอสมควร
-- 2 = มีหลักฐานบ้าง แต่ยังไม่เพียงพอ
-- 1 = พยายามยกตัวอย่างแต่ยังไม่ตรงประเด็น
-- 0 = ไม่มีหลักฐานหรือตัวอย่าง
+${generateSimpleScoringGuide()}
 
 📊 มาตรฐาน PA/DPA:
 - ระดับ 4 (ดีมาก): 80-100%
@@ -1232,6 +1463,7 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
     }
   },
   "questionResults": [
+    // ⚠️ สำคัญ! ต้องสร้างผลการประเมินครบทุกข้อ (${questionsForAssessment.length} ข้อ) ตาม questionId ที่ระบุ
     {
       "questionId": "arce_1",
       "sectionId": "section_id",
@@ -1267,6 +1499,7 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
       "feedback": "สรุปภาพรวมคำตอบ จุดเด่น-จุดที่ต้องพัฒนา",
       "suggestion": "คำแนะนำเพื่อพัฒนาแต่ละด้าน ARCE"
     }
+    // ... สร้างให้ครบ ${questionsForAssessment.length} ข้อ ตาม questionId ที่ส่งมา
   ],
   "strengths": [
     "จุดแข็ง 1: อธิบายพร้อมยกตัวอย่างจากคำตอบ",
@@ -1284,35 +1517,15 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
 }
 
 ⚠️ ข้อกำหนดสำคัญ:
-1. สำหรับ arce_situation ให้ประเมินแยกทุกด้าน A-R-C-E และรวมคะแนน
-2. เปรียบเทียบคำตอบนักเรียนกับ Expected_ARCE ที่กำหนดไว้
-3. feedback ต้องเฉพาะเจาะจง อ้างอิงจากคำตอบจริง
-4. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
+1. **questionResults ต้องมีครบ ${questionsForAssessment.length} ข้อ** - ประเมินแยกทุกข้อที่ส่งมา ห้ามรวมหรือข้าม!
+2. สำหรับ arce_situation ให้ประเมินแยกทุกด้าน A-R-C-E และรวมคะแนน
+3. เปรียบเทียบคำตอบนักเรียนกับ Expected_ARCE ที่กำหนดไว้
+4. feedback ต้องเฉพาะเจาะจง อ้างอิงจากคำตอบจริง
+5. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
 
-<bias_prevention>
-⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
-1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
-   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
-   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
-2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
-3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
-4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
-</bias_prevention>
+${BIAS_PREVENTION_PROMPT}
 
-<fluffy_content_detection>
-🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
-คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
-
-ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
-- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
-- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
-- "ดีมากครับ เห็นด้วยเลย"
-
-การตรวจสอบ:
-- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
-- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
-- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
-</fluffy_content_detection>`
+${FLUFFY_DETECTION_PROMPT}`
       } else {
         // Original assessment prompt for regular worksheets
         prompt = `คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง (HOTS) ตามเกณฑ์ A.R.C.E., Bloom's Taxonomy และมาตรฐาน PA/DPA
@@ -1322,6 +1535,7 @@ ${q.context ? `- บริบท: ${q.context}` : ''}
 - รายวิชา: ${worksheet.metadata?.courseName || ''}
 - หัวข้อ: ${worksheet.metadata?.topic || ''}
 - ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+- **จำนวนข้อที่ต้องประเมิน: ${questionsForAssessment.length} ข้อ** ⬅️ สำคัญ! ต้องประเมินครบทุกข้อ
 
 📋 คำตอบของนักเรียนที่ต้องประเมิน:
 ${questionsForAssessment.map((q, i) => `
@@ -1396,32 +1610,57 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
     }
   },
   "questionResults": [
+    // ⚠️ สำคัญ! ต้องสร้างผลการประเมินครบทุกข้อ (${questionsForAssessment.length} ข้อ) ตาม questionId ที่ระบุ
     {
       "questionId": "q1",
       "sectionId": "section_id",
-      "question": "ข้อความคำถาม",
-      "studentAnswer": "คำตอบของนักเรียน",
+      "question": "ข้อความคำถาม - ต้องใส่คำถามจริงจาก prompt ที่ส่งมา",
+      "context": "สถานการณ์/บริบทของคำถาม (ถ้ามี)",
+      "studentAnswer": "คำตอบของนักเรียน - ต้องใส่คำตอบจริงที่ส่งมา",
+      "arceFocus": "analysis",
       "score": 0,
       "maxScore": 5,
       "passed": false,
       "bloomLevel": 4,
       "bloomName": "Analyze (วิเคราะห์)",
-      "arceFocus": "analysis",
       "feedback": "ข้อเสนอแนะเฉพาะข้อนี้ - อธิบายว่าทำได้ดีอะไร และควรปรับปรุงอะไร",
-      "suggestion": "คำแนะนำเพื่อพัฒนา ถ้าไม่ผ่านเกณฑ์"
+      "suggestion": "คำแนะนำเพื่อพัฒนา ถ้าไม่ผ่านเกณฑ์",
+      "evidenceFromAnswer": "ยกข้อความจากคำตอบที่เป็นหลักฐานการให้คะแนน"
     }
+    // ... สร้างให้ครบ ${questionsForAssessment.length} ข้อ ตาม questionId ที่ส่งมา พร้อมข้อมูล question และ studentAnswer ครบทุกข้อ
   ],
   "bloomAnalysis": {
     "dominantLevel": 4,
     "levelBreakdown": {
-      "1": { "count": 0, "avgScore": 0 },
-      "2": { "count": 0, "avgScore": 0 },
-      "3": { "count": 0, "avgScore": 0 },
-      "4": { "count": 0, "avgScore": 0 },
-      "5": { "count": 0, "avgScore": 0 },
-      "6": { "count": 0, "avgScore": 0 }
+      "1": { "count": 0, "avgScore": 0, "questions": [] },
+      "2": { "count": 0, "avgScore": 0, "questions": [] },
+      "3": { "count": 0, "avgScore": 0, "questions": [] },
+      "4": { "count": 0, "avgScore": 0, "questions": [] },
+      "5": { "count": 0, "avgScore": 0, "questions": [] },
+      "6": { "count": 0, "avgScore": 0, "questions": [] }
     },
     "insight": "วิเคราะห์ระดับการคิดของนักเรียน เช่น 'นักเรียนแสดงทักษะการวิเคราะห์ได้ดี แต่ยังต้องพัฒนาการประเมินและสร้างสรรค์'"
+  },
+  "statistics": {
+    "totalQuestions": ${questionsForAssessment.length},
+    "passedQuestions": 0,
+    "failedQuestions": 0,
+    "passRate": 0,
+    "avgScorePerQuestion": 0,
+    "highestScore": { "questionId": "", "score": 0, "maxScore": 5 },
+    "lowestScore": { "questionId": "", "score": 0, "maxScore": 5 },
+    "scoreDistribution": {
+      "excellent": { "count": 0, "range": "80-100%", "questions": [] },
+      "good": { "count": 0, "range": "60-79%", "questions": [] },
+      "fair": { "count": 0, "range": "40-59%", "questions": [] },
+      "needImprovement": { "count": 0, "range": "0-39%", "questions": [] }
+    }
+  },
+  "arceAnalysis": {
+    "strongestDimension": { "name": "analysis|reasoning|creativity|evidence", "score": 0, "insight": "" },
+    "weakestDimension": { "name": "analysis|reasoning|creativity|evidence", "score": 0, "insight": "" },
+    "dimensionComparison": "วิเคราะห์เปรียบเทียบทักษะ ARCE เช่น 'นักเรียนมีจุดแข็งด้านการวิเคราะห์ แต่ควรพัฒนาการใช้หลักฐานให้มากขึ้น'",
+    "developmentPriority": ["ลำดับทักษะที่ควรพัฒนาก่อน"]
   },
   "strengths": [
     "จุดแข็ง 1: อธิบายพร้อมยกตัวอย่างจากคำตอบ",
@@ -1435,42 +1674,29 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
     "ขั้นตอนต่อไป 1: คำแนะนำเชิงปฏิบัติที่ทำได้ทันที",
     "ขั้นตอนต่อไป 2: ..."
   ],
-  "teacherNotes": "บันทึกสำหรับครู - ข้อสังเกตพิเศษ จุดที่ควรให้ความช่วยเหลือ หรือศักยภาพที่เห็น"
+  "teacherNotes": "บันทึกสำหรับครู - ข้อสังเกตพิเศษ จุดที่ควรให้ความช่วยเหลือ หรือศักยภาพที่เห็น",
+  "researchInsights": {
+    "learningPattern": "รูปแบบการเรียนรู้ที่สังเกตได้ เช่น 'นักเรียนเข้าใจแนวคิดแต่ขาดการประยุกต์ใช้'",
+    "cognitiveStrengths": ["ด้านการรับรู้ที่แข็งแกร่ง"],
+    "areasForIntervention": ["ด้านที่ต้องการการช่วยเหลือเฉพาะ"],
+    "recommendedStrategies": ["กลยุทธ์การสอนที่แนะนำสำหรับนักเรียนคนนี้"]
+  }
 }
 
 ⚠️ ข้อกำหนดสำคัญ:
 1. ประเมิน bloomLevel ของแต่ละคำถามตามลักษณะการคิดที่คำถามต้องการ (1-6)
-2. questionResults ต้องมีครบทุกข้อที่นักเรียนตอบ
+2. **questionResults ต้องมีครบ ${questionsForAssessment.length} ข้อ** - ประเมินแยกทุกข้อ ห้ามรวมหรือข้าม!
 3. feedback ต้องเฉพาะเจาะจง อ้างอิงจากคำตอบจริง ไม่ใช่คำกว้างๆ
 4. strengths/weaknesses ต้องยกตัวอย่างจากคำตอบ
 5. nextSteps ต้องเป็นสิ่งที่นักเรียนทำได้จริงเพื่อพัฒนาตัวเอง
 6. teacherNotes สำหรับครูใช้วางแผนช่วยเหลือนักเรียน
-7. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
+7. statistics ต้องคำนวณถูกต้องตามผลการประเมินจริง
+8. researchInsights สำหรับวิเคราะห์เชิงลึกระดับงานวิจัย
+9. ทุก feedback เป็นภาษาไทย สุภาพ สร้างสรรค์ ให้กำลังใจ
 
-<bias_prevention>
-⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
-1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
-   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
-   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
-2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
-3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
-4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
-</bias_prevention>
+${BIAS_PREVENTION_PROMPT}
 
-<fluffy_content_detection>
-🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
-คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
-
-ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
-- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
-- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
-- "ดีมากครับ เห็นด้วยเลย"
-
-การตรวจสอบ:
-- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
-- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
-- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
-</fluffy_content_detection>`
+${FLUFFY_DETECTION_PROMPT}`
       } // End of else block for regular worksheets
 
       // Use appropriate system message based on worksheet type
@@ -1492,158 +1718,267 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
 
       let assessmentResult
       
-      // 🤖 Multi-Agent Mode: Use 6 agents for more accurate assessment
-      if (useMultiAgent && !isArceEvaluateWorksheet && !hasArceSituations) {
-        console.log('🤖×6 Using Multi-Agent mode for worksheet assessment')
-        
-        // Combine all answers for multi-agent assessment
-        const combinedAnswer = questionsForAssessment
-          .map(q => `${q.prompt}: ${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}`)
-          .join('\n\n')
-        
-        const mainQuestion = questionsForAssessment[0]?.prompt || worksheet.metadata?.title || 'ใบงาน'
+      // 🤖×6×N Multi-Agent Per-Question Assessment (Full 6 Agents × Each Question)
+      // This is the most accurate mode: 6 API calls per question + 1 summary
+      // - 3 questions = 19 API calls (~30-60 seconds)
+      // - 5 questions = 31 API calls (~1-2 minutes)
+      // - 10 questions = 61 API calls (~3-5 minutes)
+      // - 15 questions = 91 API calls (~5-8 minutes)
+      if (useMultiAgentPerQuestion) {
+        console.log(`🤖×6×${questionsForAssessment.length} Using Multi-Agent Per-Question mode for worksheet`)
+        console.log(`📋 Worksheet type: ${worksheet.metadata?.worksheetType || 'standard'}, hasArceSituations: ${hasArceSituations}`)
+        console.log(`📋 Expected API calls: ${6 * questionsForAssessment.length + 1} (6 agents × ${questionsForAssessment.length} questions + 1 summary)`)
         
         try {
-          const multiAgentResult = await runMultiAgentAssessment(
-            combinedAnswer,
-            mainQuestion,
-            getOpenAIClient(),
-            model,
+          // Create LLM provider wrapper for multi-agent
+          const llmProvider = {
+            complete: async (prompt, options = {}) => {
+              const completion = await openai.chat.completions.create({
+                model: model,
+                messages: [
+                  { role: 'system', content: 'คุณเป็นผู้เชี่ยวชาญด้านการประเมินทักษะการคิดขั้นสูง ตอบเป็น JSON เท่านั้น' },
+                  { role: 'user', content: prompt }
+                ],
+                temperature: options.temperature || 0.3,
+                max_tokens: options.max_tokens || 2000
+              })
+              return completion.choices[0].message.content
+            }
+          }
+          
+          // Worksheet metadata for context
+          const worksheetMeta = {
+            title: worksheet.metadata?.title || 'ใบงาน',
+            courseName: worksheet.metadata?.courseName || '',
+            topic: worksheet.metadata?.topic || '',
+            gradeLevel: worksheet.metadata?.gradeLevel || 'ม.4'
+          }
+          
+          // Run Multi-Agent assessment for each question
+          const multiAgentResult = await runMultiAgentPerQuestion(
+            llmProvider,
+            questionsForAssessment,
+            worksheetMeta,
             {
               gradeLevel: worksheet.metadata?.gradeLevel || 'ม.4',
-              subjectArea: worksheet.metadata?.subjectGroup || 'ทั่วไป',
-              expectedLOs: worksheet.metadata?.learningOutcomes || []
+              parallelQuestions: questionsForAssessment.length <= 5, // Parallel for small worksheets
+              parallelAgents: true, // Always parallel agents within each question
+              includeAdversarial: true, // Full 6 agents
+              maxConcurrentQuestions: 3, // Limit concurrent to avoid rate limiting
+              detailedLogging: true
             }
           )
           
-          // Map Multi-Agent result to worksheet assessment format
-          const totalMaxScore = worksheet.scoring?.totalPoints || (questionsForAssessment.length * 5)
-          const multiTotalScore = (multiAgentResult.consensus?.analysis || 0) +
-                                  (multiAgentResult.consensus?.reasoning || 0) +
-                                  (multiAgentResult.consensus?.creativity || 0) +
-                                  (multiAgentResult.consensus?.evidence || 0)
-          const percentage = Math.round((multiTotalScore / 20) * 100)
-          const paLevel = percentage >= 80 ? 4 : percentage >= 60 ? 3 : percentage >= 40 ? 2 : 1
-          const paLevelText = paLevel === 4 ? 'ระดับ 4: ดีมาก' : 
-                              paLevel === 3 ? 'ระดับ 3: ดี' :
-                              paLevel === 2 ? 'ระดับ 2: พอใช้' : 'ระดับ 1: ต้องปรับปรุง'
-          
-          assessmentResult = {
-            summary: {
-              totalScore: Math.round((percentage / 100) * totalMaxScore),
-              maxScore: totalMaxScore,
-              percentage,
-              paLevel,
-              paLevelText,
-              overallFeedback: multiAgentResult.consensus?.feedback || 'การประเมินเสร็จสิ้น',
-              recommendation: multiAgentResult.consensus?.recommendations?.[0] || 'ฝึกฝนต่อไป'
-            },
-            arceScores: {
-              analysis: {
-                raw: multiAgentResult.consensus?.analysis || 0,
-                max: 5,
-                percentage: ((multiAgentResult.consensus?.analysis || 0) / 5) * 100,
-                feedback: multiAgentResult.agentResults?.analysis?.feedback || multiAgentResult.agentDetails?.analysis?.microFeedback || ''
-              },
-              reasoning: {
-                raw: multiAgentResult.consensus?.reasoning || 0,
-                max: 5,
-                percentage: ((multiAgentResult.consensus?.reasoning || 0) / 5) * 100,
-                feedback: multiAgentResult.agentResults?.reasoning?.feedback || multiAgentResult.agentDetails?.reasoning?.microFeedback || ''
-              },
-              creativity: {
-                raw: multiAgentResult.consensus?.creativity || 0,
-                max: 5,
-                percentage: ((multiAgentResult.consensus?.creativity || 0) / 5) * 100,
-                feedback: multiAgentResult.agentResults?.creativity?.feedback || multiAgentResult.agentDetails?.creativity?.microFeedback || ''
-              },
-              evidence: {
-                raw: multiAgentResult.consensus?.evidence || 0,
-                max: 5,
-                percentage: ((multiAgentResult.consensus?.evidence || 0) / 5) * 100,
-                feedback: multiAgentResult.agentResults?.evidence?.feedback || multiAgentResult.agentDetails?.evidence?.microFeedback || ''
-              }
-            },
-            questionResults: questionsForAssessment.map(q => ({
-              questionId: q.questionId,
-              sectionId: q.sectionId,
-              score: Math.round((percentage / 100) * q.maxScore),
-              maxScore: q.maxScore,
-              passed: percentage >= 50,
-              feedback: multiAgentResult.consensus?.feedback || ''
-            })),
-            strengths: multiAgentResult.consensus?.strengths || multiAgentResult.strengths || [],
-            weaknesses: multiAgentResult.consensus?.weaknesses || multiAgentResult.weaknesses || [],
-            nextSteps: multiAgentResult.consensus?.recommendations || [],
-            teacherNotes: `📊 ประเมินด้วย Multi-Agent (6 AI): ความเชื่อมั่น ${multiAgentResult.confidence || multiAgentResult.consensus?.averageConfidence || 'N/A'}%`,
-            assessmentMode: 'multi-agent',
-            // 🆕 เพิ่ม agentDetails ละเอียด เหมือน Chat
-            agentDetails: {
-              analysis: {
-                agentName: 'Analysis Expert',
-                score: multiAgentResult.agentDetails?.analysis?.score || 0,
-                confidence: multiAgentResult.agentDetails?.analysis?.confidence || 0,
-                microFeedback: multiAgentResult.agentDetails?.analysis?.microFeedback || '',
-                chainOfThought: multiAgentResult.agentDetails?.analysis?.chainOfThought || ''
-              },
-              reasoning: {
-                agentName: 'Reasoning Expert',
-                score: multiAgentResult.agentDetails?.reasoning?.score || 0,
-                confidence: multiAgentResult.agentDetails?.reasoning?.confidence || 0,
-                microFeedback: multiAgentResult.agentDetails?.reasoning?.microFeedback || '',
-                chainOfThought: multiAgentResult.agentDetails?.reasoning?.chainOfThought || ''
-              },
-              creativity: {
-                agentName: 'Creativity Expert',
-                score: multiAgentResult.agentDetails?.creativity?.score || 0,
-                confidence: multiAgentResult.agentDetails?.creativity?.confidence || 0,
-                microFeedback: multiAgentResult.agentDetails?.creativity?.microFeedback || '',
-                chainOfThought: multiAgentResult.agentDetails?.creativity?.chainOfThought || ''
-              },
-              evidence: {
-                agentName: 'Evidence Expert',
-                score: multiAgentResult.agentDetails?.evidence?.score || 0,
-                confidence: multiAgentResult.agentDetails?.evidence?.confidence || 0,
-                microFeedback: multiAgentResult.agentDetails?.evidence?.microFeedback || '',
-                chainOfThought: multiAgentResult.agentDetails?.evidence?.chainOfThought || ''
-              },
-              adversarial: multiAgentResult.agentDetails?.adversarial || {
-                refinedScores: multiAgentResult.rubricScores || {},
-                challenges: [],
-                biasDetected: [],
-                consistencyScore: 0
-              },
-              consensus: multiAgentResult.agentDetails?.consensus || {
-                rubricScores: multiAgentResult.rubricScores || {},
-                totalScore: multiAgentResult.totalScore || 0,
-                confidence: multiAgentResult.confidence || 0,
-                consensusLevel: 'moderate',
-                feedback: multiAgentResult.feedback || ''
-              }
-            },
-            multiAgentMetadata: {
-              processingTimeMs: multiAgentResult.multiAgentMetadata?.processingTimeMs || 0,
-              agentCount: 6,
-              consensusLevel: multiAgentResult.agentDetails?.consensus?.consensusLevel || 'moderate'
-            },
-            agentDebate: multiAgentResult.adversarialRefinement || null
+          if (multiAgentResult.success) {
+            assessmentResult = {
+              ...multiAgentResult,
+              assessmentMode: 'multi-agent-per-question',
+              teacherNotes: `📊 ประเมินด้วย Multi-Agent Per-Question (6 AI × ${questionsForAssessment.length} ข้อ = ${multiAgentResult.multiAgentMetadata?.totalApiCalls || (6 * questionsForAssessment.length + 1)} API calls)
+⏱️ เวลาประเมิน: ${((multiAgentResult.multiAgentMetadata?.processingTimeMs || 0) / 1000).toFixed(1)} วินาที
+🎯 ความแม่นยำ: สูงสุด (Full Multi-Agent Assessment ทุกข้อ)`
+            }
+            
+            console.log('✅ Multi-Agent Per-Question assessment completed:', {
+              totalScore: assessmentResult.summary?.totalScore,
+              percentage: assessmentResult.summary?.percentage,
+              questions: questionsForAssessment.length,
+              apiCalls: multiAgentResult.multiAgentMetadata?.totalApiCalls,
+              processingTime: `${((multiAgentResult.multiAgentMetadata?.processingTimeMs || 0) / 1000).toFixed(1)}s`
+            })
+          } else {
+            throw new Error(multiAgentResult.error || 'Multi-Agent Per-Question failed')
           }
           
-          console.log('✅ Multi-Agent worksheet assessment completed:', {
-            totalScore: assessmentResult.summary.totalScore,
-            percentage: assessmentResult.summary.percentage
+        } catch (multiAgentPerQuestionError) {
+          console.error('❌ Multi-Agent Per-Question failed, falling back to single agent:', multiAgentPerQuestionError.message)
+          // Fall through to other modes below
+          assessmentResult = null
+        }
+      }
+
+      // 📦 Mode B: Batch Assessment - แบ่งกลุ่ม 5 ข้อ แล้วรวมผล
+      if (!assessmentResult && worksheetAssessmentMode === 'batch' && questionsForAssessment.length > 5) {
+        console.log('📦 Using Batch Assessment mode for worksheet')
+        
+        try {
+          const batchSize = 5
+          const batches = []
+          for (let i = 0; i < questionsForAssessment.length; i += batchSize) {
+            batches.push(questionsForAssessment.slice(i, i + batchSize))
+          }
+          
+          console.log(`📦 Split into ${batches.length} batches of ${batchSize} questions each`)
+          
+          // Process batches in parallel
+          const batchResults = await Promise.all(batches.map(async (batch, batchIndex) => {
+            const batchPrompt = buildBatchAssessmentPrompt(batch, worksheet, batchIndex + 1)
+            const completion = await openai.chat.completions.create({
+              model: model,
+              messages: [
+                { role: 'system', content: systemMessage },
+                { role: 'user', content: batchPrompt }
+              ],
+              temperature: 0.3,
+              max_tokens: 4000
+            })
+            
+            let cleanedText = completion.choices[0].message.content.trim()
+            if (cleanedText.startsWith('```')) {
+              cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
+            }
+            return JSON.parse(cleanedText)
+          }))
+          
+          // Summary Agent: รวมผลจากทุก batch
+          assessmentResult = await summarizeBatchResults(batchResults, worksheet, questionsForAssessment, openai, model)
+          assessmentResult.assessmentMode = 'batch'
+          assessmentResult.batchDetails = {
+            batchCount: batches.length,
+            questionsPerBatch: batchSize
+          }
+          
+          // 🔄 Enrich or create questionResults with original question data (Mode B)
+          if (assessmentResult.questionResults && Array.isArray(assessmentResult.questionResults) && assessmentResult.questionResults.length > 0) {
+            assessmentResult.questionResults = assessmentResult.questionResults.map((qr, idx) => {
+              const originalQ = questionsForAssessment[idx] || {}
+              return {
+                ...qr,
+                questionId: qr.questionId || originalQ.questionId,
+                question: qr.question || originalQ.prompt || originalQ.task || '',
+                prompt: originalQ.prompt || originalQ.task || qr.question || '',
+                context: qr.context || originalQ.context || originalQ.situation || '',
+                situation: originalQ.situation || originalQ.context || '',
+                studentAnswer: qr.studentAnswer || originalQ.studentAnswer || '',
+                arceFocus: qr.arceFocus || (Array.isArray(originalQ.arceFocus) ? originalQ.arceFocus[0] : originalQ.arceFocus) || 'analysis',
+                sectionId: qr.sectionId || originalQ.sectionId,
+                type: qr.type || originalQ.type,
+                phase: qr.phase || originalQ.phase,
+                maxScore: qr.maxScore || originalQ.maxScore || 5
+              }
+            })
+            console.log('✅ Mode B: Enriched questionResults with original data')
+          } else {
+            // 🆕 AI didn't return questionResults, create from questionsForAssessment
+            console.log('⚠️ Mode B: Missing questionResults, creating from questionsForAssessment')
+            const totalScore = assessmentResult.summary?.totalScore || 0
+            const avgScorePerQuestion = totalScore / questionsForAssessment.length
+            
+            assessmentResult.questionResults = questionsForAssessment.map((q, idx) => ({
+              questionId: q.questionId || `q${idx + 1}`,
+              sectionId: q.sectionId || '',
+              question: q.prompt || q.task || '',
+              prompt: q.prompt || q.task || '',
+              context: q.context || q.situation || '',
+              situation: q.situation || q.context || '',
+              studentAnswer: q.studentAnswer || '',
+              type: q.type || '',
+              phase: q.phase || '',
+              arceFocus: Array.isArray(q.arceFocus) ? q.arceFocus[0] : (q.arceFocus || 'analysis'),
+              maxScore: q.maxScore || 5,
+              score: Math.round(avgScorePerQuestion * (q.maxScore || 5) / 5),
+              passed: avgScorePerQuestion >= 3,
+              feedback: 'ประเมินรวมเป็น Batch'
+            }))
+            console.log(`✅ Mode B: Created ${assessmentResult.questionResults.length} questionResults`)
+          }
+          
+          console.log('✅ Batch Assessment completed:', {
+            batches: batches.length,
+            totalScore: assessmentResult.summary.totalScore
           })
           
-        } catch (multiAgentError) {
-          console.error('❌ Multi-Agent failed, falling back to single agent:', multiAgentError.message)
-          // Fall through to single agent below
+        } catch (batchError) {
+          console.error('❌ Batch assessment failed, falling back to single agent:', batchError.message)
+          assessmentResult = null
+        }
+      }
+
+      // 🔍 Mode C: Per-Question Assessment - ประเมินแยกทีละข้อ
+      if (!assessmentResult && worksheetAssessmentMode === 'per-question') {
+        console.log('🔍 Using Per-Question Assessment mode for worksheet')
+        
+        try {
+          // Process each question individually in parallel
+          const perQuestionResults = await Promise.all(questionsForAssessment.map(async (q, idx) => {
+            const questionPrompt = buildPerQuestionPrompt(q, worksheet, idx + 1)
+            const completion = await openai.chat.completions.create({
+              model: model,
+              messages: [
+                { role: 'system', content: systemMessage },
+                { role: 'user', content: questionPrompt }
+              ],
+              temperature: 0.3,
+              max_tokens: 1500
+            })
+            
+            let cleanedText = completion.choices[0].message.content.trim()
+            if (cleanedText.startsWith('```')) {
+              cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
+            }
+            const aiResult = JSON.parse(cleanedText)
+            
+            // 🔄 Enrich with original question data (in case AI didn't include it)
+            return {
+              ...aiResult,
+              questionId: aiResult.questionId || q.questionId,
+              question: aiResult.question || q.prompt || q.question || '',
+              prompt: q.prompt || aiResult.question || '',
+              context: aiResult.context || q.context || q.situation || '',
+              situation: q.context || q.situation || '',
+              studentAnswer: aiResult.studentAnswer || q.studentAnswer || '',
+              arceFocus: aiResult.arceFocus || (Array.isArray(q.arceFocus) ? q.arceFocus[0] : q.arceFocus) || 'analysis',
+              sectionId: q.sectionId,
+              type: q.type,
+              phase: q.phase
+            }
+          }))
+          
+          // Summary Agent: รวมผลจากทุกข้อ
+          assessmentResult = await summarizePerQuestionResults(perQuestionResults, worksheet, questionsForAssessment, openai, model)
+          
+          // 🔄 Ensure questionResults in final result has complete data
+          if (assessmentResult.questionResults) {
+            assessmentResult.questionResults = assessmentResult.questionResults.map((qr, idx) => {
+              const originalQ = questionsForAssessment[idx] || {}
+              const enrichedResult = perQuestionResults[idx] || {}
+              return {
+                ...qr,
+                question: qr.question || enrichedResult.question || originalQ.prompt || '',
+                prompt: qr.prompt || enrichedResult.prompt || originalQ.prompt || '',
+                context: qr.context || enrichedResult.context || originalQ.context || '',
+                situation: qr.situation || enrichedResult.situation || originalQ.context || '',
+                studentAnswer: qr.studentAnswer || enrichedResult.studentAnswer || originalQ.studentAnswer || '',
+                arceFocus: qr.arceFocus || enrichedResult.arceFocus || (Array.isArray(originalQ.arceFocus) ? originalQ.arceFocus[0] : originalQ.arceFocus) || 'analysis'
+              }
+            })
+          }
+          
+          assessmentResult.assessmentMode = 'per-question'
+          assessmentResult.perQuestionDetails = {
+            questionCount: questionsForAssessment.length,
+            individualResults: perQuestionResults
+          }
+          
+          console.log('✅ Per-Question Assessment completed:', {
+            questions: questionsForAssessment.length,
+            totalScore: assessmentResult.summary.totalScore
+          })
+          
+        } catch (perQuestionError) {
+          console.error('❌ Per-Question assessment failed, falling back to single agent:', perQuestionError.message)
           assessmentResult = null
         }
       }
       
-      // Single Agent Mode (default or fallback)
+      // ⚡ Mode A: Single Agent Mode (default or fallback)
       if (!assessmentResult) {
         console.log('🤖×1 Using Single Agent mode for worksheet assessment')
+        
+        // Calculate max_tokens based on number of questions
+        // Base: 3000 tokens for structure + 800 per question (enough for detailed feedback)
+        // Max: 16000 tokens (gpt-4o-mini supports up to 16k output)
+        const calculatedMaxTokens = Math.min(16000, Math.max(4000, 3000 + (questionsForAssessment.length * 800)))
+        console.log(`📝 Max tokens for ${questionsForAssessment.length} questions: ${calculatedMaxTokens}`)
         
         const completion = await openai.chat.completions.create({
           model: model,
@@ -1655,7 +1990,7 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
             { role: 'user', content: prompt }
           ],
           temperature: 0.3,
-          max_tokens: 4000
+          max_tokens: calculatedMaxTokens
         })
 
         const responseText = completion.choices[0].message.content
@@ -1667,6 +2002,57 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
           }
           assessmentResult = JSON.parse(cleanedText)
           assessmentResult.assessmentMode = 'single' // Mark as single agent
+          
+          // 🔄 Enrich or create questionResults with original question data for Mode A
+          if (assessmentResult.questionResults && Array.isArray(assessmentResult.questionResults) && assessmentResult.questionResults.length > 0) {
+            // Enrich existing questionResults
+            assessmentResult.questionResults = assessmentResult.questionResults.map((qr, idx) => {
+              const originalQ = questionsForAssessment[idx] || {}
+              return {
+                ...qr,
+                questionId: qr.questionId || originalQ.questionId || `q${idx + 1}`,
+                question: qr.question || originalQ.prompt || originalQ.task || '',
+                prompt: originalQ.prompt || originalQ.task || qr.question || '',
+                context: qr.context || originalQ.context || originalQ.situation || '',
+                situation: originalQ.situation || originalQ.context || qr.context || '',
+                studentAnswer: qr.studentAnswer || originalQ.studentAnswer || '',
+                arceFocus: qr.arceFocus || (Array.isArray(originalQ.arceFocus) ? originalQ.arceFocus[0] : originalQ.arceFocus) || 'analysis',
+                sectionId: qr.sectionId || originalQ.sectionId || '',
+                type: qr.type || originalQ.type || '',
+                maxScore: qr.maxScore || originalQ.maxScore || 5
+              }
+            })
+            console.log('✅ Mode A: Enriched existing questionResults')
+          } else {
+            // 🆕 AI didn't return questionResults, create from questionsForAssessment
+            console.log('⚠️ Mode A: AI did not return questionResults, creating from questionsForAssessment')
+            const totalScore = assessmentResult.summary?.totalScore || 0
+            const avgScorePerQuestion = totalScore / questionsForAssessment.length
+            
+            assessmentResult.questionResults = questionsForAssessment.map((q, idx) => ({
+              questionId: q.questionId || `q${idx + 1}`,
+              sectionId: q.sectionId || '',
+              question: q.prompt || q.task || '',
+              prompt: q.prompt || q.task || '',
+              context: q.context || q.situation || '',
+              situation: q.situation || q.context || '',
+              studentAnswer: q.studentAnswer || '',
+              type: q.type || '',
+              phase: q.phase || '',
+              arceFocus: Array.isArray(q.arceFocus) ? q.arceFocus[0] : (q.arceFocus || 'analysis'),
+              maxScore: q.maxScore || 5,
+              score: Math.round(avgScorePerQuestion * (q.maxScore || 5) / 5), // Distribute score
+              passed: avgScorePerQuestion >= 3,
+              feedback: assessmentResult.summary?.overallFeedback || 'ประเมินภาพรวมทั้งใบงาน',
+              arceScores: {
+                analysis: assessmentResult.arceScores?.analysis?.raw || 0,
+                reasoning: assessmentResult.arceScores?.reasoning?.raw || 0,
+                creativity: assessmentResult.arceScores?.creativity?.raw || 0,
+                evidence: assessmentResult.arceScores?.evidence?.raw || 0
+              }
+            }))
+            console.log(`✅ Mode A: Created ${assessmentResult.questionResults.length} questionResults from questionsForAssessment`)
+          }
         } catch (parseError) {
           console.error('Failed to parse assessment JSON:', responseText)
           return res.status(500).send({ error: 'Failed to parse AI response' })
@@ -1950,6 +2336,383 @@ ${q.rubric ? `- เกณฑ์: ${JSON.stringify(q.rubric)}` : ''}
 
     } catch (error) {
       console.error('❌ Error assessing worksheet:', error)
+      return res.status(500).send({ error: error.message })
+    }
+  })
+})
+
+/**
+ * 🔄 Reassess Worksheet Submission
+ * ประเมินซ้ำ submission โดยครูเลือกโหมดได้
+ */
+exports.reassessWorksheetSubmission = functions.runWith({ 
+  timeoutSeconds: 180, 
+  memory: '1GB',
+  secrets: ['OPENAI_API_KEY']
+}).https.onRequest(async (req, res) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Origin', '*')
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.set('Access-Control-Max-Age', '3600')
+    return res.status(204).send('')
+  }
+  
+  return cors(req, res, async () => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send({ error: 'Method not allowed' })
+      }
+
+      // Verify teacher role
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.split('Bearer ')[1] : null
+      
+      if (!token) {
+        return res.status(401).send({ error: 'Unauthorized: No token provided' })
+      }
+      
+      let decodedToken
+      try {
+        decodedToken = await admin.auth().verifyIdToken(token)
+      } catch (authError) {
+        return res.status(401).send({ error: 'Unauthorized: Invalid token' })
+      }
+      
+      const db = getDb()
+      
+      // Check if user is teacher
+      const userDoc = await db.collection('users').doc(decodedToken.uid).get()
+      if (!userDoc.exists || userDoc.data().role !== 'teacher') {
+        return res.status(403).send({ error: 'Forbidden: Teacher role required' })
+      }
+
+      const {
+        submissionId,
+        worksheetId,
+        answers,
+        assessmentMode, // 'single' | 'batch' | 'per-question' | 'multi-agent-worksheet'
+        reason
+      } = req.body
+
+      if (!worksheetId || !submissionId) {
+        return res.status(400).send({
+          error: 'Missing required: worksheetId, submissionId'
+        })
+      }
+
+      console.log(`🔄 Reassessing submission ${submissionId} for worksheet ${worksheetId} with mode: ${assessmentMode}`)
+
+      // Load original submission if answers not provided
+      let originalAnswers = answers
+      if (!originalAnswers) {
+        const subDoc = await db.collection('worksheetSubmissions').doc(submissionId).get()
+        if (!subDoc.exists) {
+          return res.status(404).send({ error: 'Submission not found' })
+        }
+        originalAnswers = subDoc.data().answers
+      }
+
+      // Load worksheet
+      const wsDoc = await db.collection('eWorksheets').doc(worksheetId).get()
+      if (!wsDoc.exists) {
+        return res.status(404).send({ error: 'Worksheet not found' })
+      }
+      const worksheet = wsDoc.data()
+
+      // Override assessment mode for this reassessment
+      const useMultiAgent = assessmentMode === 'multi-agent-worksheet'
+      const worksheetAssessmentMode = assessmentMode || 'single'
+
+      console.log(`📊 Using mode: ${worksheetAssessmentMode}, Multi-Agent: ${useMultiAgent}`)
+
+      // Get OpenAI client
+      let openai
+      try {
+        openai = getOpenAIClient()
+      } catch (err) {
+        return res.status(500).send({ error: 'OpenAI not configured' })
+      }
+
+      const model = getDefaultModel()
+
+      // Build questions for assessment
+      const questionsForAssessment = []
+      worksheet.sections.forEach(section => {
+        section.questions.forEach(q => {
+          const answerKey = `${section.id}_${q.id}`
+          const studentAnswer = originalAnswers[answerKey]
+          if (studentAnswer !== undefined && studentAnswer !== '') {
+            if (q.type === 'arce_situation') {
+              let formattedAnswer = studentAnswer
+              if (typeof studentAnswer === 'object' && studentAnswer.type === 'arce_structured') {
+                formattedAnswer = studentAnswer.fullText || JSON.stringify(studentAnswer)
+              }
+              questionsForAssessment.push({
+                questionId: q.id,
+                sectionId: section.id,
+                phase: section.phase,
+                type: q.type,
+                situation: q.situation || '',
+                task: q.task || '',
+                expectedArce: q.expected || null,
+                prompt: q.task || q.prompt || '',
+                context: q.situation || q.context || '',
+                arceFocus: ['analysis', 'reasoning', 'creativity', 'evidence'],
+                maxScore: q.maxScore || 20,
+                rubric: q.rubric || null,
+                studentAnswer: formattedAnswer
+              })
+            } else {
+              questionsForAssessment.push({
+                questionId: q.id,
+                sectionId: section.id,
+                phase: section.phase,
+                type: q.type,
+                prompt: q.prompt,
+                context: q.context || '',
+                arceFocus: q.arceFocus,
+                maxScore: q.maxScore || 5,
+                rubric: q.rubric || null,
+                studentAnswer: studentAnswer
+              })
+            }
+          }
+        })
+      })
+
+      if (questionsForAssessment.length === 0) {
+        return res.status(400).send({ error: 'No answers to reassess' })
+      }
+
+      // System message for assessment
+      const systemMessage = `คุณเป็นผู้เชี่ยวชาญประเมินทักษะ HOTS ที่:
+1. ประเมินอย่างยุติธรรม ตามหลักฐานในคำตอบ
+2. ให้ feedback ที่สร้างสรรค์ เป็นกำลังใจ
+3. ระบุจุดแข็ง/จุดอ่อนอย่างเฉพาะเจาะจง
+4. แนะนำอย่างเป็นรูปธรรม ทำได้จริง
+5. เข้าใจมาตรฐาน PA/DPA ของไทย
+ตอบเป็น JSON ภาษาไทยเท่านั้น`
+
+      let assessmentResult
+
+      // 🤖 Multi-Agent Mode
+      if (useMultiAgent) {
+        console.log('🤖×6 Using Multi-Agent mode for reassessment')
+        
+        const combinedAnswer = questionsForAssessment
+          .map(q => `${q.prompt}: ${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}`)
+          .join('\n\n')
+        
+        const mainQuestion = questionsForAssessment[0]?.prompt || worksheet.metadata?.title || 'ใบงาน'
+        
+        try {
+          const llmProvider = getLLMProvider()
+          const multiAgentResult = await runMultiAgentAssessment(
+            llmProvider,
+            mainQuestion,
+            combinedAnswer,
+            {
+              gradeLevel: worksheet.metadata?.gradeLevel || 'ม.4',
+              subject: worksheet.metadata?.subjectGroup || 'ทั่วไป',
+              expectedLOs: worksheet.metadata?.learningOutcomes || []
+            }
+          )
+          
+          const totalMaxScore = worksheet.scoring?.totalPoints || (questionsForAssessment.length * 5)
+          const multiTotalScore = (multiAgentResult.consensus?.analysis || 0) +
+                                  (multiAgentResult.consensus?.reasoning || 0) +
+                                  (multiAgentResult.consensus?.creativity || 0) +
+                                  (multiAgentResult.consensus?.evidence || 0)
+          const percentage = Math.round((multiTotalScore / 20) * 100)
+          const paLevel = percentage >= 80 ? 4 : percentage >= 60 ? 3 : percentage >= 40 ? 2 : 1
+          const paLevelText = paLevel === 4 ? 'ระดับ 4: ดีมาก' : 
+                              paLevel === 3 ? 'ระดับ 3: ดี' :
+                              paLevel === 2 ? 'ระดับ 2: พอใช้' : 'ระดับ 1: ต้องปรับปรุง'
+          
+          assessmentResult = {
+            summary: {
+              totalScore: Math.round((percentage / 100) * totalMaxScore),
+              maxScore: totalMaxScore,
+              percentage,
+              paLevel,
+              paLevelText,
+              overallFeedback: multiAgentResult.consensus?.feedback || 'การประเมินเสร็จสิ้น',
+              recommendation: multiAgentResult.consensus?.recommendations?.[0] || 'ฝึกฝนต่อไป'
+            },
+            arceScores: {
+              analysis: {
+                raw: multiAgentResult.consensus?.analysis || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.analysis || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.analysis?.feedback || ''
+              },
+              reasoning: {
+                raw: multiAgentResult.consensus?.reasoning || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.reasoning || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.reasoning?.feedback || ''
+              },
+              creativity: {
+                raw: multiAgentResult.consensus?.creativity || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.creativity || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.creativity?.feedback || ''
+              },
+              evidence: {
+                raw: multiAgentResult.consensus?.evidence || 0,
+                max: 5,
+                percentage: ((multiAgentResult.consensus?.evidence || 0) / 5) * 100,
+                feedback: multiAgentResult.agentResults?.evidence?.feedback || ''
+              }
+            },
+            questionResults: questionsForAssessment.map((q, idx) => ({
+              questionId: q.questionId,
+              sectionId: q.sectionId,
+              question: q.prompt,
+              studentAnswer: q.studentAnswer,
+              type: q.type,
+              phase: q.phase,
+              context: q.context,
+              arceFocus: q.arceFocus,
+              bloomLevel: 4,
+              bloomName: 'Analyze (วิเคราะห์)',
+              score: Math.round((percentage / 100) * q.maxScore),
+              maxScore: q.maxScore,
+              passed: percentage >= 50,
+              feedback: idx === 0 ? (multiAgentResult.consensus?.feedback || '') : `ประเมินรวมกับข้อ 1 (Multi-Agent Mode)`,
+              arceScores: {
+                analysis: multiAgentResult.consensus?.analysis || 0,
+                reasoning: multiAgentResult.consensus?.reasoning || 0,
+                creativity: multiAgentResult.consensus?.creativity || 0,
+                evidence: multiAgentResult.consensus?.evidence || 0
+              }
+            })),
+            strengths: multiAgentResult.consensus?.strengths || multiAgentResult.strengths || [],
+            weaknesses: multiAgentResult.consensus?.weaknesses || multiAgentResult.weaknesses || [],
+            nextSteps: multiAgentResult.consensus?.recommendations || [],
+            teacherNotes: `🔄 ประเมินซ้ำด้วย Multi-Agent (6 AI): ความเชื่อมั่น ${multiAgentResult.confidence || 'N/A'}%\n📝 เหตุผล: ${reason || 'ไม่ระบุ'}`,
+            assessmentMode: 'multi-agent',
+            agentDetails: {
+              analysis: multiAgentResult.agentDetails?.analysis || {},
+              reasoning: multiAgentResult.agentDetails?.reasoning || {},
+              creativity: multiAgentResult.agentDetails?.creativity || {},
+              evidence: multiAgentResult.agentDetails?.evidence || {},
+              adversarial: multiAgentResult.agentDetails?.adversarial || {},
+              consensus: multiAgentResult.agentDetails?.consensus || {}
+            },
+            multiAgentMetadata: {
+              processingTimeMs: multiAgentResult.multiAgentMetadata?.processingTimeMs || 0,
+              agentCount: 6,
+              consensusLevel: multiAgentResult.agentDetails?.consensus?.consensusLevel || 'moderate'
+            },
+            reassessedAt: admin.firestore.FieldValue.serverTimestamp(),
+            reassessedBy: decodedToken.uid,
+            reassessReason: reason || 'Teacher requested'
+          }
+          
+        } catch (multiAgentError) {
+          console.error('❌ Multi-Agent reassess failed:', multiAgentError.message)
+          throw multiAgentError
+        }
+      } else {
+        // Single/Batch/Per-Question modes (fall back to single call)
+        console.log(`📄 Using ${worksheetAssessmentMode} mode for reassessment`)
+        
+        const prompt = `ประเมินใบงานต่อไปนี้:
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheet.metadata?.title || 'ใบงาน'}
+- รายวิชา: ${worksheet.metadata?.courseName || ''}
+- ระดับชั้น: ${worksheet.metadata?.gradeLevel || 'ม.4'}
+- จำนวนข้อ: ${questionsForAssessment.length}
+
+📋 คำตอบนักเรียน:
+${questionsForAssessment.map((q, i) => `
+ข้อ ${i + 1}: ${q.prompt}
+ARCE Focus: ${Array.isArray(q.arceFocus) ? q.arceFocus.join(', ') : q.arceFocus || 'analysis'}
+คะแนนเต็ม: ${q.maxScore || 5}
+คำตอบ: """${typeof q.studentAnswer === 'object' ? JSON.stringify(q.studentAnswer) : q.studentAnswer}"""
+`).join('\n')}
+
+ตอบเป็น JSON ตามโครงสร้างนี้:
+{
+  "summary": {
+    "totalScore": <number>,
+    "maxScore": ${worksheet.scoring?.totalPoints || questionsForAssessment.length * 5},
+    "percentage": <0-100>,
+    "paLevel": <1-4>,
+    "paLevelText": "<string>",
+    "overallFeedback": "<string ภาษาไทย>",
+    "recommendation": "<string ภาษาไทย>"
+  },
+  "arceScores": {
+    "analysis": {"raw": <0-5>, "max": 5, "percentage": <0-100>, "feedback": "<string>"},
+    "reasoning": {"raw": <0-5>, "max": 5, "percentage": <0-100>, "feedback": "<string>"},
+    "creativity": {"raw": <0-5>, "max": 5, "percentage": <0-100>, "feedback": "<string>"},
+    "evidence": {"raw": <0-5>, "max": 5, "percentage": <0-100>, "feedback": "<string>"}
+  },
+  "questionResults": [
+    {
+      "questionId": "<string>",
+      "score": <number>,
+      "maxScore": <number>,
+      "passed": <boolean>,
+      "feedback": "<string ภาษาไทย>",
+      "bloomLevel": <1-6>,
+      "bloomName": "<string>"
+    }
+  ],
+  "strengths": ["<จุดเด่น 1>", "<จุดเด่น 2>"],
+  "weaknesses": ["<จุดที่ควรพัฒนา 1>", "<จุดที่ควรพัฒนา 2>"],
+  "nextSteps": ["<ข้อแนะนำ 1>", "<ข้อแนะนำ 2>"]
+}`
+
+        const completion = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            { role: 'system', content: systemMessage },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 4000
+        })
+        
+        let cleanedText = completion.choices[0].message.content.trim()
+        if (cleanedText.startsWith('```')) {
+          cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/i, '')
+          cleanedText = cleanedText.replace(/\n?```\s*$/i, '')
+        }
+        
+        assessmentResult = JSON.parse(cleanedText)
+        assessmentResult.assessmentMode = worksheetAssessmentMode
+        assessmentResult.teacherNotes = `🔄 ประเมินซ้ำด้วยโหมด ${worksheetAssessmentMode}\n📝 เหตุผล: ${reason || 'ไม่ระบุ'}`
+        assessmentResult.reassessedAt = admin.firestore.FieldValue.serverTimestamp()
+        assessmentResult.reassessedBy = decodedToken.uid
+        assessmentResult.reassessReason = reason || 'Teacher requested'
+      }
+
+      // Update submission in Firestore
+      await db.collection('worksheetSubmissions').doc(submissionId).update({
+        assessment: assessmentResult,
+        reassessedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reassessedBy: decodedToken.uid
+      })
+
+      console.log(`✅ Reassessment complete for ${submissionId}:`, {
+        mode: assessmentResult.assessmentMode,
+        percentage: assessmentResult.summary?.percentage
+      })
+
+      return res.status(200).send({
+        success: true,
+        assessment: assessmentResult,
+        message: `ประเมินซ้ำสำเร็จด้วยโหมด ${assessmentResult.assessmentMode}`
+      })
+
+    } catch (error) {
+      console.error('❌ Error reassessing worksheet:', error)
       return res.status(500).send({ error: error.message })
     }
   })

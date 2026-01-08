@@ -526,10 +526,20 @@ export const useChatStore = defineStore('chat', () => {
   // Add message to Firestore
   async function addMessage(messageData) {
     try {
+      // 🔍 DEBUG: Log message data before saving
+      console.log('📝 Adding message to Firestore:', {
+        type: messageData.type,
+        hasAssessmentId: !!messageData.assessmentId,
+        assessmentId: messageData.assessmentId,
+        hasScores: !!messageData.scores,
+        scores: messageData.scores
+      })
+      
       const messageRef = await addDoc(collection(db, 'messages'), {
         ...messageData,
         timestamp: serverTimestamp()
       })
+      console.log('✅ Message saved with ID:', messageRef.id)
       return messageRef.id
     } catch (err) {
       console.error('Error adding message:', err)
@@ -689,16 +699,20 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       // สร้าง feedback message พร้อมคะแนน (final assessment)
-      const assessment = result.result
+      // 🆕 Support both formats: result.result (single-agent) and result.assessment (multi-agent)
+      const assessment = result.result || result.assessment
       
       // 🛡️ Validate assessment data exists
-      if (!assessment || !assessment.rubricScores) {
+      // Multi-agent uses finalScores, single-agent uses rubricScores
+      const rubricScoresFromAssessment = assessment?.rubricScores || assessment?.finalScores
+      if (!assessment || !rubricScoresFromAssessment) {
         console.error('Invalid assessment result:', result)
         throw new Error('ไม่ได้รับผลการประเมินจากระบบ กรุณาลองใหม่อีกครั้ง')
       }
       
       // Default values for missing fields
-      const rubricScores = assessment.rubricScores || { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+      // 🆕 Support both formats: rubricScores (single-agent) and finalScores (multi-agent)
+      const rubricScores = assessment.rubricScores || assessment.finalScores || { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
       const overallScore = assessment.overallScore ?? (rubricScores.analysis + rubricScores.reasoning + rubricScores.creativity + rubricScores.evidence)
       
       // สร้างส่วน LO assessment ถ้ามี
@@ -748,14 +762,34 @@ ${(assessment.suggestions || []).map((s, i) => `${i + 1}. ${s}`).join('\n') || '
 🎲 **พร้อมสำหรับคำถามใหม่หรือไม่?** พิมพ์ "ถัดไป" หรือ "next" เพื่อรับคำถามข้อใหม่ค่ะ
       `.trim()
 
+      // 🔍 DEBUG: Log assessment data before saving
+      console.log('📊 Assessment result to save:', {
+        resultId: result.id,
+        hasRubricScores: !!assessment.rubricScores,
+        rubricScores: assessment.rubricScores,
+        hasFinalScores: !!assessment.finalScores,
+        finalScores: assessment.finalScores,
+        // 🆕 Debug feedback fields
+        hasFeedbackText: !!assessment.feedbackText,
+        feedbackText: assessment.feedbackText?.substring(0, 100),
+        hasStrengths: !!assessment.strengths && assessment.strengths.length > 0,
+        strengths: assessment.strengths,
+        hasWeaknesses: !!assessment.weaknesses && assessment.weaknesses.length > 0,
+        weaknesses: assessment.weaknesses,
+        hasSuggestions: !!assessment.suggestions && assessment.suggestions.length > 0,
+        suggestions: assessment.suggestions
+      })
+
       // Add AI response message with assessment
+      // 🆕 Use rubricScores or finalScores (for multi-agent)
+      const scoresToSave = assessment.rubricScores || assessment.finalScores
       await addMessage({
         sessionId: currentSession.value.id,
         from: 'bot',
         text: feedbackMessage,
         type: 'feedback',
         assessmentId: result.id,
-        scores: assessment.rubricScores
+        scores: scoresToSave
       })
 
       // Reset current question (รอให้ขอคำถามใหม่)

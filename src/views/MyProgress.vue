@@ -577,19 +577,31 @@ async function loadAssessmentHistory() {
 }
 
 function formatDate(timestamp) {
-  const date = new Date(timestamp)
-  return `${date.getDate()}/${date.getMonth() + 1}`
+  if (!timestamp) return '-'
+  try {
+    const date = new Date(timestamp)
+    if (isNaN(date.getTime())) return '-'
+    return `${date.getDate()}/${date.getMonth() + 1}`
+  } catch (e) {
+    return '-'
+  }
 }
 
 function formatDateTime(timestamp) {
-  const date = new Date(timestamp)
-  return date.toLocaleString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  if (!timestamp) return '(รอบันทึกวันที่)'
+  try {
+    const date = timestamp?.toDate?.() || new Date(timestamp)
+    if (isNaN(date.getTime())) return '(รอบันทึกวันที่)'
+    return date.toLocaleString('th-TH', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch (e) {
+    return '(รอบันทึกวันที่)'
+  }
 }
 
 function getScoreClass(score) {
@@ -681,13 +693,18 @@ function calculatePercentage(passed, total) {
 }
 
 function formatDateShort(timestamp) {
-  if (!timestamp) return '-'
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  return new Intl.DateTimeFormat('th-TH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  }).format(date)
+  if (!timestamp) return '(รอบันทึกวันที่)'
+  try {
+    const date = timestamp?.toDate?.() || new Date(timestamp)
+    if (isNaN(date.getTime())) return '(รอบันทึกวันที่)'
+    return new Intl.DateTimeFormat('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }).format(date)
+  } catch (e) {
+    return '(รอบันทึกวันที่)'
+  }
 }
 
 function goToCourse(courseId) {

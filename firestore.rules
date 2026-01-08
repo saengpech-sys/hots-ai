@@ -395,6 +395,12 @@ service cloud.firestore {
     
     // ==================== ELECTRONIC WORKSHEET SYSTEM ====================
     
+    // 🆕 Old worksheets collection (backward compatibility)
+    match /worksheets/{worksheetId} {
+      allow read: if isSignedIn(); // All authenticated users can read
+      allow write: if isTeacher();
+    }
+    
     // 🆕 Electronic Worksheets collection (AI-GENERATED WORKSHEETS)
     match /eWorksheets/{worksheetId} {
       allow read: if isSignedIn(); // All authenticated users can read
@@ -407,8 +413,9 @@ service cloud.firestore {
     
     // 🆕 Worksheet Submissions collection (STUDENT SUBMISSIONS)
     match /worksheetSubmissions/{submissionId} {
+      // Allow read if signed in AND (owner OR teacher OR parent OR same studentId)
       allow read: if isSignedIn() && 
-                    (isOwner(resource.data.studentId) || isTeacher() || isParent());
+                    (resource.data.studentId == request.auth.uid || isTeacher() || isParent());
       // Allow any signed-in user to create, check studentId matches their uid
       allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
       allow update: if isSignedIn(); // System updates with assessment
@@ -416,8 +423,11 @@ service cloud.firestore {
     }
     
     // 🆕 Worksheet Drafts collection (STUDENT DRAFT ANSWERS)
+    // draftId format: {studentId}_{worksheetId}
     match /worksheetDrafts/{draftId} {
-      allow read: if isSignedIn() && isOwner(resource.data.studentId);
+      // Allow read if user owns this draft (draftId starts with their uid)
+      // This handles both existing docs and non-existent docs (getDoc on missing doc)
+      allow read: if isSignedIn() && draftId.matches(request.auth.uid + '_.*');
       // Allow any signed-in user to create/update their own drafts
       allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.studentId == request.auth.uid;

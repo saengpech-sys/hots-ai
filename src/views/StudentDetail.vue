@@ -158,6 +158,10 @@
           <div class="assessment-date">
             📅 {{ formatDate(assessment.createdAt) }}
           </div>
+          <!-- Assessment Mode Badge -->
+          <div class="assessment-mode-badge" :class="getAssessmentMode(assessment)">
+            {{ getAssessmentModeLabel(assessment) }}
+          </div>
           <div class="assessment-score" :class="getScoreClass(assessment.overallScore)">
             {{ assessment.overallScore }}/20
           </div>
@@ -166,47 +170,54 @@
         <!-- Question Context -->
         <div class="question-section">
           <h4>❓ คำถาม:</h4>
-          <p class="question-text">{{ assessment.questionContext }}</p>
+          <p class="question-text">{{ assessment.questionText || assessment.questionContext || '(ไม่มีข้อมูลคำถาม)' }}</p>
         </div>
 
         <!-- Student Answer -->
         <div class="answer-section">
           <h4>✍️ คำตอบของนักเรียน:</h4>
-          <div class="answer-text">{{ assessment.rawAnswer }}</div>
+          <div class="answer-text">{{ assessment.studentAnswer || assessment.rawAnswer || '(ไม่มีข้อมูลคำตอบ)' }}</div>
         </div>
 
         <!-- Scores Breakdown -->
         <div class="scores-section">
           <h4>📊 คะแนนรายด้าน:</h4>
-          <div class="scores-grid">
-            <div class="score-item">
+          <div class="scores-grid enhanced">
+            <div class="score-item analysis">
               <span class="score-label">🔍 วิเคราะห์</span>
               <div class="score-bar">
                 <div class="score-fill" :style="{ width: (assessment.rubricScores.analysis / 5 * 100) + '%' }"></div>
               </div>
               <span class="score-value">{{ assessment.rubricScores.analysis }}/5</span>
             </div>
-            <div class="score-item">
+            <div class="score-item reasoning">
               <span class="score-label">🧠 เหตุผล</span>
               <div class="score-bar">
                 <div class="score-fill" :style="{ width: (assessment.rubricScores.reasoning / 5 * 100) + '%' }"></div>
               </div>
               <span class="score-value">{{ assessment.rubricScores.reasoning }}/5</span>
             </div>
-            <div class="score-item">
+            <div class="score-item creativity">
               <span class="score-label">💡 สร้างสรรค์</span>
               <div class="score-bar">
                 <div class="score-fill" :style="{ width: (assessment.rubricScores.creativity / 5 * 100) + '%' }"></div>
               </div>
               <span class="score-value">{{ assessment.rubricScores.creativity }}/5</span>
             </div>
-            <div class="score-item">
+            <div class="score-item evidence">
               <span class="score-label">📚 หลักฐาน</span>
               <div class="score-bar">
                 <div class="score-fill" :style="{ width: (assessment.rubricScores.evidence / 5 * 100) + '%' }"></div>
               </div>
               <span class="score-value">{{ assessment.rubricScores.evidence }}/5</span>
             </div>
+          </div>
+          
+          <!-- Overall Score Card -->
+          <div class="overall-score-card" :class="getScoreClass(assessment.overallScore)">
+            <span class="overall-label">📊 คะแนนรวม</span>
+            <span class="overall-value">{{ assessment.overallScore }}/20</span>
+            <span class="overall-percentage">({{ ((assessment.overallScore / 20) * 100).toFixed(0) }}%)</span>
           </div>
         </div>
 
@@ -233,7 +244,7 @@
         <!-- Feedback -->
         <div class="feedback-section">
           <h4>💬 Feedback:</h4>
-          <p class="feedback-text">{{ assessment.feedbackText }}</p>
+          <p class="feedback-text">{{ assessment.feedbackText || assessment.feedback || 'ระบบได้ประเมินคำตอบของคุณเรียบร้อยแล้ว' }}</p>
 
           <div v-if="assessment.strengths?.length > 0" class="strengths">
             <strong>✨ จุดเด่น:</strong>
@@ -254,6 +265,94 @@
             <ul>
               <li v-for="(suggestion, idx) in assessment.suggestions" :key="idx">{{ suggestion }}</li>
             </ul>
+          </div>
+        </div>
+
+        <!-- Single Agent with Chain-of-Thought (For Teacher Review) -->
+        <div v-if="!assessment.multiAgentMode && !assessment.agentDetails && assessment.chainOfThought" class="single-agent-section">
+          <h4>🤖 Single Agent Assessment Details</h4>
+          <div class="agent-badge">
+            <span class="badge single-agent">🤖 Single Agent Mode (1 AI with CoT)</span>
+            <span v-if="assessment.confidence" class="confidence-badge" :class="getConfidenceClass(assessment.confidence)">
+              🎯 ความมั่นใจ: {{ formatConfidence(assessment.confidence) }}%
+            </span>
+          </div>
+          
+          <!-- Chain of Thought Process -->
+          <div class="cot-section">
+            <h5>🧠 กระบวนการคิด (Chain-of-Thought)</h5>
+            <div class="cot-steps">
+              <!-- Step 1: Summary -->
+              <div v-if="assessment.chainOfThought.step1_summary" class="cot-step">
+                <div class="step-header">
+                  <span class="step-number">1</span>
+                  <span class="step-title">📝 สรุปประเด็นหลัก</span>
+                </div>
+                <div class="step-content">
+                  {{ assessment.chainOfThought.step1_summary }}
+                </div>
+              </div>
+              
+              <!-- Step 2: Evidence per dimension -->
+              <div v-if="assessment.chainOfThought.step2_evidence" class="cot-step">
+                <div class="step-header">
+                  <span class="step-number">2</span>
+                  <span class="step-title">🔍 หลักฐานที่พบในแต่ละมิติ</span>
+                </div>
+                <div class="step-content evidence-grid">
+                  <div v-if="assessment.chainOfThought.step2_evidence.analysis" class="evidence-item">
+                    <strong>🔍 การวิเคราะห์:</strong>
+                    <p>{{ assessment.chainOfThought.step2_evidence.analysis }}</p>
+                  </div>
+                  <div v-if="assessment.chainOfThought.step2_evidence.reasoning" class="evidence-item">
+                    <strong>🧠 การให้เหตุผล:</strong>
+                    <p>{{ assessment.chainOfThought.step2_evidence.reasoning }}</p>
+                  </div>
+                  <div v-if="assessment.chainOfThought.step2_evidence.creativity" class="evidence-item">
+                    <strong>💡 ความคิดสร้างสรรค์:</strong>
+                    <p>{{ assessment.chainOfThought.step2_evidence.creativity }}</p>
+                  </div>
+                  <div v-if="assessment.chainOfThought.step2_evidence.evidence" class="evidence-item">
+                    <strong>📚 หลักฐาน:</strong>
+                    <p>{{ assessment.chainOfThought.step2_evidence.evidence }}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Step 3: Anchor Match -->
+              <div v-if="assessment.chainOfThought.step3_anchor_match" class="cot-step">
+                <div class="step-header">
+                  <span class="step-number">3</span>
+                  <span class="step-title">📊 เปรียบเทียบกับเกณฑ์</span>
+                </div>
+                <div class="step-content">
+                  {{ assessment.chainOfThought.step3_anchor_match }}
+                </div>
+              </div>
+              
+              <!-- Step 4: Decision -->
+              <div v-if="assessment.chainOfThought.step4_decision" class="cot-step">
+                <div class="step-header">
+                  <span class="step-number">4</span>
+                  <span class="step-title">⚖️ เหตุผลการตัดสินใจ</span>
+                </div>
+                <div class="step-content">
+                  {{ assessment.chainOfThought.step4_decision }}
+                </div>
+              </div>
+            </div>
+            
+            <!-- Raw CoT (for debugging/research) -->
+            <details class="raw-cot">
+              <summary>🔬 ดูข้อมูลดิบ (JSON)</summary>
+              <pre>{{ JSON.stringify(assessment.chainOfThought, null, 2) }}</pre>
+            </details>
+          </div>
+          
+          <!-- Confidence Reason -->
+          <div v-if="assessment.confidenceReason" class="confidence-section">
+            <h5>📌 เหตุผลความมั่นใจ</h5>
+            <p class="confidence-reason">{{ assessment.confidenceReason }}</p>
           </div>
         </div>
 
@@ -279,7 +378,7 @@
                 🎯 {{ assessment.agentDetails.analysis.confidence }}%
               </div>
               <div class="agent-rationale">
-                {{ assessment.agentDetails.analysis.microFeedback || assessment.agentDetails.analysis.rationale || 'ไม่มี feedback' }}
+                {{ getAgentFeedback(assessment.agentDetails.analysis) }}
               </div>
               <div v-if="assessment.agentDetails.analysis.chainOfThought" class="agent-cot">
                 <details>
@@ -300,7 +399,7 @@
                 🎯 {{ assessment.agentDetails.reasoning.confidence }}%
               </div>
               <div class="agent-rationale">
-                {{ assessment.agentDetails.reasoning.microFeedback || assessment.agentDetails.reasoning.rationale || 'ไม่มี feedback' }}
+                {{ getAgentFeedback(assessment.agentDetails.reasoning) }}
               </div>
               <div v-if="assessment.agentDetails.reasoning.chainOfThought" class="agent-cot">
                 <details>
@@ -321,7 +420,7 @@
                 🎯 {{ assessment.agentDetails.creativity.confidence }}%
               </div>
               <div class="agent-rationale">
-                {{ assessment.agentDetails.creativity.microFeedback || assessment.agentDetails.creativity.rationale || 'ไม่มี feedback' }}
+                {{ getAgentFeedback(assessment.agentDetails.creativity) }}
               </div>
               <div v-if="assessment.agentDetails.creativity.chainOfThought" class="agent-cot">
                 <details>
@@ -342,7 +441,7 @@
                 🎯 {{ assessment.agentDetails.evidence.confidence }}%
               </div>
               <div class="agent-rationale">
-                {{ assessment.agentDetails.evidence.microFeedback || assessment.agentDetails.evidence.rationale || 'ไม่มี feedback' }}
+                {{ getAgentFeedback(assessment.agentDetails.evidence) }}
               </div>
               <div v-if="assessment.agentDetails.evidence.chainOfThought" class="agent-cot">
                 <details>
@@ -361,14 +460,16 @@
               <div v-if="assessment.agentDetails.adversarial.refinedScores" class="refined-scores">
                 <strong>🔄 คะแนนที่ปรับปรุง:</strong>
                 <div class="score-grid">
-                  <div v-for="(item, key) in assessment.agentDetails.adversarial.refinedScores" :key="key" class="refined-item">
-                    <span class="dim-name">{{ key }}</span>
-                    <span v-if="item.changed" class="changed">
-                      {{ item.original }} → {{ item.refined }}
-                    </span>
-                    <span v-else class="unchanged">{{ item.refined || item.original }} ✓</span>
-                    <span v-if="item.reason" class="reason">{{ item.reason }}</span>
-                  </div>
+                  <template v-for="key in arceOrder" :key="key">
+                    <div v-if="assessment.agentDetails.adversarial.refinedScores[key]" class="refined-item">
+                      <span class="dim-name">{{ key }}</span>
+                      <span v-if="assessment.agentDetails.adversarial.refinedScores[key].changed" class="changed">
+                        {{ assessment.agentDetails.adversarial.refinedScores[key].original }} → {{ assessment.agentDetails.adversarial.refinedScores[key].refined }}
+                      </span>
+                      <span v-else class="unchanged">{{ assessment.agentDetails.adversarial.refinedScores[key].refined || assessment.agentDetails.adversarial.refinedScores[key].original }} ✓</span>
+                      <span v-if="assessment.agentDetails.adversarial.refinedScores[key].reason" class="reason">{{ assessment.agentDetails.adversarial.refinedScores[key].reason }}</span>
+                    </div>
+                  </template>
                 </div>
               </div>
               
@@ -415,9 +516,11 @@
               <div v-if="assessment.agentDetails.consensus.rubricScores" class="final-scores">
                 <strong>📊 คะแนนสุดท้าย:</strong>
                 <div class="score-tags">
-                  <span v-for="(score, key) in assessment.agentDetails.consensus.rubricScores" :key="key" class="score-tag">
-                    {{ key }}: {{ score }}/5
-                  </span>
+                  <template v-for="key in arceOrder" :key="key">
+                    <span v-if="assessment.agentDetails.consensus.rubricScores[key] !== undefined" class="score-tag">
+                      {{ key }}: {{ assessment.agentDetails.consensus.rubricScores[key] }}/5
+                    </span>
+                  </template>
                   <span class="score-tag total">
                     รวม: {{ assessment.agentDetails.consensus.totalScore }}/20
                   </span>
@@ -473,6 +576,9 @@ import { db } from '@/firebase/config'
 // Note: StudentDetail.vue calculates LO from loaded assessments array (same logic as loProgress.js utility)
 // This is efficient because assessments are already loaded for display
 
+// ARCE order constant for consistent display: Analysis → Reasoning → Creativity → Evidence
+const arceOrder = ['analysis', 'reasoning', 'creativity', 'evidence']
+
 const route = useRoute()
 const router = useRouter()
 
@@ -515,6 +621,8 @@ async function loadStudentData() {
     const assessmentsRef = collection(db, 'assessments')
     let q
 
+    console.log('📊 Loading assessments for studentId:', studentId, 'courseId:', courseId)
+
     if (courseId) {
       // Query แบบมี courseId
       q = query(
@@ -531,8 +639,10 @@ async function loadStudentData() {
     }
 
     const snapshot = await getDocs(q)
+    console.log('📊 Found assessments:', snapshot.docs.length)
     
     // เรียงข้อมูลหลัง query (client-side sorting)
+    const now = Date.now()
     assessments.value = snapshot.docs
       .map(doc => ({
         id: doc.id,
@@ -540,8 +650,9 @@ async function loadStudentData() {
       }))
       .sort((a, b) => {
         // เรียงจากล่าสุดไปเก่าสุด
-        const dateA = a.createdAt?.toMillis() || 0
-        const dateB = b.createdAt?.toMillis() || 0
+        // ใช้ timestamp ปัจจุบันเป็น fallback สำหรับ items ที่ไม่มีวันที่ (เพราะน่าจะเป็นของใหม่)
+        const dateA = a.createdAt?.toMillis?.() || a.timestamp?.toMillis?.() || now
+        const dateB = b.createdAt?.toMillis?.() || b.timestamp?.toMillis?.() || now
         return dateB - dateA
       })
     
@@ -570,8 +681,9 @@ async function loadStudentData() {
         ...doc.data()
       }))
       .sort((a, b) => {
-        const dateA = a.submittedAt?.toMillis() || 0
-        const dateB = b.submittedAt?.toMillis() || 0
+        // ใช้ timestamp ปัจจุบันเป็น fallback
+        const dateA = a.submittedAt?.toMillis?.() || a.createdAt?.toMillis?.() || now
+        const dateB = b.submittedAt?.toMillis?.() || b.createdAt?.toMillis?.() || now
         return dateB - dateA
       })
 
@@ -630,15 +742,72 @@ function getInitials(name) {
 }
 
 function formatDate(timestamp) {
-  if (!timestamp) return '-'
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  return new Intl.DateTimeFormat('th-TH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date)
+  if (!timestamp) return '(รอบันทึกวันที่)'
+  
+  try {
+    // รองรับทั้ง Firestore Timestamp, JavaScript Date, และ string
+    let date
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      date = timestamp.toDate()
+    } else if (timestamp.seconds) {
+      // Firestore Timestamp object format
+      date = new Date(timestamp.seconds * 1000)
+    } else if (timestamp instanceof Date) {
+      date = timestamp
+    } else if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      date = new Date(timestamp)
+    } else {
+      return '(รอบันทึกวันที่)'
+    }
+    
+    // ตรวจสอบว่า date valid หรือไม่
+    if (isNaN(date.getTime())) {
+      return '(รอบันทึกวันที่)'
+    }
+    
+    return new Intl.DateTimeFormat('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date)
+  } catch (error) {
+    console.warn('Error formatting date:', error, timestamp)
+    return '(รอบันทึกวันที่)'
+  }
+}
+
+// 🤖 Get Agent Feedback with smart fallbacks
+function getAgentFeedback(agentData) {
+  if (!agentData) return 'รอข้อมูล...'
+  
+  // 1. Primary: microFeedback
+  if (agentData.microFeedback) return agentData.microFeedback
+  
+  // 2. Fallback: rationale
+  if (agentData.rationale) return agentData.rationale
+  
+  // 3. Fallback: chainOfThought.step4_reasoning (เหตุผลการให้คะแนน)
+  if (agentData.chainOfThought?.step4_reasoning) {
+    return agentData.chainOfThought.step4_reasoning
+  }
+  
+  // 4. Fallback: chainOfThought.step3_anchor_match
+  if (agentData.chainOfThought?.step3_anchor_match) {
+    return agentData.chainOfThought.step3_anchor_match
+  }
+  
+  // 5. Fallback: anchorUsed (description ของ Anchor ที่ใช้)
+  if (agentData.anchorUsed) return agentData.anchorUsed
+  
+  // 6. Generate from score if nothing else
+  const score = agentData.score || 0
+  if (score >= 4) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับดีมาก`
+  if (score >= 3) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับดี`
+  if (score >= 2) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับปานกลาง`
+  if (score >= 1) return `ได้คะแนน ${score}/5 - ควรปรับปรุงเพิ่มเติม`
+  return `ได้คะแนน ${score}/5 - ยังไม่แสดงทักษะด้านนี้`
 }
 
 function getScoreClass(score) {
@@ -646,6 +815,34 @@ function getScoreClass(score) {
   if (score >= 12) return 'good'
   if (score >= 8) return 'fair'
   return 'poor'
+}
+
+// 🆕 Confidence helper functions
+function formatConfidence(confidence) {
+  if (typeof confidence !== 'number') return 0
+  return confidence > 1 ? confidence.toFixed(0) : (confidence * 100).toFixed(0)
+}
+
+function getConfidenceClass(confidence) {
+  const value = confidence > 1 ? confidence : confidence * 100
+  if (value >= 80) return 'high'
+  if (value >= 60) return 'medium'
+  return 'low'
+}
+
+// 🆕 Assessment mode helper functions
+function getAssessmentMode(assessment) {
+  if (assessment.multiAgentMode || assessment.agentDetails) {
+    return 'multi-agent'
+  }
+  return 'single-agent'
+}
+
+function getAssessmentModeLabel(assessment) {
+  if (assessment.multiAgentMode || assessment.agentDetails) {
+    return '🤖×6 Multi-Agent'
+  }
+  return '🤖 Single Agent'
 }
 
 async function exportReport() {
@@ -676,7 +873,7 @@ async function exportReport() {
       a.rubricScores.creativity,
       a.rubricScores.evidence,
       (a.loAssessment?.passedLOs || []).join(', '),
-      `"${(a.feedbackText || '').replace(/"/g, '""')}"`
+      `"${(a.feedbackText || a.feedback || '').replace(/"/g, '""')}"`
     ])
 
     const csvContent = [
@@ -905,6 +1102,24 @@ async function exportReport() {
   color: var(--text-secondary);
 }
 
+/* Assessment Mode Badge */
+.assessment-mode-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.assessment-mode-badge.multi-agent {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+}
+
+.assessment-mode-badge.single-agent {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+}
+
 .assessment-score {
   font-size: 1.5rem;
   font-weight: bold;
@@ -963,35 +1178,106 @@ async function exportReport() {
   gap: 1rem;
 }
 
-.score-item {
-  display: grid;
-  grid-template-columns: 120px 1fr 60px;
-  align-items: center;
-  gap: 1rem;
+.scores-grid.enhanced {
+  gap: 0.875rem;
 }
 
+.score-item {
+  display: grid;
+  grid-template-columns: 130px 1fr 60px;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  transition: all 0.2s ease;
+}
+
+.score-item:hover {
+  transform: translateX(4px);
+}
+
+/* Color-coded score items */
+.score-item.analysis { border-left: 4px solid #60a5fa; }
+.score-item.reasoning { border-left: 4px solid #a78bfa; }
+.score-item.creativity { border-left: 4px solid #f472b6; }
+.score-item.evidence { border-left: 4px solid #34d399; }
+
 .score-label {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
 .score-bar {
-  height: 20px;
-  background: var(--bg-secondary);
-  border-radius: 10px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
   overflow: hidden;
 }
 
 .score-fill {
   height: 100%;
-  background: linear-gradient(90deg, #6366f1, #a855f7);
-  transition: width 0.3s;
+  transition: width 0.5s ease;
 }
+
+/* Color-coded score bars */
+.score-item.analysis .score-fill { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.score-item.reasoning .score-fill { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.score-item.creativity .score-fill { background: linear-gradient(90deg, #ec4899, #f472b6); }
+.score-item.evidence .score-fill { background: linear-gradient(90deg, #10b981, #34d399); }
 
 .score-value {
   text-align: right;
-  font-weight: bold;
+  font-weight: 700;
   color: var(--primary-color);
+  font-size: 1rem;
+}
+
+/* Overall Score Card */
+.overall-score-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.overall-score-card.excellent {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.overall-score-card.good {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.overall-score-card.fair {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+.overall-score-card.poor {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.overall-label {
+  font-size: 1rem;
+}
+
+.overall-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+.overall-percentage {
+  font-size: 0.9rem;
+  opacity: 0.9;
 }
 
 .lo-badges {
@@ -1233,6 +1519,181 @@ async function exportReport() {
 
 .stat-box.highlight .stat-label {
   color: rgba(255, 255, 255, 0.9);
+}
+
+/* 🆕 Single Agent with CoT Section */
+.single-agent-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px dashed var(--border-color);
+}
+
+.single-agent-section h4 {
+  color: var(--primary-color);
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.badge.single-agent {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.confidence-badge.high {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.confidence-badge.medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.confidence-badge.low {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Chain of Thought Section */
+.cot-section {
+  margin-top: 1.25rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid var(--border-color);
+}
+
+.cot-section h5 {
+  margin: 0 0 1rem 0;
+  color: var(--primary-color);
+  font-size: 1rem;
+}
+
+.cot-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cot-step {
+  background: var(--bg-primary);
+  border-radius: 10px;
+  padding: 1rem;
+  border-left: 4px solid var(--primary-color);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.step-number {
+  width: 28px;
+  height: 28px;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.step-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.step-content {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.evidence-item {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.evidence-item strong {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8rem;
+}
+
+.evidence-item p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.raw-cot {
+  margin-top: 1rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.raw-cot summary {
+  padding: 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+}
+
+.raw-cot summary:hover {
+  background: var(--border-color);
+}
+
+.raw-cot pre {
+  margin: 0;
+  padding: 1rem;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.confidence-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.confidence-section h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.confidence-section .confidence-reason {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 /* Multi-Agent Assessment Section */

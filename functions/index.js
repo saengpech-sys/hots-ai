@@ -243,6 +243,7 @@ const systemHealthController = require('./controllers/systemHealthController')
 const worksheetController = require('./controllers/worksheetController')
 const assessmentController = require('./controllers/assessmentController')
 const knowledgeSheetController = require('./controllers/knowledgeSheetController')
+const dataCleanupController = require('./controllers/dataCleanupController')
 
 // OpenAI API Key secret - imported from centralized client
 const openaiApiKey = openaiApiKeySecret
@@ -267,6 +268,7 @@ exports.generateLessonPlan = generationController.generateLessonPlan
 exports.generateWorksheet = worksheetController.generateWorksheet
 exports.generateElectronicWorksheet = worksheetController.generateElectronicWorksheet
 exports.assessWorksheetSubmission = worksheetController.assessWorksheetSubmission
+exports.reassessWorksheetSubmission = worksheetController.reassessWorksheetSubmission
 exports.getWorksheetReports = worksheetController.getWorksheetReports
 exports.syncLearningRoomWorksheets = worksheetController.syncLearningRoomWorksheets
 
@@ -505,5 +507,15 @@ exports.getKnowledgeSheetsV2 = knowledgeSheetController.getKnowledgeSheets
 exports.getWorksheetReportsV2 = worksheetController.getWorksheetReports
 exports.syncLearningRoomWorksheetsV2 = worksheetController.syncLearningRoomWorksheets
 exports.generateElectronicWorksheetV2 = worksheetController.generateElectronicWorksheet
+
+// ============================================================
+// 🧹 DATA CLEANUP CONTROLLER EXPORTS
+// ============================================================
+exports.getOrphanedDataStats = dataCleanupController.getOrphanedDataStats
+exports.cleanupOrphanedData = dataCleanupController.cleanupOrphanedData
+exports.getDataStorageStats = dataCleanupController.getDataStorageStats
+exports.resetCourseData = dataCleanupController.resetCourseData
+exports.getInaccessibleData = dataCleanupController.getInaccessibleData
+exports.cleanupInaccessibleData = dataCleanupController.cleanupInaccessibleData
 
 console.log('📦 HOTS-AI Cloud Functions loaded (Clean Architecture v7.0)')

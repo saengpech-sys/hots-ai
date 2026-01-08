@@ -51,6 +51,7 @@ const openaiCircuitBreaker = new CircuitBreaker('openai-assessment', {
 
 exports.assessAnswer = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       // Only allow POST
       if (req.method !== 'POST') {
@@ -645,7 +646,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKeySecret] }).http
 
       // 🆕 PERSONALIZED FEEDBACK 2.0: Get historical progress for comparison
       let historicalComparison = null
-      let personalizedFeedback = assessmentResult.feedback
+      // 🔧 FIX: Ensure feedbackText is always a string - fallback to feedbackText or empty string
+      let personalizedFeedback = assessmentResult.feedback || assessmentResult.feedbackText || 'ระบบได้ประเมินคำตอบของคุณเรียบร้อยแล้ว'
       
       try {
         const twoWeeksAgo = new Date()
@@ -788,6 +790,8 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKeySecret] }).http
         courseId: courseId || null,
         questionId: questionId || null,
         questionContext: questionContext || 'General HOTS Assessment',
+        questionText: questionContext || 'General HOTS Assessment', // 🔧 FIX: Add questionText for frontend display
+        studentAnswer: studentAnswer, // 🔧 FIX: Add studentAnswer for frontend display
         rawAnswer: studentAnswer,
         rubricScores: {
           analysis: Math.min(5, Math.max(0, rubricScores.analysis)),
@@ -796,7 +800,7 @@ exports.assessAnswer = functions.runWith({ secrets: [openaiApiKeySecret] }).http
           evidence: Math.min(5, Math.max(0, rubricScores.evidence))
         },
         overallScore: Math.min(20, Math.max(0, overallScore)),
-        feedbackText: personalizedFeedback, // 🆕 Enhanced with historical comparison
+        feedbackText: personalizedFeedback || 'ระบบได้ประเมินคำตอบของคุณเรียบร้อยแล้ว', // 🆕 Enhanced with historical comparison + fallback
         historicalComparison: historicalComparison, // 🆕 Store comparison data
         suggestions: assessmentResult.suggestions || [],
         strengths: assessmentResult.strengths || [],
@@ -1502,6 +1506,7 @@ async function updateStudentProgress(studentId, courseId, passedLOs, assessmentD
 
 exports.assessSubmissionMultiPass = functions.runWith({ secrets: [openaiApiKeySecret] }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
@@ -1648,6 +1653,7 @@ exports.assessAnswerMultiAgent = functions.runWith({
   memory: '1GB'
 }).https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
+    const db = getDb()
     try {
       if (req.method !== 'POST') {
         return res.status(405).send({ error: 'Method not allowed' })
@@ -1677,7 +1683,7 @@ exports.assessAnswerMultiAgent = functions.runWith({
       }
 
       // 🆕 Use LLMProvider with complete() method for Multi-Agent compatibility
-      const { getLLMProvider } = require('./utils/llmProvider')
+      const { getLLMProvider } = require('../utils/llmProvider')
       const llmProvider = getLLMProvider()
 
       // 🆕 Build context string for the question
@@ -1712,12 +1718,57 @@ exports.assessAnswerMultiAgent = functions.runWith({
         })
       }
 
-      // Return multi-agent assessment result
+      // 🆕 Build assessment data for saving to Firestore
+      const rubricScores = result.rubricScores || {
+        analysis: 0,
+        reasoning: 0,
+        creativity: 0,
+        evidence: 0
+      }
+      const totalScore = result.totalScore || 
+        (rubricScores.analysis + rubricScores.reasoning + rubricScores.creativity + rubricScores.evidence)
+
+      // 🆕 Save assessment to Firestore (matching assessAnswer format)
+      const assessmentRef = await db.collection('assessments').add({
+        studentId: studentId || null,
+        sessionId: sessionId || null,
+        courseId: courseId || null,
+        questionId: questionId || null,
+        questionText: questionObj?.question || questionContext || '',
+        studentAnswer: answerText,
+        rawAnswer: answerText, // 🔧 FIX: Add rawAnswer for consistency with single-agent
+        rubricScores,
+        overallScore: totalScore,
+        feedbackText: result.feedback || 'ระบบ Multi-Agent ได้ประเมินคำตอบของคุณเรียบร้อยแล้ว', // 🔧 FIX: Use feedbackText for consistency
+        feedback: result.feedback || '', // Keep feedback for backwards compatibility
+        learningOutcomes: learningOutcomes || [],
+        multiAgentMetadata: result.multiAgentMetadata || {},
+        agentDetails: result.agentDetails || {},
+        confidence: result.confidence || 0,
+        confidenceReason: result.confidenceReason || '',
+        assessmentType: 'multi-agent',
+        multiAgentMode: true, // 🔧 FIX: Add flag for frontend detection
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      })
+
+      // Return multi-agent assessment result with ID
+      // Format to match single-agent response structure for frontend compatibility
       return res.status(200).send({
         success: true,
-        assessment: result.finalAssessment || result,
-        agentDetails: result.agentResults,
-        confidence: result.confidence
+        id: assessmentRef.id,
+        assessmentId: assessmentRef.id,
+        result: {
+          rubricScores,
+          overallScore: totalScore,
+          feedbackText: result.feedback || 'ระบบ Multi-Agent ได้ประเมินคำตอบของคุณเรียบร้อยแล้ว', // 🔧 FIX: Use feedbackText
+          feedback: result.feedback || '', // Keep for backwards compatibility
+          multiAgentMetadata: result.multiAgentMetadata,
+          agentDetails: result.agentDetails,
+          confidence: result.confidence || 0,
+          confidenceReason: result.confidenceReason || '',
+          multiAgentMode: true
+        }
       })
     } catch (error) {
       console.error('Multi-Agent assessment error:', error)

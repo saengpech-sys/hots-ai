@@ -40,15 +40,15 @@
         <circle
           v-for="(dimension, idx) in dimensions"
           :key="'point-' + idx"
-          :cx="getPoint(idx, (values[dimension.key] || 0) / maxValue).x"
-          :cy="getPoint(idx, (values[dimension.key] || 0) / maxValue).y"
+          :cx="getPoint(idx, (safeValues[dimension.key] || 0) / maxValue).x"
+          :cy="getPoint(idx, (safeValues[dimension.key] || 0) / maxValue).y"
           :r="pointRadius"
           :fill="strokeColor"
           stroke="white"
           stroke-width="2"
           class="data-point"
         >
-          <title>{{ dimension.label }}: {{ (values[dimension.key] || 0).toFixed(1) }}</title>
+          <title>{{ dimension.label }}: {{ (safeValues[dimension.key] || 0).toFixed(1) }}</title>
         </circle>
         
         <!-- Labels (rendered last to be on top) -->
@@ -75,7 +75,8 @@ import { computed } from 'vue'
 const props = defineProps({
   values: {
     type: Object,
-    required: true
+    required: true,
+    default: () => ({ analysis: 0, reasoning: 0, creativity: 0, evidence: 0 })
   },
   dimensions: {
     type: Array,
@@ -129,6 +130,20 @@ const radius = computed(() => props.size * 0.32)
 const padding = 60  // Space for labels
 const viewBoxSize = computed(() => props.size + padding * 2)
 
+// Safe values with defaults
+const safeValues = computed(() => {
+  const defaultValues = { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+  if (!props.values || typeof props.values !== 'object') {
+    return defaultValues
+  }
+  return {
+    analysis: Number(props.values?.analysis) || 0,
+    reasoning: Number(props.values?.reasoning) || 0,
+    creativity: Number(props.values?.creativity) || 0,
+    evidence: Number(props.values?.evidence) || 0
+  }
+})
+
 function getAngle(index) {
   return (Math.PI * 2 * index) / props.dimensions.length - Math.PI / 2
 }
@@ -153,7 +168,7 @@ function getPolygonPoints(ratio) {
 function getDataPoints() {
   return props.dimensions
     .map((dim, idx) => {
-      const value = props.values[dim.key] || 0
+      const value = safeValues.value[dim.key] || 0
       const point = getPoint(idx, value / props.maxValue)
       return `${point.x},${point.y}`
     })

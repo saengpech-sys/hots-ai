@@ -420,15 +420,20 @@ function getConfidenceExplanation(confidence) {
 }
 
 function formatDate(timestamp) {
-  if (!timestamp) return ''
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  return date.toLocaleDateString('th-TH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  if (!timestamp) return '(รอบันทึกวันที่)'
+  try {
+    const date = timestamp?.toDate?.() || (timestamp?.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp))
+    if (isNaN(date.getTime())) return '(รอบันทึกวันที่)'
+    return date.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch (e) {
+    return '(รอบันทึกวันที่)'
+  }
 }
 
 function truncate(text, length) {

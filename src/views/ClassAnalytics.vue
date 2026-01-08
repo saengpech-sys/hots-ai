@@ -339,7 +339,8 @@ async function onCourseChange() {
         ...dashboardStore.topPerformers,
         ...Object.keys(dashboardStore.studentPerformance)
       ]
-      const uniqueIds = [...new Set(allStudentIds)]
+      // Filter out undefined/null/empty values before fetching
+      const uniqueIds = [...new Set(allStudentIds)].filter(id => id && typeof id === 'string')
       await dashboardStore.fetchAllStudentDetails(uniqueIds)
       
       // Load AI Detection data
@@ -454,8 +455,9 @@ function getStudentPassedLOs(studentId) {
 }
 
 function viewStudentDetail(studentId) {
-  // Navigate to student detail page
-  router.push(`/student-detail/${studentId}`)
+  // Navigate to student detail page with courseId
+  const courseParam = selectedCourse.value ? `?courseId=${selectedCourse.value}` : ''
+  router.push(`/student-detail/${studentId}${courseParam}`)
 }
 
 function formatDate(timestamp) {

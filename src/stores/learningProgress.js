@@ -268,10 +268,10 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
       const unitSnap = await getDocs(unitQuery)
       unitSnap.forEach(doc => {
         const data = doc.data()
-        unitProgress.value[data.unitKey] = {
+        // เก็บเฉพาะ field ที่มีค่า (ไม่ใช่ undefined)
+        const unitData = {
           courseId: data.courseId,
           unitNumber: data.unitNumber,
-          unitName: data.unitName,
           ksId: data.ksId,
           ksRead: data.ksRead,
           ksReadPercent: data.ksReadPercent,
@@ -281,6 +281,11 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
           weakLOs: data.weakLOs,
           completedAt: data.completedAt
         }
+        // เพิ่ม unitName เฉพาะเมื่อมีค่า
+        if (data.unitName !== undefined) {
+          unitData.unitName = data.unitName
+        }
+        unitProgress.value[data.unitKey] = unitData
       })
       
       // โหลด Course Readiness
@@ -478,15 +483,24 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
     // อัพเดท local state
     unitProgress.value[unitKey] = newData
     
-    // บันทึกลง Firestore
+    // บันทึกลง Firestore - กรอง undefined values ออก
     const docId = `${userId}_unit_${unitKey}`
-    await setDoc(doc(db, 'learningProgress', docId), {
+    const firestoreData = {
       userId,
       type: 'unit',
       unitKey,
       ...newData,
       updatedAt: serverTimestamp()
-    }, { merge: true })
+    }
+    
+    // ลบ field ที่มีค่า undefined ออก (Firestore ไม่รับ undefined)
+    Object.keys(firestoreData).forEach(key => {
+      if (firestoreData[key] === undefined) {
+        delete firestoreData[key]
+      }
+    })
+    
+    await setDoc(doc(db, 'learningProgress', docId), firestoreData, { merge: true })
   }
 
   /**

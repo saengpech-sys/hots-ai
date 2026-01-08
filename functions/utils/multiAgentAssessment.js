@@ -28,7 +28,14 @@
  * @author HOTS-AI Research Team
  */
 
-const { sanitizeStudentInput } = require('./prompts')
+const { 
+  sanitizeStudentInput,
+  ARCE_SCORING_ANCHORS,
+  BIAS_PREVENTION_PROMPT,
+  FLUFFY_DETECTION_PROMPT,
+  CONSERVATIVE_SCORING_PROMPT,
+  CONFIDENCE_GUIDELINES_PROMPT
+} = require('./prompts')
 
 /**
  * 🎯 Agent Configuration
@@ -93,138 +100,26 @@ const LOGICAL_FALLACIES = {
 }
 
 /**
- * 📊 Anchor Scoring Matrix with Evidence Requirements
+ * 📊 Anchor Scoring Matrix - ใช้ shared constants จาก prompts.js
+ * แปลงจาก ARCE_SCORING_ANCHORS เป็น format สำหรับ Multi-Agent
  */
-const ANCHOR_SCORING_MATRIX = {
-  analysis: {
-    5: {
-      description: 'แยกประเด็น/องค์ประกอบสำคัญครบ โครงสร้างชัด เชื่อมความสัมพันธ์สาเหตุ-ผลอย่างเป็นระบบ',
-      requiredEvidence: ['แยกประเด็นหลัก ≥3 ข้อ', 'แสดงโครงสร้างความสัมพันธ์', 'เชื่อมเหตุ-ผลชัดเจน'],
-      cognitiveIndicators: ['differentiating', 'organizing', 'attributing']
-    },
-    4: {
-      description: 'แยกประเด็นหลักชัด มีโครงสร้างและความเชื่อมโยงส่วนใหญ่ถูกต้อง',
-      requiredEvidence: ['แยกประเด็นหลัก ≥2 ข้อ', 'มีโครงสร้างบางส่วน'],
-      cognitiveIndicators: ['differentiating', 'organizing']
-    },
-    3: {
-      description: 'แยกบางส่วนได้ เห็นโครงร่างการวิเคราะห์ แต่ขาดบางประเด็นสำคัญ',
-      requiredEvidence: ['ระบุประเด็นได้บ้าง', 'มีแนวโน้มการจัดกลุ่ม'],
-      cognitiveIndicators: ['differentiating']
-    },
-    2: {
-      description: 'วิเคราะห์ตื้น อธิบายแบบเล่าเรื่องมากกว่าแยกส่วน',
-      requiredEvidence: ['อธิบายทั่วไป', 'ไม่มีการจำแนก'],
-      cognitiveIndicators: []
-    },
-    1: {
-      description: 'ระบุข้อเท็จจริงกระจัดกระจาย ไร้โครงสร้าง',
-      requiredEvidence: ['ข้อมูลกระจัดกระจาย'],
-      cognitiveIndicators: []
-    },
-    0: {
-      description: 'ไม่วิเคราะห์/นอกเรื่อง',
-      requiredEvidence: ['ไม่มีการวิเคราะห์'],
-      cognitiveIndicators: []
-    }
-  },
-  reasoning: {
-    5: {
-      description: 'เหตุผลเป็นลำดับ มีตรรกะ/การอนุมานถูกต้อง สรุปสอดคล้องกับเหตุผล ไม่มี Fallacy',
-      requiredEvidence: ['ลำดับเหตุผลชัด ≥3 ขั้น', 'การอนุมานถูกต้อง', 'ไม่มี Logical Fallacy'],
-      cognitiveIndicators: ['checking', 'critiquing', 'inferring']
-    },
-    4: {
-      description: 'ลำดับคิดดี มีการอนุมานส่วนใหญ่ถูกต้อง มีจุดสะดุดเล็กน้อย',
-      requiredEvidence: ['ลำดับเหตุผลชัด ≥2 ขั้น', 'อนุมานส่วนใหญ่ถูก'],
-      cognitiveIndicators: ['checking', 'inferring']
-    },
-    3: {
-      description: 'มีเหตุผลพื้นฐาน แต่ยังมีช่องโหว่/สรุปก้าวกระโดดบางช่วง',
-      requiredEvidence: ['มีเหตุผลบางส่วน', 'มีช่องโหว่ตรรกะ 1-2 จุด'],
-      cognitiveIndicators: ['inferring']
-    },
-    2: {
-      description: 'เหตุผลคลุมเครือ พิงความเชื่อมากกว่าตรรกะ',
-      requiredEvidence: ['อ้างความเชื่อ/ความรู้สึก', 'ขาดหลักตรรกะ'],
-      cognitiveIndicators: []
-    },
-    1: {
-      description: 'ตรรกะผิดพลาดบ่อย มี Fallacy ชัดเจน สรุปไม่ตามเหตุผล',
-      requiredEvidence: ['พบ Logical Fallacy', 'สรุปไม่สัมพันธ์'],
-      cognitiveIndicators: []
-    },
-    0: {
-      description: 'ไม่มีเหตุผลที่ตรวจสอบได้',
-      requiredEvidence: ['ไม่มีการให้เหตุผล'],
-      cognitiveIndicators: []
-    }
-  },
-  creativity: {
-    5: {
-      description: 'เสนอกรอบคิด/วิธีมองใหม่ ชี้มุมไม่ชัดเจนเดิม มีตัวอย่างสร้างสรรค์ที่เกี่ยวข้อง',
-      requiredEvidence: ['ไอเดียใหม่ที่ไม่ซ้ำ', 'มุมมองไม่เคยเห็น', 'ตัวอย่างสร้างสรรค์'],
-      cognitiveIndicators: ['generating', 'planning', 'producing']
-    },
-    4: {
-      description: 'มีมุมใหม่ชัดเจนอย่างน้อยหนึ่งจุด',
-      requiredEvidence: ['มุมมองใหม่ ≥1 จุด', 'ประยุกต์ความรู้'],
-      cognitiveIndicators: ['generating', 'planning']
-    },
-    3: {
-      description: 'ปรับ/ต่อยอดไอเดียเดิมได้บ้าง',
-      requiredEvidence: ['ต่อยอดจากเดิม', 'ปรับประยุกต์'],
-      cognitiveIndicators: ['generating']
-    },
-    2: {
-      description: 'ความคิดทั่วไป ซ้ำแพทเทิร์นคุ้นเคย',
-      requiredEvidence: ['ความคิดทั่วไป', 'ไม่มีสิ่งใหม่'],
-      cognitiveIndicators: []
-    },
-    1: {
-      description: 'ทวนซ้ำความรู้เดิม ไร้มุมเพิ่ม',
-      requiredEvidence: ['ทวนซ้ำ', 'คัดลอก'],
-      cognitiveIndicators: []
-    },
-    0: {
-      description: 'ไม่แสดงความคิดริเริ่ม',
-      requiredEvidence: ['ไม่มีความคิดริเริ่ม'],
-      cognitiveIndicators: []
-    }
-  },
-  evidence: {
-    5: {
-      description: 'ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจง ตรงประเด็น อธิบายความเชื่อมโยงกับข้อสรุปชัด',
-      requiredEvidence: ['ตัวอย่างเฉพาะเจาะจง ≥2', 'อธิบายความเชื่อมโยง', 'แหล่งที่มาชัด'],
-      cognitiveIndicators: ['implementing', 'executing']
-    },
-    4: {
-      description: 'มีหลักฐานที่เกี่ยวข้องและอธิบายความเชื่อมโยงพอควร',
-      requiredEvidence: ['ตัวอย่าง ≥1 เฉพาะเจาะจง', 'เชื่อมโยงบางส่วน'],
-      cognitiveIndicators: ['implementing']
-    },
-    3: {
-      description: 'มีตัวอย่างแต่ยังทั่วไป/เชื่อมโยงหลวม',
-      requiredEvidence: ['ตัวอย่างทั่วไป', 'เชื่อมโยงหลวม'],
-      cognitiveIndicators: []
-    },
-    2: {
-      description: 'อ้างกว้างๆ ไม่ชัดเจนหรือไม่สัมพันธ์กับข้อสรุป',
-      requiredEvidence: ['อ้างกว้างๆ', 'ไม่มีรายละเอียด'],
-      cognitiveIndicators: []
-    },
-    1: {
-      description: 'กล่าวอ้างลอยๆ ไร้ตัวอย่างตรวจสอบได้',
-      requiredEvidence: ['กล่าวอ้างลอยๆ'],
-      cognitiveIndicators: []
-    },
-    0: {
-      description: 'ไม่มีหลักฐาน',
-      requiredEvidence: ['ไม่มีหลักฐาน'],
-      cognitiveIndicators: []
+function getAnchorScoringMatrix() {
+  const matrix = {}
+  for (const [dim, config] of Object.entries(ARCE_SCORING_ANCHORS)) {
+    matrix[dim] = {}
+    for (const [score, anchor] of Object.entries(config.anchors)) {
+      matrix[dim][score] = {
+        description: anchor.description,
+        requiredEvidence: anchor.evidence,
+        cognitiveIndicators: anchor.cognitiveIndicators
+      }
     }
   }
+  return matrix
 }
+
+// Use shared anchors
+const ANCHOR_SCORING_MATRIX = getAnchorScoringMatrix()
 
 /**
  * 🔍 Create Analysis Agent Prompt
@@ -270,6 +165,26 @@ ${Object.entries(anchors).map(([score, data]) => `
 - Cognitive Indicators: ${data.cognitiveIndicators.join(', ') || 'ไม่พบ'}
 `).join('')}
 </anchor_scoring>
+
+<conservative_scoring>
+⚠️ กฎการให้คะแนนแบบ Conservative:
+- หากพฤติกรรมอยู่ "ระหว่าง" สองระดับ → เลือกระดับ "ต่ำกว่า" เสมอ
+- ต้องมี "หลักฐานชัดเจน" จากคำตอบจึงจะให้คะแนนระดับนั้นได้
+- ไม่ "อนุมาน" หรือ "ตีความเกินจริง" จากคำตอบ
+</conservative_scoring>
+
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ → คะแนน 0-1 เท่านั้น
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ":
+- "ผมคิดว่ามันดีมากๆ เลยครับ"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+
+การตรวจสอบ:
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่หลักฐานของการวิเคราะห์
+- ถ้าคำตอบไม่มีการแยกแยะองค์ประกอบจริง → Analysis = 0
+</fluffy_content_detection>
 
 <chain_of_thought>
 ทำตามขั้นตอนนี้:
@@ -995,6 +910,416 @@ function parseAgentResponse(responseText) {
 }
 
 /**
+ * 🎯📝 Multi-Agent Per-Question Assessment for Worksheets
+ * 
+ * ประเมินแต่ละคำถามด้วย 6 Agents อย่างเต็มรูปแบบ
+ * เหมาะสำหรับ worksheet ที่มี 1-15 คำถาม
+ * 
+ * API Calls: 6 calls × N questions + 1 summary = 6N + 1 calls
+ * - 3 questions = 19 API calls
+ * - 5 questions = 31 API calls
+ * - 10 questions = 61 API calls
+ * - 15 questions = 91 API calls
+ * 
+ * @param {Object} llmProvider - LLM provider instance
+ * @param {Array} questions - Array of question objects with studentAnswer
+ * @param {Object} worksheetMeta - Worksheet metadata
+ * @param {Object} options - Assessment options
+ * @returns {Object} Complete worksheet assessment with per-question details
+ */
+async function runMultiAgentPerQuestion(llmProvider, questions, worksheetMeta, options = {}) {
+  const {
+    gradeLevel = 'ม.4',
+    parallelQuestions = false, // Run questions in parallel (faster but more concurrent API calls)
+    parallelAgents = true, // Run agents in parallel within each question
+    includeAdversarial = true,
+    detailedLogging = false,
+    maxConcurrentQuestions = 3 // Limit parallel questions to avoid rate limiting
+  } = options
+  
+  const startTime = Date.now()
+  const logs = []
+  const questionResults = []
+  
+  const log = (msg) => {
+    if (detailedLogging) {
+      logs.push({ timestamp: Date.now() - startTime, message: msg })
+    }
+    console.log(`🤖×6 [${Date.now() - startTime}ms] ${msg}`)
+  }
+  
+  log(`Starting Multi-Agent Per-Question Assessment for ${questions.length} questions`)
+  
+  try {
+    // Process each question with full Multi-Agent assessment
+    const processQuestion = async (question, index) => {
+      const questionStart = Date.now()
+      log(`Question ${index + 1}/${questions.length}: Starting assessment`)
+      
+      // Build context for this question
+      const context = buildQuestionContext(question, worksheetMeta)
+      const answer = question.studentAnswer || ''
+      
+      // Run full Multi-Agent assessment for this question
+      const result = await runMultiAgentAssessment(llmProvider, context, answer, {
+        gradeLevel,
+        parallelAgents,
+        includeAdversarial,
+        detailedLogging
+      })
+      
+      const questionTime = Date.now() - questionStart
+      log(`Question ${index + 1}: Completed in ${questionTime}ms`)
+      
+      return {
+        questionIndex: index,
+        questionId: question.questionId || question.id || `q${index + 1}`,
+        sectionId: question.sectionId || '',
+        question: question.prompt || question.task || '',
+        prompt: question.prompt || question.task || '',
+        context: question.context || question.situation || '',
+        situation: question.situation || question.context || '',
+        studentAnswer: answer,
+        type: question.type || 'open_ended',
+        phase: question.phase || '',
+        arceFocus: Array.isArray(question.arceFocus) ? question.arceFocus : [question.arceFocus || 'analysis'],
+        maxScore: question.maxScore || 5,
+        
+        // Multi-Agent assessment results
+        rubricScores: result.rubricScores || {
+          analysis: 0,
+          reasoning: 0,
+          creativity: 0,
+          evidence: 0
+        },
+        totalScore: result.totalScore || 0,
+        confidence: result.confidence || 0,
+        confidenceReason: result.confidenceReason || '',
+        
+        feedback: result.feedback || '',
+        strengths: result.strengths || [],
+        weaknesses: result.weaknesses || [],
+        suggestions: result.suggestions || [],
+        
+        // Detailed agent results for research
+        agentDetails: result.agentDetails || {},
+        explanationDetails: result.explanationDetails || {},
+        
+        // Metadata
+        processingTimeMs: questionTime,
+        passed: (result.totalScore || 0) >= (question.maxScore * 0.5),
+        
+        // ARCE breakdown for display
+        arceBreakdown: {
+          analysis: {
+            score: result.rubricScores?.analysis || 0,
+            feedback: result.agentDetails?.analysis?.microFeedback || result.explanationDetails?.analysis?.howToImprove || ''
+          },
+          reasoning: {
+            score: result.rubricScores?.reasoning || 0,
+            feedback: result.agentDetails?.reasoning?.microFeedback || result.explanationDetails?.reasoning?.howToImprove || ''
+          },
+          creativity: {
+            score: result.rubricScores?.creativity || 0,
+            feedback: result.agentDetails?.creativity?.microFeedback || result.explanationDetails?.creativity?.howToImprove || ''
+          },
+          evidence: {
+            score: result.rubricScores?.evidence || 0,
+            feedback: result.agentDetails?.evidence?.microFeedback || result.explanationDetails?.evidence?.howToImprove || ''
+          }
+        }
+      }
+    }
+    
+    // Process questions (parallel or sequential)
+    if (parallelQuestions && questions.length > 1) {
+      log(`Processing ${questions.length} questions in parallel (max ${maxConcurrentQuestions} concurrent)`)
+      
+      // Process in batches to avoid rate limiting
+      for (let i = 0; i < questions.length; i += maxConcurrentQuestions) {
+        const batch = questions.slice(i, i + maxConcurrentQuestions)
+        const batchResults = await Promise.all(
+          batch.map((q, idx) => processQuestion(q, i + idx))
+        )
+        questionResults.push(...batchResults)
+        
+        // Small delay between batches to avoid rate limiting
+        if (i + maxConcurrentQuestions < questions.length) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+    } else {
+      log(`Processing ${questions.length} questions sequentially`)
+      for (let i = 0; i < questions.length; i++) {
+        const result = await processQuestion(questions[i], i)
+        questionResults.push(result)
+      }
+    }
+    
+    log(`All ${questions.length} questions assessed, generating summary...`)
+    
+    // Generate worksheet summary with Summary Agent
+    const summaryResult = await generateWorksheetSummary(
+      llmProvider, 
+      questionResults, 
+      worksheetMeta, 
+      { gradeLevel, detailedLogging }
+    )
+    
+    const totalTime = Date.now() - startTime
+    log(`Multi-Agent Per-Question Assessment completed in ${totalTime}ms`)
+    
+    return {
+      success: true,
+      assessmentMode: 'multi-agent-per-question',
+      
+      // Summary from Summary Agent
+      summary: summaryResult.summary || {
+        totalScore: questionResults.reduce((sum, q) => sum + (q.totalScore || 0), 0),
+        maxScore: questionResults.reduce((sum, q) => sum + (q.maxScore || 5), 0),
+        percentage: 0,
+        paLevel: 1,
+        paLevelText: 'ระดับ 1: ต้องปรับปรุง',
+        overallFeedback: '',
+        recommendation: ''
+      },
+      
+      // Aggregated ARCE scores
+      arceScores: summaryResult.arceScores || calculateAggregatedArceScores(questionResults),
+      
+      // Per-question results with full agent details
+      questionResults: questionResults,
+      
+      // Overall analysis
+      strengths: summaryResult.strengths || [],
+      weaknesses: summaryResult.weaknesses || [],
+      nextSteps: summaryResult.nextSteps || [],
+      teacherNotes: summaryResult.teacherNotes || '',
+      
+      // Statistics
+      statistics: summaryResult.statistics || calculateStatistics(questionResults),
+      arceAnalysis: summaryResult.arceAnalysis || {},
+      bloomAnalysis: summaryResult.bloomAnalysis || {},
+      researchInsights: summaryResult.researchInsights || {},
+      
+      // Metadata
+      multiAgentMetadata: {
+        processingTimeMs: totalTime,
+        totalApiCalls: (6 * questions.length) + 1, // 6 agents per question + 1 summary
+        questionsAssessed: questions.length,
+        parallelExecution: parallelQuestions,
+        agentsPerQuestion: includeAdversarial ? 6 : 5,
+        logs: detailedLogging ? logs : undefined
+      }
+    }
+    
+  } catch (error) {
+    log(`Error: ${error.message}`)
+    console.error('❌ Multi-Agent Per-Question Assessment failed:', error)
+    
+    return {
+      success: false,
+      error: error.message,
+      assessmentMode: 'multi-agent-per-question',
+      logs,
+      questionResults: questionResults // Return partial results if any
+    }
+  }
+}
+
+/**
+ * 🔧 Build context string for a single question
+ */
+function buildQuestionContext(question, worksheetMeta) {
+  const parts = []
+  
+  // Worksheet info
+  if (worksheetMeta?.title) parts.push(`ใบงาน: ${worksheetMeta.title}`)
+  if (worksheetMeta?.courseName) parts.push(`รายวิชา: ${worksheetMeta.courseName}`)
+  if (worksheetMeta?.topic) parts.push(`หัวข้อ: ${worksheetMeta.topic}`)
+  
+  // Question info
+  if (question.context || question.situation) {
+    parts.push(`\nสถานการณ์: ${question.context || question.situation}`)
+  }
+  if (question.prompt || question.task) {
+    parts.push(`\nคำถาม: ${question.prompt || question.task}`)
+  }
+  if (question.arceFocus) {
+    const focus = Array.isArray(question.arceFocus) ? question.arceFocus.join(', ') : question.arceFocus
+    parts.push(`\nA.R.C.E. Focus: ${focus}`)
+  }
+  
+  // ARCE Situation expected answers
+  if (question.expected || question.expectedArce) {
+    const expected = question.expected || question.expectedArce
+    parts.push(`\n\nเกณฑ์การประเมิน (Expected):`)
+    if (expected.analysis) parts.push(`- Analysis: ${expected.analysis}`)
+    if (expected.reasoning) parts.push(`- Reasoning: ${expected.reasoning}`)
+    if (expected.creativity) parts.push(`- Creativity: ${expected.creativity}`)
+    if (expected.evidence) parts.push(`- Evidence: ${expected.evidence}`)
+  }
+  
+  return parts.join('\n')
+}
+
+/**
+ * 📊 Generate Worksheet Summary with Summary Agent
+ */
+async function generateWorksheetSummary(llmProvider, questionResults, worksheetMeta, options = {}) {
+  const { gradeLevel = 'ม.4', detailedLogging = false } = options
+  
+  // Calculate aggregated scores
+  const totalScore = questionResults.reduce((sum, q) => sum + (q.totalScore || 0), 0)
+  const maxScore = questionResults.reduce((sum, q) => sum + (q.maxScore || 5), 0)
+  const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0
+  
+  const aggregatedArce = calculateAggregatedArceScores(questionResults)
+  const statistics = calculateStatistics(questionResults)
+  
+  const summaryPrompt = `คุณเป็น Worksheet Summary Agent รวบรวมผลการประเมินใบงานจาก Multi-Agent Assessment
+
+📚 ข้อมูลใบงาน:
+- ชื่อใบงาน: ${worksheetMeta?.title || 'ใบงาน'}
+- รายวิชา: ${worksheetMeta?.courseName || ''}
+- หัวข้อ: ${worksheetMeta?.topic || ''}
+- ระดับชั้น: ${gradeLevel}
+- จำนวนข้อ: ${questionResults.length}
+
+📊 ผลการประเมินรายข้อ:
+${questionResults.map((q, i) => `
+[ข้อ ${i + 1}] ${q.question?.substring(0, 100) || '...'}
+- คะแนน: ${q.totalScore || 0}/${q.maxScore || 5} (${q.passed ? '✅ ผ่าน' : '❌ ไม่ผ่าน'})
+- ARCE: A=${q.rubricScores?.analysis || 0} R=${q.rubricScores?.reasoning || 0} C=${q.rubricScores?.creativity || 0} E=${q.rubricScores?.evidence || 0}
+- Confidence: ${q.confidence || 0}%
+- Feedback: ${(q.feedback || '').substring(0, 150)}
+`).join('\n---')}
+
+📈 สรุปคะแนนรวม:
+- คะแนนรวม: ${totalScore}/${maxScore} (${percentage}%)
+- ARCE เฉลี่ย: A=${aggregatedArce.analysis.raw.toFixed(1)} R=${aggregatedArce.reasoning.raw.toFixed(1)} C=${aggregatedArce.creativity.raw.toFixed(1)} E=${aggregatedArce.evidence.raw.toFixed(1)}
+- ข้อที่ผ่าน: ${statistics.passedQuestions}/${statistics.totalQuestions}
+
+📝 สร้างสรุปผลการประเมินใบงานเป็น JSON (ห้าม markdown wrapper):
+{
+  "summary": {
+    "totalScore": ${totalScore},
+    "maxScore": ${maxScore},
+    "percentage": ${percentage},
+    "paLevel": ${percentage >= 80 ? 4 : percentage >= 60 ? 3 : percentage >= 40 ? 2 : 1},
+    "paLevelText": "${percentage >= 80 ? 'ระดับ 4: ดีมาก' : percentage >= 60 ? 'ระดับ 3: ดี' : percentage >= 40 ? 'ระดับ 2: พอใช้' : 'ระดับ 1: ต้องปรับปรุง'}",
+    "overallFeedback": "สรุปภาพรวมผลงาน 2-3 ประโยค อิงจากผลแต่ละข้อ",
+    "recommendation": "ข้อเสนอแนะหลักสำหรับการพัฒนา"
+  },
+  "arceScores": {
+    "analysis": { "raw": ${aggregatedArce.analysis.raw.toFixed(2)}, "max": 5, "percentage": ${aggregatedArce.analysis.percentage.toFixed(0)}, "feedback": "สรุป feedback ด้านการวิเคราะห์จากทุกข้อ" },
+    "reasoning": { "raw": ${aggregatedArce.reasoning.raw.toFixed(2)}, "max": 5, "percentage": ${aggregatedArce.reasoning.percentage.toFixed(0)}, "feedback": "สรุป feedback ด้านการให้เหตุผลจากทุกข้อ" },
+    "creativity": { "raw": ${aggregatedArce.creativity.raw.toFixed(2)}, "max": 5, "percentage": ${aggregatedArce.creativity.percentage.toFixed(0)}, "feedback": "สรุป feedback ด้านความคิดสร้างสรรค์จากทุกข้อ" },
+    "evidence": { "raw": ${aggregatedArce.evidence.raw.toFixed(2)}, "max": 5, "percentage": ${aggregatedArce.evidence.percentage.toFixed(0)}, "feedback": "สรุป feedback ด้านการใช้หลักฐานจากทุกข้อ" }
+  },
+  "statistics": {
+    "totalQuestions": ${statistics.totalQuestions},
+    "passedQuestions": ${statistics.passedQuestions},
+    "failedQuestions": ${statistics.failedQuestions},
+    "passRate": ${statistics.passRate.toFixed(0)},
+    "avgScorePerQuestion": ${statistics.avgScorePerQuestion.toFixed(2)},
+    "avgConfidence": ${statistics.avgConfidence.toFixed(0)}
+  },
+  "arceAnalysis": {
+    "strongestDimension": { "name": "analysis|reasoning|creativity|evidence", "score": 0, "insight": "" },
+    "weakestDimension": { "name": "analysis|reasoning|creativity|evidence", "score": 0, "insight": "" },
+    "dimensionComparison": "วิเคราะห์เปรียบเทียบทักษะ ARCE",
+    "developmentPriority": ["ลำดับทักษะที่ควรพัฒนาก่อน"]
+  },
+  "bloomAnalysis": {
+    "dominantLevel": 4,
+    "insight": "วิเคราะห์ระดับการคิดของนักเรียน"
+  },
+  "strengths": ["จุดแข็ง 1 พร้อมหลักฐานจากคำตอบ", "จุดแข็ง 2"],
+  "weaknesses": ["จุดที่ควรพัฒนา 1 พร้อมคำแนะนำ", "จุดที่ควรพัฒนา 2"],
+  "nextSteps": ["ขั้นตอนถัดไป 1 ที่ทำได้ทันที", "ขั้นตอนถัดไป 2"],
+  "teacherNotes": "บันทึกสำหรับครู - ข้อสังเกตและการช่วยเหลือที่แนะนำ",
+  "researchInsights": {
+    "learningPattern": "รูปแบบการเรียนรู้ที่สังเกตได้",
+    "cognitiveStrengths": ["ด้านที่แข็งแกร่ง"],
+    "areasForIntervention": ["ด้านที่ต้องการช่วยเหลือ"],
+    "recommendedStrategies": ["กลยุทธ์การสอนที่แนะนำ"]
+  }
+}`
+
+  try {
+    const result = await llmProvider.complete(summaryPrompt, { temperature: 0.3 })
+    return parseAgentResponse(result)
+  } catch (error) {
+    console.error('❌ Worksheet Summary Agent failed:', error)
+    return {
+      summary: {
+        totalScore,
+        maxScore,
+        percentage,
+        paLevel: percentage >= 80 ? 4 : percentage >= 60 ? 3 : percentage >= 40 ? 2 : 1,
+        paLevelText: percentage >= 80 ? 'ระดับ 4: ดีมาก' : percentage >= 60 ? 'ระดับ 3: ดี' : percentage >= 40 ? 'ระดับ 2: พอใช้' : 'ระดับ 1: ต้องปรับปรุง',
+        overallFeedback: 'ประเมินเสร็จสิ้น',
+        recommendation: 'ฝึกฝนต่อไป'
+      },
+      arceScores: aggregatedArce,
+      statistics
+    }
+  }
+}
+
+/**
+ * 📊 Calculate aggregated ARCE scores from question results
+ */
+function calculateAggregatedArceScores(questionResults) {
+  const dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']
+  const result = {}
+  
+  for (const dim of dimensions) {
+    const scores = questionResults
+      .map(q => q.rubricScores?.[dim] || 0)
+      .filter(s => s > 0)
+    
+    const avg = scores.length > 0 
+      ? scores.reduce((sum, s) => sum + s, 0) / scores.length 
+      : 0
+    
+    result[dim] = {
+      raw: avg,
+      max: 5,
+      percentage: (avg / 5) * 100,
+      feedback: ''
+    }
+  }
+  
+  return result
+}
+
+/**
+ * 📈 Calculate statistics from question results
+ */
+function calculateStatistics(questionResults) {
+  const totalQuestions = questionResults.length
+  const passedQuestions = questionResults.filter(q => q.passed).length
+  const totalScore = questionResults.reduce((sum, q) => sum + (q.totalScore || 0), 0)
+  const maxScore = questionResults.reduce((sum, q) => sum + (q.maxScore || 5), 0)
+  const avgConfidence = totalQuestions > 0
+    ? questionResults.reduce((sum, q) => sum + (q.confidence || 0), 0) / totalQuestions
+    : 0
+  
+  return {
+    totalQuestions,
+    passedQuestions,
+    failedQuestions: totalQuestions - passedQuestions,
+    passRate: totalQuestions > 0 ? (passedQuestions / totalQuestions) * 100 : 0,
+    avgScorePerQuestion: totalQuestions > 0 ? totalScore / totalQuestions : 0,
+    totalScore,
+    maxScore,
+    avgConfidence
+  }
+}
+
+/**
  * 📊 Get Scoring Anchors for Right to Explanation
  */
 function getScoringAnchors(dimension, score) {
@@ -1019,8 +1344,9 @@ function getAgentConfig() {
 }
 
 module.exports = {
-  // Main function
+  // Main functions
   runMultiAgentAssessment,
+  runMultiAgentPerQuestion, // 🆕 Per-question Multi-Agent for worksheets
   
   // Individual agent prompts
   createAnalysisAgentPrompt,
@@ -1029,6 +1355,12 @@ module.exports = {
   createEvidenceAgentPrompt,
   createAdversarialRefinerPrompt,
   createConsensusAggregatorPrompt,
+  
+  // Worksheet helpers
+  generateWorksheetSummary,
+  buildQuestionContext,
+  calculateAggregatedArceScores,
+  calculateStatistics,
   
   // Utilities
   parseAgentResponse,

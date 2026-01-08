@@ -107,6 +107,21 @@ ${scaffoldingInstructions}
 4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
 </bias_prevention>
 
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
+- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+- "ดีมากครับ เห็นด้วยเลย"
+
+การตรวจสอบ:
+- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
+- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
+</fluffy_content_detection>
+
 <scoring_rubric>
 หลักการให้คะแนน (0–5 เป็นจำนวนเต็ม)
 ⚠️ สำคัญ: ให้คะแนนตาม "สมอคะแนน (Anchors)" และเลือกคะแนนที่ "ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน"
@@ -359,9 +374,308 @@ ${studentAnswer}
  */
 const LO_ASSESSMENT_SYSTEM_MESSAGE = 'You are an expert in learning outcome assessment. You provide accurate, evidence-based evaluations. Always respond with valid JSON only, no markdown.'
 
+// =============================================================================
+// 📊 SHARED SCORING RUBRIC - ใช้ร่วมกันระหว่าง Chat, Worksheet, Multi-Agent
+// =============================================================================
+
+/**
+ * 🎯 A.R.C.E. Scoring Anchors (0-5 scale)
+ * ใช้เป็นมาตรฐานเดียวกันทุกที่
+ */
+const ARCE_SCORING_ANCHORS = {
+  analysis: {
+    name: 'การวิเคราะห์ (Analysis)',
+    icon: '🔍',
+    bloomLevel: 'Analyze (L4)',
+    anchors: {
+      5: {
+        description: 'แยกประเด็น/องค์ประกอบสำคัญครบ (≥3 องค์ประกอบ) + โครงสร้างความสัมพันธ์ชัดเจน + เชื่อมโยงเหตุ-ผลอย่างเป็นระบบ',
+        evidence: ['แยกประเด็นหลัก ≥3 ข้อ', 'แสดงโครงสร้างความสัมพันธ์', 'เชื่อมเหตุ-ผลชัดเจน'],
+        cognitiveIndicators: ['differentiating', 'organizing', 'attributing']
+      },
+      4: {
+        description: 'แยกประเด็นหลักชัด (2-3 องค์ประกอบ) + มีโครงสร้างและความเชื่อมโยงส่วนใหญ่ถูกต้อง',
+        evidence: ['แยกประเด็นหลัก ≥2 ข้อ', 'มีโครงสร้างบางส่วน'],
+        cognitiveIndicators: ['differentiating', 'organizing']
+      },
+      3: {
+        description: 'แยกบางส่วนได้ (1-2 องค์ประกอบหลัก) + เห็นโครงร่างการวิเคราะห์ แต่ขาดบางประเด็นสำคัญ',
+        evidence: ['ระบุประเด็นได้บ้าง', 'มีแนวโน้มการจัดกลุ่ม'],
+        cognitiveIndicators: ['differentiating']
+      },
+      2: {
+        description: 'วิเคราะห์ตื้น - อธิบายแบบเล่าเรื่องมากกว่าแยกส่วน ไม่มีการจำแนก',
+        evidence: ['อธิบายทั่วไป', 'ไม่มีการจำแนก'],
+        cognitiveIndicators: []
+      },
+      1: {
+        description: 'ระบุข้อเท็จจริงกระจัดกระจาย ไร้โครงสร้าง ไม่จัดกลุ่ม',
+        evidence: ['ข้อมูลกระจัดกระจาย'],
+        cognitiveIndicators: []
+      },
+      0: {
+        description: 'ไม่มีการวิเคราะห์ / นอกเรื่องทั้งหมด / ว่างเปล่า',
+        evidence: ['ไม่มีการวิเคราะห์'],
+        cognitiveIndicators: []
+      }
+    }
+  },
+  reasoning: {
+    name: 'การให้เหตุผล (Reasoning)',
+    icon: '🧠',
+    bloomLevel: 'Evaluate (L5)',
+    anchors: {
+      5: {
+        description: 'เหตุผลเป็นลำดับขั้นตอนชัดเจน (Premise → Inference → Conclusion) + ตรรกะถูกต้อง ไม่มีช่องว่าง + สรุปสอดคล้องกับข้อมูล',
+        evidence: ['ลำดับเหตุผลชัด ≥3 ขั้น', 'การอนุมานถูกต้อง', 'ไม่มี Logical Fallacy'],
+        cognitiveIndicators: ['checking', 'critiquing', 'inferring']
+      },
+      4: {
+        description: 'ลำดับคิดดี มีการอนุมานส่วนใหญ่ถูกต้อง + มีจุดสะดุดเล็กน้อย 1-2 จุด แต่ไม่กระทบข้อสรุปหลัก',
+        evidence: ['ลำดับเหตุผลชัด ≥2 ขั้น', 'อนุมานส่วนใหญ่ถูก'],
+        cognitiveIndicators: ['checking', 'inferring']
+      },
+      3: {
+        description: 'มีเหตุผลพื้นฐาน แต่ยังมีช่องโหว่/สรุปก้าวกระโดดบางช่วง',
+        evidence: ['มีเหตุผลบางส่วน', 'มีช่องโหว่ตรรกะ 1-2 จุด'],
+        cognitiveIndicators: ['inferring']
+      },
+      2: {
+        description: 'เหตุผลคลุมเครือ ใช้ความเชื่อ/สัญชาตญาณ มากกว่าตรรกะ',
+        evidence: ['อ้างความเชื่อ/ความรู้สึก', 'ขาดหลักตรรกะ'],
+        cognitiveIndicators: []
+      },
+      1: {
+        description: 'ตรรกะผิดพลาดบ่อย (fallacies) / สรุปไม่ตามเหตุผลที่ให้',
+        evidence: ['พบ Logical Fallacy', 'สรุปไม่สัมพันธ์'],
+        cognitiveIndicators: []
+      },
+      0: {
+        description: 'ไม่มีเหตุผลที่ตรวจสอบได้ / ตอบสั้นมากไม่มีการอธิบาย',
+        evidence: ['ไม่มีการให้เหตุผล'],
+        cognitiveIndicators: []
+      }
+    }
+  },
+  creativity: {
+    name: 'ความคิดสร้างสรรค์ (Creativity)',
+    icon: '💡',
+    bloomLevel: 'Create (L6)',
+    anchors: {
+      5: {
+        description: 'เสนอกรอบคิด/วิธีมองใหม่ที่ไม่ใช่คำตอบทั่วไป + ชี้มุมที่ไม่ชัดเจนเดิม + มีตัวอย่างสร้างสรรค์ที่เกี่ยวข้องและใช้ได้จริง',
+        evidence: ['ไอเดียใหม่ที่ไม่ซ้ำ', 'มุมมองไม่เคยเห็น', 'ตัวอย่างสร้างสรรค์'],
+        cognitiveIndicators: ['generating', 'planning', 'producing']
+      },
+      4: {
+        description: 'มีมุมมองใหม่อย่างน้อยหนึ่งจุดที่แตกต่างจากแนวคิดทั่วไป + แสดงการต่อยอดที่น่าสนใจ',
+        evidence: ['มุมมองใหม่ ≥1 จุด', 'ประยุกต์ความรู้'],
+        cognitiveIndicators: ['generating', 'planning']
+      },
+      3: {
+        description: 'ปรับ/ต่อยอดไอเดียเดิมได้บ้าง + มีความพยายามประยุกต์ แต่ยังไม่แตกต่างมาก',
+        evidence: ['ต่อยอดจากเดิม', 'ปรับประยุกต์'],
+        cognitiveIndicators: ['generating']
+      },
+      2: {
+        description: 'ความคิดทั่วไป ซ้ำแพทเทิร์นคุ้นเคย ไม่มีมุมใหม่',
+        evidence: ['ความคิดทั่วไป', 'ไม่มีสิ่งใหม่'],
+        cognitiveIndicators: []
+      },
+      1: {
+        description: 'ทวนซ้ำความรู้เดิม / คัดลอกจากคำถาม / ไม่มีมุมเพิ่มเติม',
+        evidence: ['ทวนซ้ำ', 'คัดลอก'],
+        cognitiveIndicators: []
+      },
+      0: {
+        description: 'ไม่แสดงความคิดริเริ่มใดๆ / ว่างเปล่า',
+        evidence: ['ไม่มีความคิดริเริ่ม'],
+        cognitiveIndicators: []
+      }
+    }
+  },
+  evidence: {
+    name: 'การใช้หลักฐาน (Evidence)',
+    icon: '📚',
+    bloomLevel: 'Apply (L3)',
+    anchors: {
+      5: {
+        description: 'ยกหลักฐาน/ตัวอย่างเฉพาะเจาะจง (specific) ≥2 รายการ + ตรงประเด็น + อธิบายความเชื่อมโยงกับข้อสรุปชัดเจน',
+        evidence: ['ตัวอย่างเฉพาะเจาะจง ≥2', 'อธิบายความเชื่อมโยง', 'แหล่งที่มาชัด'],
+        cognitiveIndicators: ['implementing', 'executing']
+      },
+      4: {
+        description: 'มีหลักฐานที่เกี่ยวข้อง 1-2 รายการ + อธิบายความเชื่อมโยงพอสมควร (ไม่ละเอียดมาก)',
+        evidence: ['ตัวอย่าง ≥1 เฉพาะเจาะจง', 'เชื่อมโยงบางส่วน'],
+        cognitiveIndicators: ['implementing']
+      },
+      3: {
+        description: 'มีตัวอย่างแต่ยังทั่วไป / เชื่อมโยงหลวม เช่น "เช่น สิ่งแวดล้อม" โดยไม่ระบุว่าอะไร',
+        evidence: ['ตัวอย่างทั่วไป', 'เชื่อมโยงหลวม'],
+        cognitiveIndicators: []
+      },
+      2: {
+        description: 'อ้างกว้างๆ ไม่ชัดเจน หรือไม่สัมพันธ์กับข้อสรุป',
+        evidence: ['อ้างกว้างๆ', 'ไม่มีรายละเอียด'],
+        cognitiveIndicators: []
+      },
+      1: {
+        description: 'กล่าวอ้างลอยๆ ไร้ตัวอย่าง/ข้อมูลที่ตรวจสอบได้',
+        evidence: ['กล่าวอ้างลอยๆ'],
+        cognitiveIndicators: []
+      },
+      0: {
+        description: 'ไม่มีหลักฐานหรือตัวอย่างใดๆ / นอกเรื่อง',
+        evidence: ['ไม่มีหลักฐาน'],
+        cognitiveIndicators: []
+      }
+    }
+  }
+}
+
+/**
+ * 🚫 Bias Prevention Guidelines - ใช้ร่วมกันทุก prompt
+ */
+const BIAS_PREVENTION_PROMPT = `
+<bias_prevention>
+⚠️ ข้อควรระวังเรื่องอคติในการประเมิน:
+1. ภาษา ≠ การคิด: ความสามารถในการเขียนภาษาไม่ใช่ตัวชี้วัดทักษะการคิด
+   - หากนักเรียนมีไอเดียดีแต่สื่อสารไม่ชัด ให้คะแนนตาม "ความคิด" ไม่ใช่ "การเขียน"
+   - ตัวสะกดผิด/ไวยากรณ์ผิด ไม่หักคะแนนทักษะการคิด
+2. ความยาว ≠ คุณภาพ: คำตอบสั้นที่ตรงประเด็นดีกว่าคำตอบยาวที่วนซ้ำ
+3. สไตล์ ≠ สาระ: ไม่ให้คะแนนเพิ่มเพราะใช้ศัพท์ยากหรือโครงสร้างซับซ้อน
+4. เป็นกลาง: ไม่มีอคติจากเพศ เชื้อชาติ หรือภูมิหลังที่อาจปรากฏในคำตอบ
+</bias_prevention>`
+
+/**
+ * 🎯 Fluffy Content Detection - ตรวจจับคำตอบที่มีแต่ "น้ำ"
+ */
+const FLUFFY_DETECTION_PROMPT = `
+<fluffy_content_detection>
+🎯 การตรวจจับคำตอบที่มีแต่ "น้ำ" (Fluffy Content):
+คำตอบที่มีเฉพาะคำชมเชย/ความรู้สึกโดยไม่มีสาระ ต้องได้คะแนน 0 ใน R และ E:
+
+ตัวอย่างคำตอบที่ "มีแต่น้ำ" (ต้องให้ R=0, E=0):
+- "ผมคิดว่ามันดีมากๆ เลยครับเพราะมันสุดยอด"
+- "เรื่องนี้น่าสนใจมากค่ะ ชอบมากเลย"
+- "ดีมากครับ เห็นด้วยเลย"
+
+การตรวจสอบ:
+- มีการอ้างเหตุผลที่ตรวจสอบได้หรือไม่? (ถ้าไม่ R=0)
+- มีการยกตัวอย่าง/หลักฐานเฉพาะเจาะจงหรือไม่? (ถ้าไม่ E=0)
+- คำว่า "ดี" "สุดยอด" "น่าสนใจ" ไม่ใช่เหตุผล/หลักฐาน
+</fluffy_content_detection>`
+
+/**
+ * 📊 Conservative Scoring Instructions
+ */
+const CONSERVATIVE_SCORING_PROMPT = `
+<conservative_scoring>
+⚠️ กฎการให้คะแนนแบบ Conservative (เคร่งครัด):
+- ให้คะแนนตาม "สมอคะแนน (Anchors)" เท่านั้น
+- เลือกคะแนนที่ "ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน"
+- หากพฤติกรรมอยู่ "ระหว่าง" สองระดับ → เลือกระดับ "ต่ำกว่า" เสมอ
+- ต้องมี "หลักฐานชัดเจน" จากคำตอบจึงจะให้คะแนนระดับนั้นได้
+- ไม่ "อนุมาน" หรือ "ตีความเกินจริง" จากคำตอบ
+</conservative_scoring>`
+
+/**
+ * 📝 Confidence Score Guidelines
+ */
+const CONFIDENCE_GUIDELINES_PROMPT = `
+<confidence_instructions>
+📊 ระดับความมั่นใจในการประเมิน (Confidence Score):
+
+⚠️ สำคัญ: Confidence = ความมั่นใจในการตัดสิน ไม่ใช่คุณภาพคำตอบ
+- คำตอบมั่ว/ไร้สาระ → ให้คะแนนต่ำ แต่ Confidence สูง (เพราะมั่นใจว่าไม่ดี)
+- คำตอบดีมาก → ให้คะแนนสูง และ Confidence สูง
+- คำตอบก้ำกึ่ง/คลุมเครือ → ให้คะแนนกลาง และ Confidence ต่ำ (ไม่แน่ใจ)
+
+🎯 เกณฑ์ความมั่นใจ:
+- 90-100%: ตัดสินได้ชัดเจน (หลักฐานชัด/ตรงกับ Anchor พอดี)
+- 70-89%: ค่อนข้างมั่นใจ (ต้องตีความบางจุดเล็กน้อย)
+- 50-69%: ไม่แน่ใจ (คำตอบคลุมเครือ/borderline)
+- ต่ำกว่า 50%: ไม่สามารถตัดสินได้ (ต้องถามครูผู้สอน)
+
+📝 ต้องระบุเหตุผลใน "confidenceReason" เสมอ
+</confidence_instructions>`
+
+/**
+ * 🔧 Generate Scoring Rubric Text for Prompts
+ * @param {Array} dimensions - ['analysis', 'reasoning', 'creativity', 'evidence'] หรือ subset
+ * @returns {string} Formatted rubric text for prompt
+ */
+function generateScoringRubricText(dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']) {
+  let rubricText = `<scoring_rubric>
+หลักการให้คะแนน (0–5 เป็นจำนวนเต็ม)
+⚠️ สำคัญ: ให้คะแนนตาม "สมอคะแนน (Anchors)" และเลือกคะแนนที่ "ต่ำสุดที่อธิบายพฤติกรรมของคำตอบครบถ้วน"
+⚠️ ความเคร่งครัด: หากพฤติกรรมอยู่ระหว่างสองระดับ → เลือกระดับ "ต่ำกว่า" เสมอ (conservative scoring)
+`
+
+  dimensions.forEach((dim, idx) => {
+    const config = ARCE_SCORING_ANCHORS[dim]
+    if (!config) return
+    
+    rubricText += `
+${idx + 1}) ${config.name} - ${config.icon}
+╔═══════════════════════════════════════════════════════════════════════════════╗`
+    
+    for (let score = 5; score >= 0; score--) {
+      const anchor = config.anchors[score]
+      rubricText += `
+║ ${score} │ ${anchor.description}`
+      if (score > 0) {
+        rubricText += `
+║───┼──────────────────────────────────────────────────────────────────────────║`
+      }
+    }
+    
+    rubricText += `
+╚═══════════════════════════════════════════════════════════════════════════════╝
+`
+  })
+  
+  rubricText += '</scoring_rubric>'
+  return rubricText
+}
+
+/**
+ * 🔧 Generate Simple Scoring Guide (for worksheets)
+ * @param {Array} dimensions - dimensions to include
+ * @returns {string} Simplified scoring guide
+ */
+function generateSimpleScoringGuide(dimensions = ['analysis', 'reasoning', 'creativity', 'evidence']) {
+  let guideText = ''
+  
+  dimensions.forEach(dim => {
+    const config = ARCE_SCORING_ANCHORS[dim]
+    if (!config) return
+    
+    guideText += `
+**${config.icon} ${config.name.split(' ')[0]} (${dim.charAt(0).toUpperCase()}):**`
+    
+    for (let score = 5; score >= 0; score--) {
+      const anchor = config.anchors[score]
+      guideText += `
+- ${score} = ${anchor.description}`
+    }
+    guideText += '\n'
+  })
+  
+  return guideText
+}
+
 module.exports = {
   sanitizeStudentInput,
   createAssessmentPrompt,
   createLOAssessmentPrompt,
-  LO_ASSESSMENT_SYSTEM_MESSAGE
+  LO_ASSESSMENT_SYSTEM_MESSAGE,
+  // 🆕 Shared Scoring Components
+  ARCE_SCORING_ANCHORS,
+  BIAS_PREVENTION_PROMPT,
+  FLUFFY_DETECTION_PROMPT,
+  CONSERVATIVE_SCORING_PROMPT,
+  CONFIDENCE_GUIDELINES_PROMPT,
+  generateScoringRubricText,
+  generateSimpleScoringGuide
 }

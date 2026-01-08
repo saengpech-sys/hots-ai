@@ -96,6 +96,66 @@
       </div>
     </div>
     
+    <!-- 🆕 Course Selection Modal (Required for assessment tracking) -->
+    <div v-if="showCourseSelectModal" class="modal-overlay">
+      <div class="course-select-modal card">
+        <div class="modal-header">
+          <h2>📚 เลือกวิชาก่อนเริ่มประเมิน</h2>
+        </div>
+        
+        <div class="modal-content">
+          <p class="info-text">
+            ⚠️ กรุณาเลือกวิชาเพื่อให้ระบบบันทึกคะแนนได้ถูกต้อง และครูสามารถดูรายงานได้
+          </p>
+          
+          <div v-if="courseLoading" class="loading-courses">
+            <span class="spinner"></span> กำลังโหลดรายวิชา...
+          </div>
+          
+          <div v-else-if="availableCourses.length > 0" class="course-list">
+            <label 
+              v-for="course in availableCourses" 
+              :key="course.id" 
+              class="course-option"
+              :class="{ selected: selectedCourseForChat === course.id }"
+            >
+              <input 
+                type="radio" 
+                v-model="selectedCourseForChat" 
+                :value="course.id"
+                name="course-select"
+              >
+              <div class="course-info">
+                <span class="course-code">{{ course.courseCode }}</span>
+                <span class="course-name">{{ course.courseName }}</span>
+                <span v-if="course.learningOutcomes?.length" class="lo-count">
+                  🎯 {{ course.learningOutcomes.length }} LOs
+                </span>
+              </div>
+            </label>
+          </div>
+          
+          <div v-else class="no-courses">
+            <p>❌ ไม่พบรายวิชาที่เปิดให้ลงทะเบียน</p>
+            <p>กรุณาติดต่อครูผู้สอนเพื่อเพิ่มรายวิชา</p>
+          </div>
+        </div>
+        
+        <div class="modal-actions">
+          <button 
+            @click="startChatWithCourse" 
+            class="btn btn-primary"
+            :disabled="!selectedCourseForChat || courseLoading"
+          >
+            🚀 เริ่มประเมิน
+          </button>
+          <button @click="goBackToDashboard" class="btn btn-text">
+            ← กลับไปหน้า Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Adaptive Learning Path Banner -->
       <!-- 🆕 Adaptive Learning Path Banner -->
       <div v-if="activePath" class="adaptive-path-banner">
@@ -117,6 +177,10 @@
           <div class="assessment-mode-indicator" :title="assessmentModeTitle">
             <span class="mode-badge" :class="useMultiAgent ? 'multi' : 'single'">
               {{ useMultiAgent ? '🤖×6 Multi-Agent' : '🤖 Single Agent' }}
+            </span>
+            <!-- ⚠️ แจ้งเตือนถ้า course ยังไม่ได้ตั้งค่า -->
+            <span v-if="!hasAssessmentModeConfig && chatStore.currentSession?.courseData" class="mode-warning" title="รายวิชานี้ยังไม่ได้ตั้งค่า Assessment Mode - ใช้ค่าเริ่มต้น Single Agent">
+              ⚠️
             </span>
           </div>
           <button @click="toggleTheme" class="icon-btn" title="Toggle Theme">
@@ -147,62 +211,291 @@
           </div>
           <div class="message-text" v-html="formatMessageText(message.text)"></div>
           
-          <!-- Assessment scores if available -->
-          <div v-if="message.assessmentId && getAssessment(message.assessmentId)" class="assessment-scores">
-            <div class="score-grid">
-              <div class="score-item">
-                <span class="score-label">วิเคราะห์</span>
-                <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.analysis }}/5</span>
-              </div>
-              <div class="score-item">
-                <span class="score-label">เหตุผล</span>
-                <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.reasoning }}/5</span>
-              </div>
-              <div class="score-item">
-                <span class="score-label">สร้างสรรค์</span>
-                <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.creativity }}/5</span>
-              </div>
-              <div class="score-item">
-                <span class="score-label">หลักฐาน</span>
-                <span class="score-value">{{ getAssessment(message.assessmentId).rubricScores.evidence }}/5</span>
-              </div>
-            </div>
-            <div class="overall-score">
-              คะแนนรวม: {{ getAssessment(message.assessmentId).overallScore }}/20
-            </div>
+          <!-- Assessment scores if available (use message.scores OR message.assessmentId) -->
+          <div v-if="message.scores || (message.assessmentId && getAssessment(message.assessmentId))" class="assessment-scores assessment-report">
             
-            <!-- Gamification Info -->
-            <div v-if="getAssessment(message.assessmentId).gamification" class="gamification-info">
-              <div class="points-earned">
-                ⭐ +{{ getAssessment(message.assessmentId).gamification.pointsEarned }} แต้ม
+            <!-- 📋 Assessment Report Header -->
+            <div class="assessment-report-header">
+              <div class="report-title-row">
+                <span class="report-icon">📊</span>
+                <span class="report-title">ผลการประเมินคำตอบ</span>
+                <span class="report-score-badge" :class="getOverallScoreClass(message)">
+                  {{ getOverallScoreValue(message) }}/20
+                </span>
               </div>
-              <div v-if="getAssessment(message.assessmentId).gamification.newBadges?.length > 0" class="new-badges">
-                🏆 เหรียญใหม่: 
-                <span v-for="badgeId in getAssessment(message.assessmentId).gamification.newBadges" :key="badgeId" class="badge-mini">
-                  {{ getBadgeName(badgeId) }}
+              <div class="report-mode-badge">
+                <span v-if="isAssessmentMultiAgent(message.assessmentId)" class="mode-multi">
+                  <span class="mode-icon">🤖×6</span> Multi-Agent Assessment
+                </span>
+                <span v-else class="mode-single">
+                  <span class="mode-icon">🤖</span> Single Agent (CoT)
+                </span>
+                <span v-if="getAgentConfidence(message.assessmentId) || getAssessmentConfidence(message.assessmentId)" 
+                      class="confidence-pill" 
+                      :class="getConfidenceClass(message.assessmentId) || getConfidenceClassFromValue(getAssessmentConfidence(message.assessmentId))">
+                  ความมั่นใจ: {{ getAgentConfidence(message.assessmentId) || getAssessmentConfidence(message.assessmentId) }}%
                 </span>
               </div>
             </div>
-            
-            <!-- LO Assessment if available -->
-            <div v-if="getAssessment(message.assessmentId).loAssessment" class="lo-assessment">
-              <div class="lo-header">🎯 Learning Outcomes ที่ผ่าน:</div>
-              <div v-if="getAssessment(message.assessmentId).loAssessment.passedLOs?.length > 0" class="lo-badges">
-                <span 
-                  v-for="loCode in getAssessment(message.assessmentId).loAssessment.passedLOs" 
-                  :key="loCode"
-                  class="lo-badge"
-                >
-                  ✅ {{ loCode }}
-                </span>
+
+            <!-- ❓ คำถามที่ตอบ -->
+            <div class="assessment-question-section" v-if="getQuestionText(message.assessmentId)">
+              <div class="section-header question-header">
+                <span class="section-icon">❓</span>
+                <span class="section-title">คำถาม:</span>
               </div>
-              <div v-else class="no-lo-passed">
-                ⚠️ ยังไม่ผ่าน LO ในคำตอบนี้ - ลองตอบให้สอดคล้องกับ Learning Outcomes มากขึ้น! 💪
-              </div>
-              <div v-if="getAssessment(message.assessmentId).loAssessment.analysis" class="lo-analysis">
-                💡 {{ getAssessment(message.assessmentId).loAssessment.analysis }}
+              <div class="question-content">
+                {{ getQuestionText(message.assessmentId) }}
               </div>
             </div>
+
+            <!-- ✍️ คำตอบของนักเรียน -->
+            <div class="assessment-answer-section" v-if="getStudentAnswer(message.assessmentId)">
+              <div class="section-header answer-header">
+                <span class="section-icon">✍️</span>
+                <span class="section-title">คำตอบของคุณ:</span>
+              </div>
+              <div class="answer-content">
+                {{ getStudentAnswer(message.assessmentId) }}
+              </div>
+            </div>
+
+            <!-- 📊 คะแนนรายด้าน -->
+            <div class="assessment-scores-section">
+              <div class="section-header scores-header">
+                <span class="section-icon">📊</span>
+                <span class="section-title">คะแนนรายด้าน:</span>
+              </div>
+              <div class="score-grid">
+                <div class="score-item analysis">
+                  <div class="score-header">
+                    <span class="score-label">🔍 วิเคราะห์</span>
+                    <span class="score-value">{{ getScoreValue(message, 'analysis') }}/5</span>
+                  </div>
+                  <div class="score-bar">
+                    <div class="score-fill" :style="{ width: (getScoreValue(message, 'analysis') / 5) * 100 + '%' }"></div>
+                  </div>
+                </div>
+                <div class="score-item reasoning">
+                  <div class="score-header">
+                    <span class="score-label">🧠 เหตุผล</span>
+                    <span class="score-value">{{ getScoreValue(message, 'reasoning') }}/5</span>
+                  </div>
+                  <div class="score-bar">
+                    <div class="score-fill" :style="{ width: (getScoreValue(message, 'reasoning') / 5) * 100 + '%' }"></div>
+                  </div>
+                </div>
+                <div class="score-item creativity">
+                  <div class="score-header">
+                    <span class="score-label">💡 สร้างสรรค์</span>
+                    <span class="score-value">{{ getScoreValue(message, 'creativity') }}/5</span>
+                  </div>
+                  <div class="score-bar">
+                    <div class="score-fill" :style="{ width: (getScoreValue(message, 'creativity') / 5) * 100 + '%' }"></div>
+                  </div>
+                </div>
+                <div class="score-item evidence">
+                  <div class="score-header">
+                    <span class="score-label">📚 หลักฐาน</span>
+                    <span class="score-value">{{ getScoreValue(message, 'evidence') }}/5</span>
+                  </div>
+                  <div class="score-bar">
+                    <div class="score-fill" :style="{ width: (getScoreValue(message, 'evidence') / 5) * 100 + '%' }"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 🤖×6 Multi-Agent Details (แสดงเฉพาะ Multi-Agent mode) -->
+            <details v-if="isAssessmentMultiAgent(message.assessmentId) && getAgentDetails(message.assessmentId)" class="multi-agent-details-section">
+              <summary class="agent-details-summary">
+                <span class="summary-icon">🔬</span>
+                <span class="summary-text">ดูรายละเอียดการประเมินจาก 6 Agents</span>
+                <span class="consensus-badge" :class="getConsensusLevel(message.assessmentId)">
+                  {{ getConsensusLabel(getConsensusLevel(message.assessmentId)) }}
+                </span>
+              </summary>
+              
+              <div class="agents-detail-grid">
+                <!-- Analysis Agent -->
+                <div class="agent-detail-card" v-if="getAgentDetails(message.assessmentId)?.analysis">
+                  <div class="agent-card-header analysis">
+                    <span class="agent-icon">🔍</span>
+                    <span class="agent-name">Analysis Agent</span>
+                    <span class="agent-score">{{ getAgentDetails(message.assessmentId).analysis.score || 0 }}/5</span>
+                  </div>
+                  <div class="agent-confidence-bar">
+                    <span class="confidence-label">ความเชื่อมั่น:</span>
+                    <div class="confidence-bar-bg">
+                      <div class="confidence-bar-fill" :style="{ width: (getAgentDetails(message.assessmentId).analysis.confidence || 0) + '%' }"></div>
+                    </div>
+                    <span class="confidence-value">{{ getAgentDetails(message.assessmentId).analysis.confidence || 0 }}%</span>
+                  </div>
+                  <p class="agent-feedback">{{ getAgentFeedbackFromDetails(getAgentDetails(message.assessmentId).analysis) }}</p>
+                </div>
+                
+                <!-- Reasoning Agent -->
+                <div class="agent-detail-card" v-if="getAgentDetails(message.assessmentId)?.reasoning">
+                  <div class="agent-card-header reasoning">
+                    <span class="agent-icon">🧠</span>
+                    <span class="agent-name">Reasoning Agent</span>
+                    <span class="agent-score">{{ getAgentDetails(message.assessmentId).reasoning.score || 0 }}/5</span>
+                  </div>
+                  <div class="agent-confidence-bar">
+                    <span class="confidence-label">ความเชื่อมั่น:</span>
+                    <div class="confidence-bar-bg">
+                      <div class="confidence-bar-fill" :style="{ width: (getAgentDetails(message.assessmentId).reasoning.confidence || 0) + '%' }"></div>
+                    </div>
+                    <span class="confidence-value">{{ getAgentDetails(message.assessmentId).reasoning.confidence || 0 }}%</span>
+                  </div>
+                  <p class="agent-feedback">{{ getAgentFeedbackFromDetails(getAgentDetails(message.assessmentId).reasoning) }}</p>
+                </div>
+                
+                <!-- Creativity Agent -->
+                <div class="agent-detail-card" v-if="getAgentDetails(message.assessmentId)?.creativity">
+                  <div class="agent-card-header creativity">
+                    <span class="agent-icon">💡</span>
+                    <span class="agent-name">Creativity Agent</span>
+                    <span class="agent-score">{{ getAgentDetails(message.assessmentId).creativity.score || 0 }}/5</span>
+                  </div>
+                  <div class="agent-confidence-bar">
+                    <span class="confidence-label">ความเชื่อมั่น:</span>
+                    <div class="confidence-bar-bg">
+                      <div class="confidence-bar-fill" :style="{ width: (getAgentDetails(message.assessmentId).creativity.confidence || 0) + '%' }"></div>
+                    </div>
+                    <span class="confidence-value">{{ getAgentDetails(message.assessmentId).creativity.confidence || 0 }}%</span>
+                  </div>
+                  <p class="agent-feedback">{{ getAgentFeedbackFromDetails(getAgentDetails(message.assessmentId).creativity) }}</p>
+                </div>
+                
+                <!-- Evidence Agent -->
+                <div class="agent-detail-card" v-if="getAgentDetails(message.assessmentId)?.evidence">
+                  <div class="agent-card-header evidence">
+                    <span class="agent-icon">📚</span>
+                    <span class="agent-name">Evidence Agent</span>
+                    <span class="agent-score">{{ getAgentDetails(message.assessmentId).evidence.score || 0 }}/5</span>
+                  </div>
+                  <div class="agent-confidence-bar">
+                    <span class="confidence-label">ความเชื่อมั่น:</span>
+                    <div class="confidence-bar-bg">
+                      <div class="confidence-bar-fill" :style="{ width: (getAgentDetails(message.assessmentId).evidence.confidence || 0) + '%' }"></div>
+                    </div>
+                    <span class="confidence-value">{{ getAgentDetails(message.assessmentId).evidence.confidence || 0 }}%</span>
+                  </div>
+                  <p class="agent-feedback">{{ getAgentFeedbackFromDetails(getAgentDetails(message.assessmentId).evidence) }}</p>
+                </div>
+              </div>
+              
+              <!-- Adversarial Refiner Info -->
+              <div v-if="getAgentDetails(message.assessmentId)?.adversarial" class="adversarial-summary">
+                <div class="adversarial-header">
+                  <span class="adversarial-icon">⚖️</span>
+                  <span class="adversarial-title">Adversarial Refiner ตรวจสอบแล้ว</span>
+                </div>
+                <p v-if="getAgentDetails(message.assessmentId)?.adversarial?.refinementSummary" class="adversarial-text">
+                  {{ getAgentDetails(message.assessmentId)?.adversarial?.refinementSummary }}
+                </p>
+              </div>
+            </details>
+
+            <!-- 💬 Feedback Section -->
+            <div class="assessment-feedback-section">
+              <div class="section-header feedback-header">
+                <span class="section-icon">💬</span>
+                <span class="section-title">Feedback:</span>
+              </div>
+              <div class="feedback-main-content">
+                {{ getAssessment(message.assessmentId)?.feedbackText || getAssessment(message.assessmentId)?.feedback || getAssessment(message.assessmentId)?.agentDetails?.consensus?.feedback || 'ระบบได้ประเมินคำตอบของคุณเรียบร้อยแล้ว' }}
+              </div>
+            </div>
+
+            <!-- ✨ จุดเด่น / 🎯 จุดที่ควรพัฒนา / 💡 คำแนะนำ -->
+            <div class="assessment-improvement-section">
+              <!-- จุดเด่น -->
+              <div class="improvement-box strengths" v-if="getAssessment(message.assessmentId)?.strengths?.length > 0">
+                <div class="improvement-header">
+                  <span class="improvement-icon">✨</span>
+                  <span class="improvement-title">จุดเด่นของคุณ:</span>
+                </div>
+                <ul class="improvement-list">
+                  <li v-for="(item, idx) in getAssessment(message.assessmentId)?.strengths" :key="'str-'+idx">
+                    {{ item }}
+                  </li>
+                </ul>
+              </div>
+              <div class="improvement-box strengths empty" v-else>
+                <div class="improvement-header">
+                  <span class="improvement-icon">✨</span>
+                  <span class="improvement-title">จุดเด่นของคุณ:</span>
+                </div>
+                <p class="empty-text">ยังไม่มีข้อมูล</p>
+              </div>
+
+              <!-- จุดที่ควรพัฒนา -->
+              <div class="improvement-box weaknesses" v-if="getAssessment(message.assessmentId)?.weaknesses?.length > 0">
+                <div class="improvement-header">
+                  <span class="improvement-icon">🎯</span>
+                  <span class="improvement-title">จุดที่ควรพัฒนา:</span>
+                </div>
+                <ul class="improvement-list">
+                  <li v-for="(item, idx) in getAssessment(message.assessmentId)?.weaknesses" :key="'wk-'+idx">
+                    {{ item }}
+                  </li>
+                </ul>
+              </div>
+              <div class="improvement-box weaknesses empty" v-else>
+                <div class="improvement-header">
+                  <span class="improvement-icon">🎯</span>
+                  <span class="improvement-title">จุดที่ควรพัฒนา:</span>
+                </div>
+                <p class="empty-text">ยังไม่มีข้อมูล</p>
+              </div>
+
+              <!-- คำแนะนำ -->
+              <div class="improvement-box suggestions" v-if="getAssessment(message.assessmentId)?.suggestions?.length > 0">
+                <div class="improvement-header">
+                  <span class="improvement-icon">💡</span>
+                  <span class="improvement-title">คำแนะนำ:</span>
+                </div>
+                <ul class="improvement-list">
+                  <li v-for="(item, idx) in getAssessment(message.assessmentId)?.suggestions" :key="'sug-'+idx">
+                    {{ item }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- 🎯 LO Assessment -->
+            <div v-if="getAssessment(message.assessmentId)?.loAssessment" class="assessment-lo-section">
+              <div class="section-header lo-header">
+                <span class="section-icon">🎯</span>
+                <span class="section-title">Learning Outcomes:</span>
+              </div>
+              <div v-if="getAssessment(message.assessmentId)?.loAssessment?.passedLOs?.length > 0" class="lo-passed-list">
+                <span class="lo-status passed">✅ ผ่าน:</span>
+                <span v-for="loCode in getAssessment(message.assessmentId)?.loAssessment?.passedLOs" :key="loCode" class="lo-badge passed">
+                  {{ loCode }}
+                </span>
+              </div>
+              <div v-else class="lo-not-passed">
+                <span class="lo-status not-passed">⚠️ ยังไม่ผ่าน LO ในคำตอบนี้</span>
+                <p class="lo-tip">💡 ลองตอบให้สอดคล้องกับ Learning Outcomes มากขึ้น</p>
+              </div>
+              <p v-if="getAssessment(message.assessmentId)?.loAssessment?.analysis" class="lo-analysis-text">
+                {{ getAssessment(message.assessmentId)?.loAssessment?.analysis }}
+              </p>
+            </div>
+
+            <!-- ⭐ Gamification -->
+            <div v-if="getAssessment(message.assessmentId)?.gamification" class="assessment-gamification-section">
+              <div class="gamification-row">
+                <span class="points-earned">⭐ +{{ getAssessment(message.assessmentId)?.gamification?.pointsEarned }} แต้ม</span>
+                <span v-if="getAssessment(message.assessmentId)?.gamification?.newBadges?.length > 0" class="new-badges">
+                  🏆 {{ getAssessment(message.assessmentId)?.gamification?.newBadges.map(b => getBadgeName(b)).join(', ') }}
+                </span>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -575,6 +868,12 @@ const readiness = ref({ ready: true, percent: 100, unitsCompleted: 0, totalUnits
 const unitProgressList = ref([])
 const hasCheckedReadiness = ref(false)
 
+// 🆕 Course Selection State
+const showCourseSelectModal = ref(false)
+const availableCourses = ref([])
+const selectedCourseForChat = ref('')
+const courseLoading = ref(false)
+
 // 🆕 Journey Level
 const journeyLevel = computed(() => learningProgress.journeySettings?.level || 2)
 
@@ -619,7 +918,22 @@ const sessionSummary = ref({
 // 🤖 Multi-Agent Mode - ดึงจาก Course Setting (ครูตั้งค่า)
 const useMultiAgent = computed(() => {
   const courseData = chatStore.currentSession?.courseData
-  return courseData?.assessmentMode === 'multi-agent'
+  const mode = courseData?.assessmentMode === 'multi-agent'
+  // Debug log
+  console.log('🤖 Assessment Mode Check:', {
+    hasSession: !!chatStore.currentSession,
+    hasCourseData: !!courseData,
+    assessmentMode: courseData?.assessmentMode,
+    assessmentModeRaw: courseData?.assessmentMode, // เช็คค่าดิบ
+    useMultiAgent: mode
+  })
+  return mode
+})
+
+// 🤖 Check if course has assessment mode configured
+const hasAssessmentModeConfig = computed(() => {
+  const courseData = chatStore.currentSession?.courseData
+  return courseData?.assessmentMode !== undefined
 })
 
 // 🤖 Assessment Mode Title for tooltip
@@ -689,9 +1003,17 @@ onMounted(async () => {
     await loadAdaptivePath(pathId)
   }
   
+  // 🆕 Check for courseId - Required for proper assessment tracking
+  const selectedCourseId = localStorage.getItem('selectedCourseId')
+  
+  if (!selectedCourseId && !chatStore.currentSession) {
+    // No course selected - show course selection modal
+    await loadAvailableCourses()
+    showCourseSelectModal.value = true
+    return // Wait for user to select course
+  }
+  
   if (!chatStore.currentSession) {
-    // Get selected course from localStorage
-    const selectedCourseId = localStorage.getItem('selectedCourseId')
     await chatStore.startSession(selectedCourseId)
   }
   
@@ -759,7 +1081,19 @@ watch(inputText, (newValue) => {
 })
 
 // Auto-scroll when new messages arrive
-watch(messages, () => {
+watch(messages, (newMessages) => {
+  // 🔍 Debug: Log message structure to check for scores
+  if (newMessages?.length > 0) {
+    const feedbackMsgs = newMessages.filter(m => m.type === 'feedback' || m.assessmentId || m.scores)
+    console.log('🔍 Messages with feedback/scores:', feedbackMsgs.map(m => ({
+      id: m.id,
+      type: m.type,
+      hasAssessmentId: !!m.assessmentId,
+      assessmentId: m.assessmentId,
+      hasScores: !!m.scores,
+      scores: m.scores
+    })))
+  }
   nextTick(() => scrollToBottom())
 }, { deep: true })
 
@@ -897,6 +1231,56 @@ function goToLearningRooms() {
   router.push('/learning-rooms')
 }
 
+// 📚 Course Selection Modal Helpers
+async function loadAvailableCourses() {
+  courseLoading.value = true
+  try {
+    const user = authStore.user
+    if (!user) return
+    
+    // Get courses where student is enrolled
+    const coursesRef = collection(db, 'courses')
+    const snapshot = await getDocs(coursesRef)
+    
+    availableCourses.value = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(course => {
+        // Check if student grade/room matches course target
+        const studentGrade = user.grade
+        const studentRoom = user.room
+        return course.targetGrade === studentGrade || !course.targetGrade
+      })
+    
+    console.log('📚 Available courses:', availableCourses.value.length)
+  } catch (error) {
+    console.error('Error loading courses:', error)
+  } finally {
+    courseLoading.value = false
+  }
+}
+
+async function startChatWithCourse() {
+  if (!selectedCourseForChat.value) {
+    alert('กรุณาเลือกรายวิชา')
+    return
+  }
+  
+  // Save to localStorage
+  localStorage.setItem('selectedCourseId', selectedCourseForChat.value)
+  console.log('✅ Selected course saved:', selectedCourseForChat.value)
+  
+  // Close modal
+  showCourseSelectModal.value = false
+  
+  // Start session with selected course
+  await chatStore.startSession(selectedCourseForChat.value)
+}
+
+function goBackToDashboard() {
+  showCourseSelectModal.value = false
+  router.push('/student')
+}
+
 function formatTime(timestamp) {
   if (!timestamp) return ''
   const date = timestamp instanceof Date ? timestamp : new Date(timestamp)
@@ -905,7 +1289,256 @@ function formatTime(timestamp) {
 
 function getAssessment(assessmentId) {
   if (!assessmentId) return null
-  return assessments.value.find(a => a.id === assessmentId) || null
+  const assessment = assessments.value.find(a => a.id === assessmentId) || null
+  // 🔍 Debug: Log assessment to check Multi-Agent fields
+  if (assessment) {
+    console.log('🔍 Assessment Debug:', {
+      id: assessmentId,
+      hasAgentDetails: !!assessment.agentDetails,
+      assessmentType: assessment.assessmentType,
+      multiAgentMode: assessment.multiAgentMode,
+      hasMultiAgentMetadata: !!assessment.multiAgentMetadata,
+      allKeys: Object.keys(assessment)
+    })
+  }
+  return assessment
+}
+
+// 🎯 Score Helpers - Use message.scores as fallback when assessment not loaded yet
+function getScoreValue(message, dimension) {
+  const assessment = getAssessment(message.assessmentId)
+  if (assessment?.rubricScores?.[dimension] !== undefined) {
+    return assessment.rubricScores[dimension]
+  }
+  // Fallback to message.scores if assessment not loaded
+  if (message.scores?.[dimension] !== undefined) {
+    return message.scores[dimension]
+  }
+  return 0
+}
+
+function getOverallScoreValue(message) {
+  const assessment = getAssessment(message.assessmentId)
+  if (assessment?.overallScore !== undefined) {
+    return assessment.overallScore
+  }
+  // Calculate from scores if available
+  const scores = assessment?.rubricScores || message.scores || {}
+  return (scores.analysis || 0) + (scores.reasoning || 0) + (scores.creativity || 0) + (scores.evidence || 0)
+}
+
+function getOverallScoreClass(message) {
+  const score = getOverallScoreValue(message)
+  const percent = (score / 20) * 100
+  if (percent >= 80) return 'excellent'
+  if (percent >= 60) return 'good'
+  if (percent >= 40) return 'fair'
+  return 'needs-improvement'
+}
+
+function getAssessmentConfidence(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  return assessment?.confidence || 0
+}
+
+function getConfidenceClassFromValue(confidence) {
+  if (confidence >= 80) return 'high'
+  if (confidence >= 60) return 'medium'
+  return 'low'
+}
+
+// 🤖 Single Agent CoT Helper Functions
+function hasSingleAgentCoT(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  // Must NOT be multi-agent and must have chain of thought
+  if (!assessment) return false
+  if (assessment.agentDetails || assessment.assessmentType === 'multi-agent') return false
+  return assessment.chainOfThought || assessment.cotSteps
+}
+
+function getSingleAgentCoT(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  if (!assessment) return null
+  
+  // Handle different formats of CoT data
+  if (assessment.chainOfThought) {
+    // If it's an object with steps
+    if (typeof assessment.chainOfThought === 'object') {
+      return assessment.chainOfThought
+    }
+    // If it's a string, parse into steps
+    if (typeof assessment.chainOfThought === 'string') {
+      return { analysis: assessment.chainOfThought }
+    }
+  }
+  
+  if (assessment.cotSteps) {
+    return assessment.cotSteps
+  }
+  
+  return null
+}
+
+// 🤖 Multi-Agent Helper Functions
+function isAssessmentMultiAgent(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  // Check multiple indicators for Multi-Agent mode
+  return assessment?.agentDetails || 
+         assessment?.assessmentType === 'multi-agent' ||
+         assessment?.multiAgentMode === true ||
+         assessment?.multiAgentMetadata // ถ้ามี metadata แสดงว่าเป็น multi-agent
+}
+
+function getAgentDetails(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  return assessment?.agentDetails || null
+}
+
+function getMultiAgentMetadata(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  return assessment?.multiAgentMetadata || null
+}
+
+function getAgentConfidence(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  return assessment?.confidence || assessment?.agentDetails?.consensus?.confidence || 0
+}
+
+function getConfidenceClass(assessmentId) {
+  const confidence = getAgentConfidence(assessmentId)
+  if (confidence >= 80) return 'high'
+  if (confidence >= 60) return 'medium'
+  return 'low'
+}
+
+function getConsensusLevel(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  return assessment?.agentDetails?.consensus?.consensusLevel || 
+         assessment?.multiAgentMetadata?.consensusLevel || 
+         'medium'
+}
+
+function getConsensusLabel(level) {
+  const labels = {
+    high: '🟢 High Consensus',
+    medium: '🟡 Medium Consensus',
+    low: '🔴 Low Consensus'
+  }
+  return labels[level] || labels.medium
+}
+
+function formatChainOfThought(cot) {
+  if (!cot) return ''
+  if (typeof cot === 'string') return cot
+  
+  // If COT is an object, format it nicely
+  try {
+    return Object.entries(cot)
+      .map(([key, value]) => {
+        const label = key.replace(/_/g, ' ').replace(/step(\d+)/, 'ขั้นตอน $1')
+        if (Array.isArray(value)) {
+          return `${label}:\n  ${value.join('\n  ')}`
+        }
+        return `${label}: ${typeof value === 'object' ? JSON.stringify(value, null, 2) : value}`
+      })
+      .join('\n\n')
+  } catch (e) {
+    return JSON.stringify(cot, null, 2)
+  }
+}
+
+function getDimensionLabel(dimension) {
+  const labels = {
+    analysis: '🔍 วิเคราะห์',
+    reasoning: '🧠 เหตุผล',
+    creativity: '💡 สร้างสรรค์',
+    evidence: '📚 หลักฐาน'
+  }
+  return labels[dimension] || dimension
+}
+
+// 🤖 Get Agent Feedback with smart fallbacks
+function getAgentFeedbackFromDetails(agentData) {
+  if (!agentData) return 'รอข้อมูล...'
+  
+  // 1. Primary: microFeedback
+  if (agentData.microFeedback) return agentData.microFeedback
+  
+  // 2. Fallback: rationale
+  if (agentData.rationale) return agentData.rationale
+  
+  // 3. Fallback: chainOfThought.step4_reasoning (เหตุผลการให้คะแนน)
+  if (agentData.chainOfThought?.step4_reasoning) {
+    return agentData.chainOfThought.step4_reasoning
+  }
+  
+  // 4. Fallback: chainOfThought.step3_anchor_match
+  if (agentData.chainOfThought?.step3_anchor_match) {
+    return agentData.chainOfThought.step3_anchor_match
+  }
+  
+  // 5. Fallback: anchorUsed (description ของ Anchor ที่ใช้)
+  if (agentData.anchorUsed) return agentData.anchorUsed
+  
+  // 6. Generate from score if nothing else
+  const score = agentData.score || 0
+  if (score >= 4) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับดีมาก`
+  if (score >= 3) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับดี`
+  if (score >= 2) return `ได้คะแนน ${score}/5 - แสดงทักษะระดับปานกลาง`
+  if (score >= 1) return `ได้คะแนน ${score}/5 - ควรปรับปรุงเพิ่มเติม`
+  return `ได้คะแนน ${score}/5 - ยังไม่แสดงทักษะด้านนี้`
+}
+
+// 🔧 Helper: Get question text from assessment (support both questionText and questionContext)
+function getQuestionText(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  if (!assessment) return null
+  return assessment.questionText || assessment.questionContext || null
+}
+
+// 🔧 Helper: Get student answer from assessment (support multiple field names)
+function getStudentAnswer(assessmentId) {
+  const assessment = getAssessment(assessmentId)
+  if (!assessment) return null
+  return assessment.studentAnswer || assessment.rawAnswer || null
+}
+
+function hasRefinedScores(assessmentId) {
+  const details = getAgentDetails(assessmentId)
+  return details?.adversarial?.refinedScores && 
+         Object.keys(details.adversarial.refinedScores).length > 0
+}
+
+function getOriginalScore(assessmentId, dimension) {
+  const details = getAgentDetails(assessmentId)
+  // Get score from the original agent for that dimension
+  return details?.[dimension]?.score || 0
+}
+
+function getScoreChangeClass(assessmentId, dimension) {
+  const originalScore = getOriginalScore(assessmentId, dimension)
+  const refinedScore = getAgentDetails(assessmentId)?.adversarial?.refinedScores?.[dimension] || 0
+  
+  if (refinedScore < originalScore) return 'decreased'
+  if (refinedScore > originalScore) return 'increased'
+  return 'unchanged'
+}
+
+function getScoreChangeReason(assessmentId, dimension) {
+  // Try to get specific reason from adversarial feedback
+  const details = getAgentDetails(assessmentId)
+  const adversarial = details?.adversarial
+  
+  // Check if there are specific dimension feedback in challenges
+  if (adversarial?.challenges) {
+    const relatedChallenge = adversarial.challenges.find(c => 
+      c.toLowerCase().includes(dimension) ||
+      c.toLowerCase().includes(getDimensionLabel(dimension).replace(/[🔍🧠💡📚]/g, '').trim())
+    )
+    if (relatedChallenge) return relatedChallenge
+  }
+  
+  return ''
 }
 
 function getBadgeName(badgeId) {
@@ -1743,38 +2376,673 @@ function validateTypingBehavior(text) {
   border-radius: 3px;
 }
 
-.assessment-scores {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+/* 📋 New Assessment Report Styles */
+.assessment-report {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+  border-radius: 16px;
+  border: 2px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
-.score-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem;
+.assessment-report-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.report-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
 
+.report-icon {
+  font-size: 1.5rem;
+}
+
+.report-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: white;
+  flex: 1;
+}
+
+.report-score-badge {
+  font-size: 1.5rem;
+  font-weight: 800;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.report-score-badge.excellent {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.report-score-badge.good {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.report-score-badge.fair {
+  background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.report-score-badge.needs-improvement {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.report-mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.mode-multi, .mode-single {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mode-multi {
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  color: white;
+}
+
+.mode-single {
+  background: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+}
+
+.confidence-pill {
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Section Styles */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.section-icon {
+  font-size: 1.1rem;
+}
+
+.section-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Question Section */
+.assessment-question-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  border-left: 4px solid #3b82f6;
+}
+
+.question-header .section-title {
+  color: #93c5fd;
+}
+
+.question-content {
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+/* Answer Section */
+.assessment-answer-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 12px;
+  border-left: 4px solid #10b981;
+}
+
+.answer-header .section-title {
+  color: #6ee7b7;
+}
+
+.answer-content {
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+/* Scores Section */
+.assessment-scores-section {
+  margin-bottom: 1.25rem;
+}
+
+.scores-header .section-title {
+  color: #c4b5fd;
+}
+
+/* Multi-Agent Details Section */
+.multi-agent-details-section {
+  margin: 1.25rem 0;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  overflow: hidden;
+}
+
+.agent-details-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: #c4b5fd;
+  transition: background 0.2s;
+}
+
+.agent-details-summary:hover {
+  background: rgba(139, 92, 246, 0.15);
+}
+
+.summary-icon {
+  font-size: 1.1rem;
+}
+
+.summary-text {
+  flex: 1;
+}
+
+.agents-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.agent-detail-card {
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agent-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agent-card-header.analysis { border-color: rgba(96, 165, 250, 0.5); }
+.agent-card-header.reasoning { border-color: rgba(167, 139, 250, 0.5); }
+.agent-card-header.creativity { border-color: rgba(244, 114, 182, 0.5); }
+.agent-card-header.evidence { border-color: rgba(52, 211, 153, 0.5); }
+
+.agent-icon {
+  font-size: 1.1rem;
+}
+
+.agent-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.agent-score {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: white;
+}
+
+.agent-confidence-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.confidence-label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.confidence-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 3px;
+}
+
+.confidence-value {
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
+.agent-feedback {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Adversarial Summary */
+.adversarial-summary {
+  margin: 1rem;
+  padding: 1rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 10px;
+  border-left: 4px solid #f59e0b;
+}
+
+.adversarial-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.adversarial-icon {
+  font-size: 1.1rem;
+}
+
+.adversarial-title {
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.adversarial-text {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+/* Feedback Section */
+.assessment-feedback-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+}
+
+.feedback-header .section-title {
+  color: #93c5fd;
+}
+
+.feedback-main-content {
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+
+/* Improvement Section */
+.assessment-improvement-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.improvement-box {
+  padding: 1rem;
+  border-radius: 10px;
+}
+
+.improvement-box.strengths {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.improvement-box.weaknesses {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.improvement-box.suggestions {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.improvement-box.empty {
+  opacity: 0.6;
+}
+
+.improvement-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.improvement-icon {
+  font-size: 1rem;
+}
+
+.improvement-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.improvement-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+
+.improvement-list li {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+
+.empty-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  margin: 0;
+}
+
+/* LO Section */
+.assessment-lo-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 12px;
+}
+
+.lo-header .section-title {
+  color: #c4b5fd;
+}
+
+.lo-passed-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lo-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.lo-status.passed {
+  color: #6ee7b7;
+}
+
+.lo-status.not-passed {
+  color: #fbbf24;
+}
+
+.lo-badge.passed {
+  padding: 0.25rem 0.6rem;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: #6ee7b7;
+}
+
+.lo-not-passed {
+  text-align: center;
+}
+
+.lo-tip {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0.5rem 0 0 0;
+}
+
+.lo-analysis-text {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Gamification Section */
+.assessment-gamification-section {
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.gamification-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.points-earned {
+  font-weight: 700;
+  color: #fbbf24;
+  font-size: 1rem;
+}
+
+.new-badges {
+  font-size: 0.85rem;
+  color: #fcd34d;
+}
+
+/* 🎯 Enhanced Assessment Scores Section (Legacy support) */
+.assessment-scores:not(.assessment-report) {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+  border-radius: 12px;
+  border: 2px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.2);
+}
+
+/* Assessment Mode Headers */
+.assessment-mode-header {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.multi-agent-header,
+.single-agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.multi-agent-badge,
+.single-agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.badge-icon {
+  font-size: 1.1rem;
+}
+
+.badge-text {
+  color: white;
+}
+
+.confidence-badge {
+  padding: 0.35rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.confidence-badge.high {
+  background: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+}
+
+.confidence-badge.medium {
+  background: rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+}
+
+.confidence-badge.low {
+  background: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+/* Score Grid with Progress Bars */
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.875rem;
+  margin-bottom: 1.25rem;
+}
+
 .score-item {
+  padding: 0.875rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.score-item:hover {
+  background: rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Color coding for dimensions */
+.score-item.analysis { border-left: 4px solid #60a5fa; }
+.score-item.reasoning { border-left: 4px solid #a78bfa; }
+.score-item.creativity { border-left: 4px solid #f472b6; }
+.score-item.evidence { border-left: 4px solid #34d399; }
+
+.score-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  margin-bottom: 0.5rem;
 }
 
 .score-label {
   font-size: 0.875rem;
-  opacity: 0.9;
+  font-weight: 600;
+  opacity: 0.95;
 }
 
 .score-value {
+  font-weight: 800;
+  font-size: 1rem;
+  color: white;
+}
+
+/* Progress Bar Styling */
+.score-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.score-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.score-item.analysis .score-fill { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.score-item.reasoning .score-fill { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.score-item.creativity .score-fill { background: linear-gradient(90deg, #ec4899, #f472b6); }
+.score-item.evidence .score-fill { background: linear-gradient(90deg, #10b981, #34d399); }
+
+/* Overall Score Card */
+.overall-score-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
   font-weight: 700;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.overall-score-card.excellent {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.overall-score-card.good {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.overall-score-card.fair {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+.overall-score-card.needs-improvement {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.overall-label {
   font-size: 1rem;
 }
 
+.overall-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+.overall-percentage {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+/* LEGACY: Keep old .overall-score for backward compatibility */
 .overall-score {
   text-align: center;
   font-weight: 700;
@@ -1782,6 +3050,164 @@ function validateTypingBehavior(text) {
   padding: 0.5rem;
   background: rgba(255, 255, 255, 0.15);
   border-radius: 6px;
+}
+
+/* 📝 Comprehensive Feedback Section Styles */
+.comprehensive-feedback {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.feedback-main {
+  margin-bottom: 1rem;
+}
+
+.feedback-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.feedback-icon {
+  font-size: 1.25rem;
+}
+
+.feedback-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #a78bfa;
+}
+
+.feedback-content {
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  line-height: 1.6;
+  color: var(--text-primary, #fff);
+  border-left: 4px solid #a78bfa;
+}
+
+.feedback-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section-icon {
+  font-size: 1.1rem;
+}
+
+.section-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.feedback-section-header.strengths {
+  color: #34d399;
+}
+
+.feedback-section-header.weaknesses {
+  color: #f59e0b;
+}
+
+.feedback-section-header.suggestions {
+  color: #60a5fa;
+}
+
+.feedback-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+}
+
+.feedback-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feedback-item:hover {
+  transform: translateX(4px);
+}
+
+.feedback-item.strength {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.feedback-item.weakness {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.feedback-item.suggestion {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.item-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.item-text {
+  flex: 1;
+  line-height: 1.5;
+  color: var(--text-primary, #fff);
+}
+
+.no-feedback-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  color: rgba(148, 163, 184, 0.8);
+  font-style: italic;
+}
+
+.no-feedback-icon {
+  font-size: 1.25rem;
+}
+
+/* Feedback Section - Light Mode Overrides */
+.light-mode .feedback-content,
+.light-mode .item-text {
+  color: var(--text-primary, #1a1a2e);
+}
+
+.light-mode .comprehensive-feedback {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+.light-mode .feedback-content {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.light-mode .feedback-item.strength {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.light-mode .feedback-item.weakness {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.light-mode .feedback-item.suggestion {
+  background: rgba(59, 130, 246, 0.1);
 }
 
 /* LO Assessment Styles */
@@ -1868,6 +3294,533 @@ function validateTypingBehavior(text) {
   font-size: 0.875rem;
   line-height: 1.5;
   opacity: 0.9;
+}
+
+/* 🤖 Multi-Agent Assessment Styles */
+.multi-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.multi-agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.2));
+  border-radius: 8px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.multi-agent-badge .badge-icon {
+  font-size: 1rem;
+}
+
+.multi-agent-badge .badge-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a78bfa;
+}
+
+.confidence-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.confidence-badge.high {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.confidence-badge.medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.confidence-badge.low {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* Score Items with Progress Bar */
+.score-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.score-item .score-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  opacity: 0.9;
+}
+
+.score-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar .score-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #818cf8, #a78bfa);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Multi-Agent Details (Expandable) */
+.multi-agent-details {
+  margin-top: 1rem;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.multi-agent-details summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(139, 92, 246, 0.15);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #a78bfa;
+  transition: background 0.2s ease;
+}
+
+.multi-agent-details summary:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+.multi-agent-details summary .details-icon {
+  font-size: 1rem;
+}
+
+.multi-agent-details summary .consensus-badge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.multi-agent-content {
+  padding: 1rem;
+}
+
+/* Agents Grid */
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 600px) {
+  .agents-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Agent Cards */
+.agent-card {
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-card.analysis {
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.agent-card.reasoning {
+  border-color: rgba(244, 114, 182, 0.3);
+  background: rgba(244, 114, 182, 0.1);
+}
+
+.agent-card.creativity {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.agent-card.evidence {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.agent-card .agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.agent-card .agent-icon {
+  font-size: 1.125rem;
+}
+
+.agent-card .agent-name {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.agent-card .agent-score {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #a78bfa;
+}
+
+.agent-card .agent-confidence {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  margin-bottom: 0.375rem;
+}
+
+.agent-card .agent-feedback {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin: 0;
+  opacity: 0.85;
+}
+
+/* Chain of Thought */
+.chain-of-thought {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+}
+
+.chain-of-thought summary {
+  cursor: pointer;
+  color: #60a5fa;
+  padding: 0.25rem 0;
+}
+
+.chain-of-thought summary:hover {
+  text-decoration: underline;
+}
+
+.cot-content {
+  margin-top: 0.375rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-family: 'Sarabun', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+/* Adversarial Section */
+.adversarial-section {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+}
+
+.adversarial-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  color: #f87171;
+}
+
+.adversarial-content {
+  font-size: 0.8rem;
+}
+
+.refined-scores {
+  margin-bottom: 0.75rem;
+}
+
+.score-adjustments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.adjustment-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.adjustment-item .dim-name {
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.adjustment-item .orig-score {
+  opacity: 0.6;
+}
+
+.adjustment-item .arrow {
+  color: #f87171;
+}
+
+.adjustment-item .new-score {
+  font-weight: 700;
+}
+
+.adjustment-item .new-score.decreased {
+  color: #f87171;
+}
+
+.adjustment-item .new-score.increased {
+  color: #34d399;
+}
+
+.adjustment-item .new-score.unchanged {
+  color: #fbbf24;
+}
+
+.adjustment-item .reason {
+  flex: 1;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  text-align: right;
+}
+
+.challenges-list, .bias-list {
+  margin-bottom: 0.75rem;
+}
+
+.challenges-list ul, .bias-list ul {
+  margin: 0.375rem 0 0 1rem;
+  padding: 0;
+  list-style-type: disc;
+}
+
+.challenges-list li, .bias-list li {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.bias-list {
+  color: #fbbf24;
+}
+
+.no-issues {
+  color: #34d399;
+  font-weight: 500;
+}
+
+.adversarial-summary {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+/* Consensus Section */
+.consensus-section {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+}
+
+.consensus-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  color: #34d399;
+}
+
+.consensus-content {
+  font-size: 0.8rem;
+}
+
+.consensus-scores {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.consensus-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.consensus-item .label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.consensus-item .value {
+  font-weight: 700;
+}
+
+.consensus-level {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+
+.consensus-level.high {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.consensus-level.medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.consensus-level.low {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.final-breakdown {
+  margin-bottom: 0.75rem;
+}
+
+.breakdown-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.consensus-feedback {
+  margin: 0.5rem 0 0 0;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.confidence-reason {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.7rem;
+  opacity: 0.8;
+  font-style: italic;
+}
+
+/* 🤖 Single Agent Chain-of-Thought Details */
+.single-agent-details {
+  margin-top: 1rem;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.single-agent-details summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(59, 130, 246, 0.15);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #60a5fa;
+  transition: background 0.2s ease;
+}
+
+.single-agent-details summary:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.cot-content-section {
+  padding: 1rem;
+}
+
+.cot-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cot-step {
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.cot-step .step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.cot-step .step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: white;
+}
+
+.cot-step .step-title {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #93c5fd;
+}
+
+.cot-step .step-content {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 0;
+  opacity: 0.9;
+  white-space: pre-wrap;
+}
+
+/* Processing Metadata */
+.processing-meta {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
 }
 
 .typing-indicator {
@@ -2743,6 +4696,153 @@ function validateTypingBehavior(text) {
   background: var(--bg-tertiary, #374151);
   color: var(--text-secondary, #9ca3af);
   border-color: var(--border-color, #4b5563);
+}
+
+/* ⚠️ Mode Warning indicator */
+.mode-warning {
+  margin-left: 0.25rem;
+  cursor: help;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 📚 Course Selection Modal Styles */
+.course-select-modal {
+  max-width: 480px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease-out;
+}
+
+.course-select-modal h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.course-select-modal p {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.course-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--input-bg, #f9fafb);
+  border: 2px solid var(--border-color, #e5e7eb);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.course-option:hover {
+  border-color: var(--primary-color, #3b82f6);
+  background: var(--hover-bg, #f0f9ff);
+}
+
+.course-option.selected {
+  border-color: var(--primary-color, #3b82f6);
+  background: var(--primary-light, #dbeafe);
+}
+
+.course-option input[type="radio"] {
+  margin-top: 0.25rem;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color, #3b82f6);
+}
+
+.course-info {
+  flex: 1;
+}
+
+.course-info strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.course-info small {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.course-info .lo-count {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--badge-bg, #e0f2fe);
+  color: var(--badge-text, #0369a1);
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.course-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.course-modal-actions .btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.course-modal-actions .btn-secondary {
+  background: var(--secondary-bg, #f3f4f6);
+  border: 1px solid var(--border-color, #d1d5db);
+  color: var(--text-color);
+}
+
+.course-modal-actions .btn-secondary:hover {
+  background: var(--hover-bg, #e5e7eb);
+}
+
+.course-modal-actions .btn-primary {
+  background: var(--primary-color, #3b82f6);
+  border: none;
+  color: white;
+}
+
+.course-modal-actions .btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover, #2563eb);
+}
+
+.course-modal-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.no-courses {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.no-courses p {
+  margin-bottom: 1rem;
 }
 
 /* 🆕 Assessment Readiness Modal Styles */

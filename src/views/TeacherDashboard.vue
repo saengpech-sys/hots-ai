@@ -124,6 +124,14 @@
             </div>
             <span class="badge-new">NEW</span>
           </button>
+          <button @click="$router.push('/data-cleanup')" class="action-btn highlight-admin">
+            <span class="action-icon">🧹</span>
+            <div class="action-text">
+              <strong>จัดการข้อมูลตกค้าง</strong>
+              <small>ลบแผนการสอน ใบงาน ใบความรู้ที่ไม่ใช้</small>
+            </div>
+            <span class="badge-new">NEW</span>
+          </button>
           <button @click="$router.push('/teacher-portfolio')" class="action-btn highlight-new">
             <span class="action-icon">💼</span>
             <div class="action-text">

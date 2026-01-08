@@ -18,7 +18,9 @@
           <span class="material-icons">print</span>
           พิมพ์แผน
         </button>
+        <!-- Worksheet Button - Show different options based on state -->
         <button 
+          v-if="!plan?.worksheetId && !generatedWorksheets.length"
           class="btn btn-worksheet"
           @click="showCreateWorksheetModal = true"
           :disabled="generatingWorksheet"
@@ -26,15 +28,44 @@
           <span class="material-icons">{{ generatingWorksheet ? 'hourglass_empty' : 'assignment' }}</span>
           {{ generatingWorksheet ? 'กำลังสร้าง...' : 'สร้างใบงาน' }}
         </button>
+        <router-link 
+          v-else-if="plan?.worksheetId"
+          :to="`/worksheet/${plan.worksheetId}`"
+          class="btn btn-worksheet btn-has-ws"
+          title="ดูใบงาน"
+        >
+          <span class="material-icons">assignment_turned_in</span>
+          ดูใบงาน
+        </router-link>
+        <button
+          v-else
+          class="btn btn-worksheet btn-has-ws"
+          @click="scrollToWorksheets"
+          title="ดูใบงานที่สร้างแล้ว"
+        >
+          <span class="material-icons">assignment_turned_in</span>
+          ดูใบงาน ({{ generatedWorksheets.length }})
+        </button>
+        <!-- Knowledge Sheet Button - Show different options based on state -->
         <button 
+          v-if="!plan?.knowledgeSheetId"
           class="btn btn-ai"
           @click="showKnowledgeSheetModal = true"
-          :disabled="generatingKnowledge || plan?.knowledgeSheetId"
-          :title="plan?.knowledgeSheetId ? 'มีใบความรู้แล้ว' : 'สร้างใบความรู้ด้วย AI'"
+          :disabled="generatingKnowledge"
+          title="สร้างใบความรู้ด้วย AI"
         >
-          <span class="material-icons">{{ generatingKnowledge ? 'hourglass_empty' : (plan?.knowledgeSheetId ? 'check_circle' : 'auto_awesome') }}</span>
-          {{ generatingKnowledge ? 'กำลังสร้าง...' : (plan?.knowledgeSheetId ? 'มีใบความรู้แล้ว' : 'สร้างใบความรู้') }}
+          <span class="material-icons">{{ generatingKnowledge ? 'hourglass_empty' : 'auto_awesome' }}</span>
+          {{ generatingKnowledge ? 'กำลังสร้าง...' : 'สร้างใบความรู้' }}
         </button>
+        <router-link 
+          v-else
+          :to="`/knowledge-sheet/${plan.knowledgeSheetId}`"
+          class="btn btn-ai btn-has-ks"
+          title="ดูใบความรู้"
+        >
+          <span class="material-icons">menu_book</span>
+          ดูใบความรู้
+        </router-link>
         <button 
           v-if="plan?.status === 'draft'"
           class="btn btn-success"
@@ -983,6 +1014,56 @@ async function loadPlan() {
         generatedKnowledgeSheets.value = data.generatedKnowledgeSheets
       }
       
+      // 🔍 ตรวจสอบว่าใบความรู้ที่ลิงค์ไว้ยังมีอยู่จริงหรือไม่
+      if (plan.value.knowledgeSheetId) {
+        try {
+          const ksDoc = await getDoc(doc(db, 'knowledgeSheets', plan.value.knowledgeSheetId))
+          if (!ksDoc.exists()) {
+            console.log('Knowledge sheet was deleted, clearing reference')
+            plan.value.knowledgeSheetId = null
+            // Clear the reference in Firestore too
+            await updateDoc(docRef, { knowledgeSheetId: null })
+          }
+        } catch (ksCheckError) {
+          console.warn('Error checking if knowledge sheet exists:', ksCheckError)
+        }
+      }
+      
+      // 🔍 ตรวจสอบว่าใบงานที่ลิงค์ไว้ยังมีอยู่จริงหรือไม่
+      if (plan.value.worksheetId) {
+        try {
+          const wsDoc = await getDoc(doc(db, 'eWorksheets', plan.value.worksheetId))
+          if (!wsDoc.exists()) {
+            console.log('Worksheet was deleted, clearing reference')
+            plan.value.worksheetId = null
+            // Clear the reference in Firestore too
+            await updateDoc(docRef, { worksheetId: null })
+          }
+        } catch (wsCheckError) {
+          console.warn('Error checking if worksheet exists:', wsCheckError)
+        }
+      }
+      
+      // 🆕 เช็คว่ามี worksheet จาก eWorksheets collection หรือไม่
+      if (!plan.value.worksheetId) {
+        try {
+          const wsQuery = query(
+            collection(db, 'eWorksheets'),
+            where('lessonPlanId', '==', docSnap.id)
+          )
+          const wsSnap = await getDocs(wsQuery)
+          if (!wsSnap.empty) {
+            const existingWsId = wsSnap.docs[0].id
+            console.log('Found existing worksheet:', existingWsId)
+            plan.value.worksheetId = existingWsId
+            // Update the lessonPlan document to link the worksheet
+            await updateDoc(docRef, { worksheetId: existingWsId })
+          }
+        } catch (wsError) {
+          console.warn('Error checking worksheets:', wsError)
+        }
+      }
+      
       // 🆕 เช็คว่ามี knowledge sheet จาก collection หรือไม่ (สำหรับ records เก่าที่ไม่มี knowledgeSheetId)
       if (!plan.value.knowledgeSheetId) {
         try {
@@ -1054,9 +1135,30 @@ function printPlan() {
   window.print()
 }
 
+function scrollToWorksheets() {
+  const worksheetsSection = document.querySelector('.worksheets-section')
+  if (worksheetsSection) {
+    worksheetsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 // Handle worksheet generated from modal
 async function onWorksheetGenerated(result) {
   showCreateWorksheetModal.value = false
+  
+  // 🔗 บันทึก worksheetId กลับไปที่ lessonPlan
+  if (result.worksheetId && plan.value?.id) {
+    try {
+      await updateDoc(doc(db, 'lessonPlans', plan.value.id), {
+        worksheetId: result.worksheetId,
+        updatedAt: serverTimestamp()
+      })
+      plan.value.worksheetId = result.worksheetId
+      console.log('✅ Linked worksheetId to lessonPlan:', result.worksheetId)
+    } catch (linkError) {
+      console.error('Failed to link worksheetId to lessonPlan:', linkError)
+    }
+  }
   
   alert(`✅ สร้างใบงานสำเร็จ!\n\nจำนวน ${result.totalQuestions || 'หลาย'} คำถาม\nคะแนนเต็ม ${result.maxScore || '-'} คะแนน`)
   
@@ -2588,6 +2690,17 @@ onMounted(loadPlan)
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
+.btn-worksheet.btn-has-ws {
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  text-decoration: none;
+}
+
+.btn-worksheet.btn-has-ws:hover {
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
 .btn-ai {
   background: linear-gradient(135deg, #f093fb, #f5576c);
   color: white;
@@ -2597,6 +2710,17 @@ onMounted(loadPlan)
   background: linear-gradient(135deg, #e879f9, #f43f5e);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(240, 147, 251, 0.3);
+}
+
+.btn-ai.btn-has-ks {
+  background: linear-gradient(135deg, #10b981, #059669);
+  text-decoration: none;
+}
+
+.btn-ai.btn-has-ks:hover {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
 .btn-sm {

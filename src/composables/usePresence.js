@@ -84,7 +84,7 @@ export function usePresence() {
    */
   function isStudent() {
     const role = authStore.userProfile?.role || authStore.userData?.role
-    console.log('[Presence] Checking role:', role, 'isStudent computed:', authStore.isStudent)
+    // Removed excessive logging
     return role === 'student' || authStore.isStudent
   }
 
@@ -94,12 +94,10 @@ export function usePresence() {
   async function updatePresence(additionalData = {}) {
     // Must be logged in and be a student
     if (!authStore.user) {
-      console.log('[Presence] No user logged in')
       return
     }
     
     if (!isStudent()) {
-      console.log('[Presence] Not a student, skipping presence update')
       return
     }
 
@@ -120,9 +118,11 @@ export function usePresence() {
         ...additionalData
       }
 
-      console.log('[Presence] Updating:', presenceData.displayName, presenceData.currentPage)
+      // Only log in development
+      if (import.meta.env.DEV) {
+        console.log('[Presence] Updating:', presenceData.displayName, presenceData.currentPage)
+      }
       await setDoc(presenceDocRef, presenceData, { merge: true })
-      console.log('[Presence] ✅ Updated successfully')
     } catch (error) {
       console.error('[Presence] Failed to update:', error)
     }
@@ -198,42 +198,21 @@ export function usePresence() {
     }
   })
 
-  // Watch for user login - start tracking when student logs in
-  watch(() => authStore.user, (newUser) => {
-    console.log('[Presence] User watch triggered:', newUser?.uid, 'isStudent:', isStudent())
-    if (newUser && isStudent()) {
-      console.log('[Presence] User logged in, starting heartbeat')
+  // Single consolidated watcher - start tracking when student with profile logs in
+  watch([() => authStore.user, () => authStore.userProfile], ([newUser, newProfile]) => {
+    const shouldTrack = newUser && newProfile?.role === 'student'
+    
+    if (shouldTrack && !isTracking.value) {
+      // Start tracking
       startHeartbeat()
       document.addEventListener('visibilitychange', handleVisibilityChange)
       window.addEventListener('beforeunload', handleBeforeUnload)
-    } else if (!newUser && isTracking.value) {
-      console.log('[Presence] User logged out, stopping heartbeat')
+    } else if (!shouldTrack && isTracking.value) {
+      // Stop tracking
       stopHeartbeat()
       removePresence()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, { immediate: true })
-
-  // Also watch userProfile for role changes (this is the main one!)
-  watch(() => authStore.userProfile, (newData) => {
-    console.log('[Presence] userProfile watch triggered:', newData?.role, 'user:', authStore.user?.uid)
-    if (newData && authStore.user && isStudent() && !isTracking.value) {
-      console.log('[Presence] User profile loaded, starting heartbeat')
-      startHeartbeat()
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-      window.addEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, { immediate: true, deep: true })
-
-  // Also watch isStudent computed directly
-  watch(() => authStore.isStudent, (newValue) => {
-    console.log('[Presence] isStudent watch triggered:', newValue)
-    if (newValue && authStore.user && !isTracking.value) {
-      console.log('[Presence] isStudent became true, starting heartbeat')
-      startHeartbeat()
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-      window.addEventListener('beforeunload', handleBeforeUnload)
     }
   }, { immediate: true })
 

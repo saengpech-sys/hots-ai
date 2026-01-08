@@ -454,9 +454,9 @@
                   <span class="unit-name">{{ unit.name }}</span>
                   <span class="unit-meta">{{ unit.periods || unit.hours }} คาบ | {{ unit.plans }} แผน | LO: {{ unit.los.join(', ') }}</span>
                   
-                  <!-- Unit ARCE Focus -->
+                  <!-- Unit ARCE Focus (sorted A R C E) -->
                   <div v-if="unit.arceFocus?.length" class="unit-arce-focus">
-                    <span v-for="arce in unit.arceFocus" :key="arce" :class="['arce-tag', arce]">
+                    <span v-for="arce in sortArce(unit.arceFocus)" :key="arce" :class="['arce-tag', arce]">
                       {{ arceLabels[arce] || arce }}
                     </span>
                   </div>
@@ -583,28 +583,30 @@
                   A.R.C.E. ของหน่วยนี้
                 </h4>
                 
-                <!-- แสดง arceFocus badges ถ้ามี -->
+                <!-- แสดง arceFocus badges ถ้ามี (sorted A R C E) -->
                 <div v-if="unit.arceFocus?.length" class="arce-focus-badges">
-                  <span v-for="focus in unit.arceFocus" :key="focus" class="arce-focus-tag" :class="focus">
+                  <span v-for="focus in sortArce(unit.arceFocus)" :key="focus" class="arce-focus-tag" :class="focus">
                     <span class="arce-letter">{{ arceShortLabels[focus] }}</span>
                     <span class="arce-name">{{ arceLabels[focus] }}</span>
                   </span>
                 </div>
 
-                <!-- แสดงรายละเอียด arceDistribution -->
+                <!-- แสดงรายละเอียด arceDistribution (sorted A R C E) -->
                 <div v-if="unit.arceDistribution || unit.arce" class="arce-distribution-grid">
-                  <div v-for="(desc, key) in (unit.arceDistribution || unit.arce)" :key="key" class="arce-distribution-item" :class="key">
-                    <div class="arce-item-header">
-                      <span class="arce-item-icon" :class="key">{{ arceShortLabels[key] }}</span>
-                      <span class="arce-item-label">{{ arceLabels[key] }}</span>
+                  <template v-for="key in arceOrder" :key="key">
+                    <div v-if="(unit.arceDistribution || unit.arce)?.[key]" class="arce-distribution-item" :class="key">
+                      <div class="arce-item-header">
+                        <span class="arce-item-icon" :class="key">{{ arceShortLabels[key] }}</span>
+                        <span class="arce-item-label">{{ arceLabels[key] }}</span>
+                      </div>
+                      <p class="arce-item-desc">{{ (unit.arceDistribution || unit.arce)[key] }}</p>
                     </div>
-                    <p class="arce-item-desc">{{ desc }}</p>
-                  </div>
+                  </template>
                 </div>
 
                 <!-- ถ้าไม่มีข้อมูลละเอียด แสดงข้อความแนะนำ -->
                 <div v-if="!unit.arceDistribution && !unit.arce && unit.arceFocus?.length" class="arce-hint">
-                  <p>หน่วยนี้เน้นทักษะ HOTS ด้าน: {{ unit.arceFocus.map(f => arceLabels[f]).join(', ') }}</p>
+                  <p>หน่วยนี้เน้นทักษะ HOTS ด้าน: {{ sortArce(unit.arceFocus).map(f => arceLabels[f]).join(', ') }}</p>
                 </div>
               </div>
 
@@ -963,6 +965,15 @@ const arceShortLabels = {
   reasoning: 'R',
   creativity: 'C',
   evidence: 'E'
+}
+
+// ARCE Order (A R C E)
+const arceOrder = ['analysis', 'reasoning', 'creativity', 'evidence']
+
+// Helper function to sort ARCE array
+const sortArce = (arceArray) => {
+  if (!arceArray || !Array.isArray(arceArray)) return []
+  return arceOrder.filter(a => arceArray.includes(a))
 }
 
 // Settings

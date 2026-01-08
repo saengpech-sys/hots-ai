@@ -41,7 +41,7 @@
               ครั้งที่ {{ attemptCount + 1 }} / {{ worksheet.retrySettings?.maxAttempts || '∞' }}
             </span>
             <span v-if="bestScore !== null" class="best-score">
-              คะแนนดีที่สุด: {{ bestScore.toFixed(1) }} / {{ totalMaxScore }}
+              คะแนนดีที่สุด: {{ bestScore?.toFixed(1) || '-' }} / {{ totalMaxScore }}
             </span>
           </div>
         </div>
@@ -50,6 +50,41 @@
             <span class="material-icons">timeline</span>
             ดูประวัติ
           </router-link>
+        </div>
+      </div>
+
+      <!-- 🆕 Edit Previous Answer Banner -->
+      <div v-if="previousSubmissions.length > 0 && canEdit && !isEditMode" class="edit-answer-banner">
+        <div class="edit-info">
+          <span class="material-icons">edit_note</span>
+          <div class="edit-details">
+            <span class="edit-title">✏️ แก้ไขคำตอบเดิม</span>
+            <span class="edit-remaining">
+              เหลือสิทธิ์แก้ไขอีก {{ getRemainingEdits() }} ครั้ง (จากทั้งหมด {{ MAX_EDIT_COUNT }} ครั้ง)
+            </span>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-warning" @click="loadPreviousAnswers">
+          <span class="material-icons">restore</span>
+          ดึงคำตอบเดิมมาแก้ไข
+        </button>
+      </div>
+
+      <!-- Edit Mode Active Banner -->
+      <div v-if="isEditMode" class="edit-mode-banner">
+        <span class="material-icons">edit</span>
+        <div>
+          <strong>🔄 กำลังแก้ไขคำตอบ</strong>
+          <p>ครั้งที่ {{ editCount + 1 }}/{{ MAX_EDIT_COUNT }} • แก้ไขแล้วกดส่งใหม่</p>
+        </div>
+      </div>
+
+      <!-- Max Edit Reached Warning -->
+      <div v-if="!canEdit && previousSubmissions.length > 0" class="max-edit-warning">
+        <span class="material-icons">block</span>
+        <div>
+          <strong>แก้ไขครบจำนวนแล้ว</strong>
+          <p>คุณใช้สิทธิ์แก้ไขคำตอบครบ {{ MAX_EDIT_COUNT }} ครั้งแล้ว</p>
         </div>
       </div>
 
@@ -82,8 +117,8 @@
             <span class="score-value">{{ previousSubmissions[0]?.assessment?.totalScore?.toFixed(1) || '-' }}</span>
             <span class="score-label">คะแนน</span>
           </div>
-          <div class="score-item" v-if="previousSubmissions[0]?.assessment?.percentage">
-            <span class="score-value">{{ previousSubmissions[0].assessment.percentage.toFixed(0) }}%</span>
+          <div class="score-item" v-if="previousSubmissions[0]?.assessment?.percentage != null">
+            <span class="score-value">{{ previousSubmissions[0]?.assessment?.percentage?.toFixed(0) || '-' }}%</span>
             <span class="score-label">เปอร์เซ็นต์</span>
           </div>
           <div class="score-item" v-if="worksheet.retrySettings?.scoreMode">
@@ -542,28 +577,30 @@
         <div class="modal-body" v-if="assessmentResult">
           <!-- Overall Score -->
           <div class="overall-score">
-            <div class="score-circle" :class="getScoreClass(assessmentResult.summary.percentage)">
-              <span class="score-value">{{ assessmentResult.summary.percentage.toFixed(0) }}%</span>
+            <div class="score-circle" :class="getScoreClass(assessmentResult?.summary?.percentage || 0)">
+              <span class="score-value">{{ (assessmentResult?.summary?.percentage ?? 0).toFixed(0) }}%</span>
               <span class="score-label">คะแนนรวม</span>
             </div>
             <div class="score-breakdown">
-              <p><strong>{{ assessmentResult.summary.totalScore }}</strong> / {{ assessmentResult.summary.maxScore }} คะแนน</p>
-              <p class="pa-level">ระดับ PA: {{ assessmentResult.summary.paLevel }}</p>
+              <p><strong>{{ assessmentResult?.summary?.totalScore ?? 0 }}</strong> / {{ assessmentResult?.summary?.maxScore ?? 0 }} คะแนน</p>
+              <p class="pa-level">ระดับ PA: {{ assessmentResult?.summary?.paLevel || '-' }}</p>
             </div>
           </div>
 
           <!-- A.R.C.E. Scores -->
-          <div class="arce-scores">
+          <div class="arce-scores" v-if="assessmentResult?.arceScores">
             <h3>คะแนน A.R.C.E.</h3>
             <div class="arce-grid">
-              <div v-for="(score, key) in assessmentResult.arceScores" :key="key" class="arce-item" :class="key">
-                <div class="arce-icon">{{ getArceIcon(key) }}</div>
-                <div class="arce-name">{{ getArceLabel(key) }}</div>
-                <div class="arce-score">{{ score.weighted.toFixed(1) }} / {{ score.max }}</div>
-                <div class="arce-bar">
-                  <div class="arce-fill" :style="{ width: (score.weighted / score.max * 100) + '%' }"></div>
+              <template v-for="key in arceOrder" :key="key">
+                <div v-if="assessmentResult.arceScores?.[key]" class="arce-item" :class="key">
+                  <div class="arce-icon">{{ getArceIcon(key) }}</div>
+                  <div class="arce-name">{{ getArceLabel(key) }}</div>
+                  <div class="arce-score">{{ (assessmentResult.arceScores[key]?.weighted ?? assessmentResult.arceScores[key]?.raw ?? 0).toFixed(1) }} / {{ assessmentResult.arceScores[key]?.max ?? 5 }}</div>
+                  <div class="arce-bar">
+                    <div class="arce-fill" :style="{ width: ((assessmentResult.arceScores[key]?.weighted ?? assessmentResult.arceScores[key]?.raw ?? 0) / (assessmentResult.arceScores[key]?.max ?? 5) * 100) + '%' }"></div>
+                  </div>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
 
@@ -654,6 +691,9 @@ const shuffledOptionsCache = ref({}) // Cache shuffled options to prevent re-shu
 const autoSaveInterval = ref(null)
 const lastSavedAt = ref(null)
 
+// ARCE Order constant (A → R → C → E)
+const arceOrder = ['analysis', 'reasoning', 'creativity', 'evidence']
+
 // Retry feature state
 const previousSubmissions = ref([])
 const attemptCount = ref(0)
@@ -661,6 +701,14 @@ const canRetry = ref(true)
 const cooldownRemaining = ref(0)
 const cooldownTimer = ref(null)
 const bestScore = ref(null)
+
+// Edit feature state (ดึงคำตอบเดิมมาแก้ไข)
+const MAX_EDIT_COUNT = 10 // จำกัดแก้ไขได้สูงสุด 10 ครั้ง
+const currentSubmission = ref(null) // submission ที่กำลังแก้ไข
+const editCount = ref(0) // จำนวนครั้งที่แก้ไขแล้ว
+const isEditMode = ref(false) // กำลังอยู่ในโหมดแก้ไข
+const canEdit = computed(() => editCount.value < MAX_EDIT_COUNT)
+const lastSubmissionId = ref(null) // เก็บ submissionId หลังส่งใบงานสำเร็จ
 
 // Auto-save key for localStorage
 const getStorageKey = () => `worksheet_draft_${route.params.id}_${authStore.user?.uid || 'guest'}`
@@ -773,6 +821,18 @@ const canSubmit = computed(() => {
           }
           
           if (!hasTableAnswer) return false
+        } else if (question.type === 'arce_situation') {
+          // Handle ARCE Situation questions - require at least 2 ARCE fields filled (min 20 chars each)
+          const key = `${section.id}_${question.id}`
+          const analysis = arceAnswers.value[`${key}_analysis`]?.trim() || ''
+          const reasoning = arceAnswers.value[`${key}_reasoning`]?.trim() || ''
+          const creativity = arceAnswers.value[`${key}_creativity`]?.trim() || ''
+          const evidence = arceAnswers.value[`${key}_evidence`]?.trim() || ''
+          
+          const filledCount = [analysis, reasoning, creativity, evidence]
+            .filter(a => a.length >= 20).length
+          
+          if (filledCount < 2) return false
         } else {
           // Regular answer check
           const answer = answers.value[`${section.id}_${question.id}`]
@@ -978,10 +1038,23 @@ async function loadWorksheet() {
     loading.value = true
     const worksheetId = route.params.id
     
-    const docRef = doc(db, 'eWorksheets', worksheetId)
-    const docSnap = await getDoc(docRef)
+    // Try eWorksheets collection first (new format)
+    let docRef = doc(db, 'eWorksheets', worksheetId)
+    let docSnap = await getDoc(docRef)
     
-    if (docSnap.exists()) {
+    // If not found, try worksheets collection (old format)
+    if (!docSnap.exists()) {
+      console.log('Worksheet not found in eWorksheets, trying worksheets collection...')
+      try {
+        docRef = doc(db, 'worksheets', worksheetId)
+        docSnap = await getDoc(docRef)
+      } catch (permError) {
+        console.warn('Cannot access worksheets collection:', permError.message)
+        // Continue - worksheet simply doesn't exist
+      }
+    }
+    
+    if (docSnap && docSnap.exists()) {
       worksheet.value = { id: docSnap.id, ...docSnap.data() }
       
       // ========== RETRY FEATURE: Check previous submissions ==========
@@ -1070,8 +1143,13 @@ async function loadWorksheet() {
       
       startTime.value = Date.now()
       
-      // Restore saved answers from localStorage
-      restoreSavedAnswers()
+      // Restore saved answers - try Firestore first, then localStorage
+      const loadedFromFirestore = await loadDraftFromFirestore()
+      if (!loadedFromFirestore) {
+        restoreSavedAnswers()
+      } else {
+        showRestorationNotice()
+      }
       
       // Start auto-save interval (every 10 seconds)
       startAutoSave()
@@ -1102,6 +1180,11 @@ async function loadPreviousSubmissions(worksheetId) {
       id: doc.id,
       ...doc.data()
     }))
+    
+    // Set editCount from latest submission
+    if (previousSubmissions.value.length > 0) {
+      editCount.value = previousSubmissions.value[0].editCount || 0
+    }
   } catch (error) {
     console.error('Error loading previous submissions:', error)
     previousSubmissions.value = []
@@ -1131,6 +1214,59 @@ function formatCooldown(seconds) {
 }
 // ========== END RETRY FEATURE FUNCTIONS ==========
 
+// ========== EDIT FEATURE FUNCTIONS (ดึงคำตอบเดิมมาแก้ไข) ==========
+async function loadPreviousAnswers() {
+  if (!previousSubmissions.value.length) return
+  
+  const latestSubmission = previousSubmissions.value[0]
+  if (!latestSubmission) return
+  
+  // Check edit limit
+  const currentEditCount = latestSubmission.editCount || 0
+  if (currentEditCount >= MAX_EDIT_COUNT) {
+    alert(`คุณแก้ไขคำตอบครบ ${MAX_EDIT_COUNT} ครั้งแล้ว ไม่สามารถแก้ไขเพิ่มได้`)
+    return
+  }
+  
+  // Set edit mode
+  isEditMode.value = true
+  currentSubmission.value = latestSubmission
+  editCount.value = currentEditCount
+  
+  // Restore answers from previous submission
+  if (latestSubmission.answers) {
+    Object.keys(latestSubmission.answers).forEach(key => {
+      answers.value[key] = latestSubmission.answers[key]
+    })
+  }
+  
+  // Restore ARCE answers
+  if (latestSubmission.arceAnswers) {
+    Object.keys(latestSubmission.arceAnswers).forEach(key => {
+      arceAnswers.value[key] = latestSubmission.arceAnswers[key]
+    })
+  }
+  
+  // Restore table answers
+  if (latestSubmission.tableAnswers) {
+    Object.keys(latestSubmission.tableAnswers).forEach(key => {
+      tableAnswers.value[key] = latestSubmission.tableAnswers[key]
+    })
+  }
+  
+  // Restore self reflection
+  if (latestSubmission.selfReflection) {
+    selfReflection.value = latestSubmission.selfReflection
+  }
+  
+  console.log(`✏️ Loaded previous answers for editing (edit #${currentEditCount + 1}/${MAX_EDIT_COUNT})`)
+}
+
+function getRemainingEdits() {
+  return MAX_EDIT_COUNT - editCount.value
+}
+// ========== END EDIT FEATURE FUNCTIONS ==========
+
 // Auto-save functions
 function restoreSavedAnswers() {
   try {
@@ -1155,6 +1291,11 @@ function restoreSavedAnswers() {
       // Restore self reflection
       if (data.selfReflection) {
         selfReflection.value = data.selfReflection
+      }
+      
+      // Restore ARCE answers
+      if (data.arceAnswers) {
+        arceAnswers.value = { ...arceAnswers.value, ...data.arceAnswers }
       }
       
       // Restore time remaining if still valid
@@ -1196,6 +1337,7 @@ function saveAnswersToStorage() {
     const data = {
       answers: answers.value,
       tableAnswers: tableAnswers.value,
+      arceAnswers: arceAnswers.value,
       selfReflection: selfReflection.value,
       timeRemaining: timeRemaining.value,
       savedAt: Date.now()
@@ -1209,7 +1351,7 @@ function saveAnswersToStorage() {
 
 function startAutoSave() {
   // Save immediately when answers change (debounced)
-  watch([answers, tableAnswers, selfReflection], () => {
+  watch([answers, tableAnswers, arceAnswers, selfReflection], () => {
     saveAnswersToStorage()
   }, { deep: true })
   
@@ -1246,6 +1388,7 @@ async function saveDraft() {
       studentId: authStore.user?.uid,
       answers: answers.value,
       tableAnswers: tableAnswers.value,
+      arceAnswers: arceAnswers.value,
       selfReflection: selfReflection.value,
       status: 'draft',
       updatedAt: serverTimestamp()
@@ -1258,6 +1401,45 @@ async function saveDraft() {
   } catch (error) {
     console.error('Error saving draft:', error)
     alert('เกิดข้อผิดพลาดในการบันทึก')
+  }
+}
+
+async function loadDraftFromFirestore() {
+  try {
+    const draftId = `${authStore.user?.uid}_${worksheet.value?.id}`
+    if (!draftId || !authStore.user?.uid || !worksheet.value?.id) return false
+    
+    const draftDoc = await getDoc(doc(db, 'worksheetDrafts', draftId))
+    if (draftDoc.exists()) {
+      const data = draftDoc.data()
+      
+      // Restore answers
+      if (data.answers) {
+        answers.value = { ...answers.value, ...data.answers }
+      }
+      
+      // Restore table answers
+      if (data.tableAnswers) {
+        tableAnswers.value = { ...tableAnswers.value, ...data.tableAnswers }
+      }
+      
+      // Restore ARCE answers
+      if (data.arceAnswers) {
+        arceAnswers.value = { ...arceAnswers.value, ...data.arceAnswers }
+      }
+      
+      // Restore self reflection
+      if (data.selfReflection) {
+        selfReflection.value = data.selfReflection
+      }
+      
+      console.log('✅ Restored draft from Firestore')
+      return true
+    }
+    return false
+  } catch (error) {
+    console.error('Error loading draft from Firestore:', error)
+    return false
   }
 }
 
@@ -1306,6 +1488,8 @@ async function submitWorksheet() {
     
     // Prepare submission data
     const currentAttempt = attemptCount.value + 1
+    const newEditCount = isEditMode.value ? editCount.value + 1 : 0
+    
     const submissionData = {
       worksheetId: worksheet.value.id,
       courseId: worksheet.value.courseId,
@@ -1331,12 +1515,31 @@ async function submitWorksheet() {
       attemptNumber: currentAttempt,
       previousBestScore: bestScore.value,
       retrySettings: worksheet.value.retrySettings || null,
+      // Edit tracking (ดึงคำตอบเดิมมาแก้ไข)
+      editCount: newEditCount,
+      isEdited: isEditMode.value,
+      editedAt: isEditMode.value ? serverTimestamp() : null,
       submittedAt: serverTimestamp(),
-      createdAt: serverTimestamp()
+      createdAt: isEditMode.value && currentSubmission.value?.createdAt 
+        ? currentSubmission.value.createdAt 
+        : serverTimestamp()
     }
     
-    // Save submission
-    const submissionRef = await addDoc(collection(db, 'worksheetSubmissions'), submissionData)
+    let submissionRef
+    
+    // If in edit mode, update existing submission instead of creating new one
+    if (isEditMode.value && currentSubmission.value?.id) {
+      submissionRef = doc(db, 'worksheetSubmissions', currentSubmission.value.id)
+      await updateDoc(submissionRef, {
+        ...submissionData,
+        updatedAt: serverTimestamp()
+      })
+      submissionRef = { id: currentSubmission.value.id } // Mock ref for later use
+      console.log(`✅ Updated submission with edit #${newEditCount}`)
+    } else {
+      // Save new submission
+      submissionRef = await addDoc(collection(db, 'worksheetSubmissions'), submissionData)
+    }
     
     // Call AI assessment
     const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
@@ -1360,25 +1563,41 @@ async function submitWorksheet() {
     if (result.success) {
       assessmentResult.value = result.assessment
       
-      // Update submission with assessment
-      await updateDoc(submissionRef, {
+      // Update submission with assessment (use doc() for edit mode, submissionRef for new)
+      const updateRef = isEditMode.value 
+        ? doc(db, 'worksheetSubmissions', submissionRef.id)
+        : submissionRef
+        
+      await updateDoc(updateRef, {
         assessment: result.assessment,
         status: 'graded',
         gradedAt: serverTimestamp()
       })
       
-      // Update worksheet stats
-      await updateDoc(doc(db, 'eWorksheets', worksheet.value.id), {
-        'stats.totalSubmitted': increment(1)
-      })
+      // Update worksheet stats - Only increment if this is the first attempt (not a retry or edit)
+      if (currentAttempt === 1 && !isEditMode.value) {
+        await updateDoc(doc(db, 'eWorksheets', worksheet.value.id), {
+          'stats.totalSubmitted': increment(1)
+        })
+      }
       
       // Clear saved answers after successful submission
       clearSavedAnswers()
+      
+      // Reset edit mode and save submission ID for result view
+      isEditMode.value = false
+      currentSubmission.value = null
+      lastSubmissionId.value = submissionRef.id // เก็บ submissionId สำหรับ viewDetailedReport
       
       showFeedbackModal.value = true
     } else {
       // Clear saved answers after successful submission
       clearSavedAnswers()
+      
+      // Reset edit mode and save submission ID
+      isEditMode.value = false
+      currentSubmission.value = null
+      lastSubmissionId.value = submissionRef.id
       
       alert('ส่งใบงานสำเร็จ รอการตรวจจากครู')
       router.push(backRoute.value)
@@ -1398,13 +1617,23 @@ function closeFeedbackModal() {
 }
 
 function viewDetailedReport() {
-  // Navigate to detailed report view
-  router.push(`/worksheet-result/${worksheet.value.id}`)
+  // Navigate to detailed report view using submissionId (not worksheetId)
+  if (lastSubmissionId.value) {
+    router.push(`/worksheet-result/${lastSubmissionId.value}`)
+  } else {
+    // Fallback: go to worksheet history
+    router.push(`/worksheet-history/${worksheet.value.id}`)
+  }
 }
 
 // Lifecycle
-onMounted(() => {
-  loadWorksheet()
+onMounted(async () => {
+  await loadWorksheet()
+  
+  // 🆕 Auto-load previous answers if edit=true query param
+  if (route.query.edit === 'true' && previousSubmissions.value.length > 0) {
+    loadPreviousAnswers()
+  }
   
   // Add global clipboard event listeners for mobile
   document.addEventListener('paste', blockGlobalClipboard, true)
@@ -1563,6 +1792,121 @@ onUnmounted(() => {
   padding: 1rem 1.5rem;
   margin-bottom: 1rem;
 }
+
+/* ========== EDIT FEATURE STYLES (ดึงคำตอบเดิมมาแก้ไข) ========== */
+.edit-answer-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #fbbf2415, #f5920015);
+  border: 1px solid #fbbf24;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.edit-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.edit-info .material-icons {
+  font-size: 2rem;
+  color: #f59e0b;
+}
+
+.edit-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.edit-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.edit-remaining {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.btn-warning .material-icons {
+  font-size: 1rem;
+}
+
+.edit-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #10b98115, #05966915);
+  border: 1px solid #10b981;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.edit-mode-banner .material-icons {
+  font-size: 2rem;
+  color: #10b981;
+}
+
+.edit-mode-banner strong {
+  color: #10b981;
+}
+
+.edit-mode-banner p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0 0;
+}
+
+.max-edit-warning {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: #fef2f2;
+  border: 1px solid #ef4444;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+
+.max-edit-warning .material-icons {
+  font-size: 2rem;
+  color: #ef4444;
+}
+
+.max-edit-warning strong {
+  color: #ef4444;
+}
+
+.max-edit-warning p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0 0;
+}
+/* ========== END EDIT FEATURE STYLES ========== */
 
 .retry-info {
   display: flex;
@@ -1745,6 +2089,26 @@ onUnmounted(() => {
   color: #4ade80;
 }
 
+/* Dark mode for Edit Feature */
+.html.dark-mode .edit-answer-banner {
+  background: linear-gradient(135deg, #78350f33, #92400e33);
+  border-color: #f59e0b66;
+}
+
+.html.dark-mode .edit-mode-banner {
+  background: linear-gradient(135deg, #06544433, #05966933);
+  border-color: #10b98166;
+}
+
+.html.dark-mode .max-edit-warning {
+  background: #7f1d1d33;
+  border-color: #ef444466;
+}
+
+.html.dark-mode .max-edit-warning strong {
+  color: #f87171;
+}
+
 @media (max-width: 600px) {
   .retry-status-banner {
     flex-direction: column;
@@ -1753,6 +2117,17 @@ onUnmounted(() => {
   }
   
   .retry-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .edit-answer-banner {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+  
+  .edit-info {
     flex-direction: column;
     gap: 0.5rem;
   }

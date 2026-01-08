@@ -143,7 +143,14 @@
                 <span class="material-icons">visibility</span>
                 ดูผลประเมิน
               </button>
-              <button v-else 
+              <!-- 🆕 Edit Answer Button (เมื่อทำเสร็จแล้ว แต่ยังแก้ไขได้) -->
+              <button v-if="getSubmissionStatus(ws.id) === 'graded' && canEditSubmission(ws.id)" 
+                      class="btn btn-warning btn-sm" 
+                      @click="editSubmission(ws, index)">
+                <span class="material-icons">edit_note</span>
+                แก้ไขคำตอบ ({{ getRemainingEdits(ws.id) }})
+              </button>
+              <button v-else-if="getSubmissionStatus(ws.id) !== 'graded'" 
                       class="btn btn-primary" 
                       @click="handleStartWorksheet(ws, index)"
                       :disabled="ws.status !== 'published' || (!canStartWorksheetGated(ws, index).allowed && journeyLevel >= 2)">
@@ -203,6 +210,14 @@
             <span class="material-icons">add</span>
             สร้างใบงานใหม่
           </button>
+          <button class="btn btn-outline" @click="openAddWorksheetModal">
+            <span class="material-icons">post_add</span>
+            เพิ่มใบงาน
+          </button>
+          <button class="btn btn-outline" @click="openAddKnowledgeSheetModal">
+            <span class="material-icons">library_add</span>
+            เพิ่มใบความรู้
+          </button>
           <button class="btn btn-outline" @click="viewReports">
             <span class="material-icons">assessment</span>
             ดูรายงาน
@@ -235,7 +250,7 @@
                     {{ getStatusLabel(ws.status) }}
                   </span>
                 </td>
-                <td>{{ ws.stats?.totalSubmitted || 0 }}</td>
+                <td>{{ getUniqueSubmitterCount(ws.id) || ws.stats?.totalSubmitted || 0 }}</td>
                 <td>{{ ws.stats?.averageScore ? ws.stats.averageScore.toFixed(1) + '%' : '-' }}</td>
                 <td>
                   <div class="action-buttons">
@@ -330,6 +345,116 @@
       @close="showCreateWorksheet = false"
       @generated="onWorksheetGenerated"
     />
+
+    <!-- Add Knowledge Sheet Modal -->
+    <div v-if="showAddKnowledgeSheetModal" class="modal-overlay" @click.self="showAddKnowledgeSheetModal = false">
+      <div class="modal-content add-ks-modal">
+        <div class="modal-header">
+          <h2><span class="material-icons">library_add</span> เพิ่มใบความรู้เข้าห้อง</h2>
+          <button class="close-btn" @click="showAddKnowledgeSheetModal = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingAvailableKS" class="loading-state">
+            <span class="material-icons spin">sync</span>
+            กำลังโหลดใบความรู้...
+          </div>
+          <div v-else-if="availableKnowledgeSheets.length === 0" class="empty-state">
+            <span class="material-icons">info</span>
+            <p>ไม่มีใบความรู้ที่พร้อมเพิ่ม หรือเพิ่มในห้องนี้แล้วทั้งหมด</p>
+            <small>ลองสร้างใบความรู้ใหม่จากหน้าแผนการสอน</small>
+          </div>
+          <div v-else class="ks-selection-list">
+            <p class="selection-hint">เลือกใบความรู้ที่ต้องการเพิ่มเข้าห้องนี้ (พบ {{ availableKnowledgeSheets.length }} รายการ)</p>
+            <div v-for="ks in availableKnowledgeSheets" :key="ks.id" 
+                 class="ks-select-item" 
+                 :class="{ selected: selectedKSToAdd.includes(ks.id), 'same-course': ks.courseId === room?.courseId }"
+                 @click="toggleSelectKS(ks.id)">
+              <div class="ks-checkbox">
+                <span class="material-icons">{{ selectedKSToAdd.includes(ks.id) ? 'check_box' : 'check_box_outline_blank' }}</span>
+              </div>
+              <div class="ks-info">
+                <strong>{{ ks.metadata?.title || ks.header?.topic || 'ใบความรู้' }}</strong>
+                <span class="ks-course">
+                  📚 {{ ks.courseName || ks.metadata?.courseName || 'ไม่ระบุวิชา' }}
+                  <span v-if="ks.courseId && ks.courseId === room?.courseId" class="same-course-badge">รายวิชานี้</span>
+                </span>
+                <span class="ks-meta">
+                  <span v-if="ks.metadata?.planNumber">แผนที่ {{ ks.metadata.planNumber }}</span>
+                  <span v-if="ks.metadata?.unitNumber"> • หน่วย {{ ks.metadata.unitNumber }}</span>
+                  <span v-if="ks.sections?.length"> • {{ ks.sections.length }} หัวข้อ</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" v-if="availableKnowledgeSheets.length > 0">
+          <button class="btn btn-outline" @click="showAddKnowledgeSheetModal = false">ยกเลิก</button>
+          <button class="btn btn-primary" 
+                  :disabled="selectedKSToAdd.length === 0 || addingKS"
+                  @click="addSelectedKnowledgeSheetsToRoom">
+            <span class="material-icons">{{ addingKS ? 'hourglass_empty' : 'add' }}</span>
+            {{ addingKS ? 'กำลังเพิ่ม...' : `เพิ่ม ${selectedKSToAdd.length} รายการ` }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Worksheet Modal -->
+    <div v-if="showAddWorksheetModal" class="modal-overlay" @click.self="showAddWorksheetModal = false">
+      <div class="modal-content add-ks-modal">
+        <div class="modal-header">
+          <h2><span class="material-icons">post_add</span> เพิ่มใบงานเข้าห้อง</h2>
+          <button class="close-btn" @click="showAddWorksheetModal = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingAvailableWS" class="loading-state">
+            <span class="material-icons spin">sync</span>
+            กำลังโหลดใบงาน...
+          </div>
+          <div v-else-if="availableWorksheets.length === 0" class="empty-state">
+            <span class="material-icons">info</span>
+            <p>ไม่มีใบงานที่พร้อมเพิ่ม หรือเพิ่มในห้องนี้แล้วทั้งหมด</p>
+            <small>ลองสร้างใบงานใหม่จากหน้าห้องกิจกรรมหรือแผนการสอน</small>
+          </div>
+          <div v-else class="ks-selection-list">
+            <p class="selection-hint">เลือกใบงานที่ต้องการเพิ่มเข้าห้องนี้</p>
+            <div v-for="ws in availableWorksheets" :key="ws.id" 
+                 class="ks-select-item" 
+                 :class="{ selected: selectedWSToAdd.includes(ws.id) }"
+                 @click="toggleSelectWS(ws.id)">
+              <div class="ks-checkbox">
+                <span class="material-icons">{{ selectedWSToAdd.includes(ws.id) ? 'check_box' : 'check_box_outline_blank' }}</span>
+              </div>
+              <div class="ks-info">
+                <strong>{{ ws.metadata?.title || 'ใบงาน' }}</strong>
+                <span class="ks-course" v-if="ws.metadata?.courseName || ws.courseName">
+                  📚 {{ ws.metadata?.courseName || ws.courseName }}
+                  <span v-if="ws.courseId === room?.courseId" class="same-course-badge">รายวิชานี้</span>
+                </span>
+                <span class="ks-meta">
+                  <span v-if="ws.metadata?.totalQuestions">{{ ws.metadata.totalQuestions }} คำถาม</span>
+                  <span v-if="ws.metadata?.maxScore"> • {{ ws.metadata.maxScore }} คะแนน</span>
+                  <span class="status-mini" :class="ws.status">{{ ws.status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง' }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" v-if="availableWorksheets.length > 0">
+          <button class="btn btn-outline" @click="showAddWorksheetModal = false">ยกเลิก</button>
+          <button class="btn btn-primary" 
+                  :disabled="selectedWSToAdd.length === 0 || addingWS"
+                  @click="addSelectedWorksheetsToRoom">
+            <span class="material-icons">{{ addingWS ? 'hourglass_empty' : 'add' }}</span>
+            {{ addingWS ? 'กำลังเพิ่ม...' : `เพิ่ม ${selectedWSToAdd.length} รายการ` }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -337,7 +462,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '@/firebase/config'
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp, arrayRemove } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp, arrayRemove, arrayUnion } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import { useLearningProgressStore } from '@/stores/learningProgress'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -362,7 +487,23 @@ const room = ref(null)
 const worksheets = ref([])
 const knowledgeSheets = ref([])
 const submissions = ref([])
+const allSubmissions = ref([]) // 🆕 All submissions in this room (for teachers to count unique students)
 const showCreateWorksheet = ref(false)
+
+// 🆕 Add Knowledge Sheet Modal States
+const showAddKnowledgeSheetModal = ref(false)
+const loadingAvailableKS = ref(false)
+const availableKnowledgeSheets = ref([])
+const selectedKSToAdd = ref([])
+const addingKS = ref(false)
+
+// 🆕 Add Worksheet Modal States
+const showAddWorksheetModal = ref(false)
+const loadingAvailableWS = ref(false)
+const availableWorksheets = ref([])
+const selectedWSToAdd = ref([])
+const addingWS = ref(false)
+
 const lessonPlans = ref([])
 const selectedPlan = ref(null)
 const generatingWorksheet = ref(false)
@@ -386,7 +527,12 @@ const backRoute = computed(() => {
 })
 
 const totalSubmissions = computed(() => {
-  return worksheets.value.reduce((sum, ws) => sum + (ws.stats?.totalSubmitted || 0), 0)
+  // Count unique students who submitted worksheets in this room
+  if (isTeacher.value && allSubmissions.value.length > 0) {
+    const uniqueStudents = new Set(allSubmissions.value.map(s => s.studentId))
+    return uniqueStudents.size
+  }
+  return worksheets.value.reduce((sum, ws) => sum + (getUniqueSubmitterCount(ws.id) || ws.stats?.totalSubmitted || 0), 0)
 })
 
 const averageScore = computed(() => {
@@ -543,6 +689,34 @@ function getSubmissionPaLevel(worksheetId) {
   return sub?.assessment?.summary?.paLevelText || ''
 }
 
+// 🆕 Edit Feature Functions (ดึงคำตอบเดิมมาแก้ไข)
+const MAX_EDIT_COUNT = 10
+
+function canEditSubmission(worksheetId) {
+  const sub = submissions.value.find(s => s.worksheetId === worksheetId)
+  if (!sub) return false
+  const editCount = sub.editCount || 0
+  return editCount < MAX_EDIT_COUNT
+}
+
+function getRemainingEdits(worksheetId) {
+  const sub = submissions.value.find(s => s.worksheetId === worksheetId)
+  const editCount = sub?.editCount || 0
+  return MAX_EDIT_COUNT - editCount
+}
+
+function editSubmission(ws, index) {
+  const sub = submissions.value.find(s => s.worksheetId === ws.id)
+  if (!sub || !canEditSubmission(ws.id)) {
+    alert('ไม่สามารถแก้ไขได้ เนื่องจากใช้สิทธิ์แก้ไขครบแล้ว')
+    return
+  }
+  
+  // Navigate to worksheet form to edit
+  router.push(`/worksheet/${ws.id}?roomId=${route.params.id}&edit=true`)
+}
+// 🆕 End Edit Feature Functions
+
 function getScoreClass(percentage) {
   const pct = parseFloat(percentage)
   if (pct >= 80) return 'excellent'
@@ -645,6 +819,237 @@ async function deleteKnowledgeSheet(ksId) {
   } catch (error) {
     console.error('Error deleting knowledge sheet:', error)
     alert('เกิดข้อผิดพลาดในการลบ')
+  }
+}
+
+// 🆕 Add Knowledge Sheet to Room functions
+async function openAddKnowledgeSheetModal() {
+  showAddKnowledgeSheetModal.value = true
+  selectedKSToAdd.value = []
+  await loadAvailableKnowledgeSheets()
+}
+
+async function loadAvailableKnowledgeSheets() {
+  loadingAvailableKS.value = true
+  try {
+    // Get all knowledge sheets owned by this teacher
+    const q = query(
+      collection(db, 'knowledgeSheets'),
+      where('teacherId', '==', authStore.user?.uid)
+    )
+    const snapshot = await getDocs(q)
+    
+    // Filter out those already in this room
+    const currentKsIds = room.value?.knowledgeSheetIds || []
+    
+    // Helper to parse JSON strings
+    const parseIfString = (val) => {
+      if (typeof val === 'string') {
+        try { return JSON.parse(val) } catch { return val }
+      }
+      return val
+    }
+    
+    // Get unique courseIds to fetch course names
+    const courseIds = new Set()
+    snapshot.docs.forEach(docSnap => {
+      const data = docSnap.data()
+      const metadata = parseIfString(data.metadata) || {}
+      if (data.courseId) courseIds.add(data.courseId)
+      if (metadata.courseId) courseIds.add(metadata.courseId)
+    })
+    
+    // Fetch course names
+    const courseMap = {}
+    for (const courseId of courseIds) {
+      try {
+        const courseDoc = await getDoc(doc(db, 'courses', courseId))
+        if (courseDoc.exists()) {
+          const courseData = courseDoc.data()
+          courseMap[courseId] = `${courseData.courseCode || ''} - ${courseData.courseName || courseData.name || ''}`
+        }
+      } catch (e) {
+        console.warn('Could not fetch course:', courseId)
+      }
+    }
+    
+    availableKnowledgeSheets.value = snapshot.docs
+      .map(docSnap => {
+        const data = docSnap.data()
+        const metadata = parseIfString(data.metadata) || {}
+        const courseId = data.courseId || metadata.courseId
+        return {
+          id: docSnap.id,
+          ...data,
+          courseId,
+          courseName: courseMap[courseId] || metadata.courseName || data.courseName || '',
+          metadata: {
+            ...metadata,
+            courseName: courseMap[courseId] || metadata.courseName || data.courseName || ''
+          },
+          header: parseIfString(data.header),
+          sections: parseIfString(data.sections) || []
+        }
+      })
+      .filter(ks => !currentKsIds.includes(ks.id))
+      .sort((a, b) => {
+        // Sort by courseId match first (same course at top), then unitNumber, then planNumber
+        const sameA = a.courseId === room.value?.courseId ? 0 : 1
+        const sameB = b.courseId === room.value?.courseId ? 0 : 1
+        if (sameA !== sameB) return sameA - sameB
+        
+        const unitA = a.metadata?.unitNumber || 999
+        const unitB = b.metadata?.unitNumber || 999
+        if (unitA !== unitB) return unitA - unitB
+        const planA = a.metadata?.planNumber || 999
+        const planB = b.metadata?.planNumber || 999
+        return planA - planB
+      })
+  } catch (error) {
+    console.error('Error loading available knowledge sheets:', error)
+    availableKnowledgeSheets.value = []
+  } finally {
+    loadingAvailableKS.value = false
+  }
+}
+
+function toggleSelectKS(ksId) {
+  const index = selectedKSToAdd.value.indexOf(ksId)
+  if (index === -1) {
+    selectedKSToAdd.value.push(ksId)
+  } else {
+    selectedKSToAdd.value.splice(index, 1)
+  }
+}
+
+async function addSelectedKnowledgeSheetsToRoom() {
+  if (selectedKSToAdd.value.length === 0 || addingKS.value) return
+  
+  addingKS.value = true
+  try {
+    // Update room with new knowledge sheet IDs
+    await updateDoc(doc(db, 'learningRooms', route.params.id), {
+      knowledgeSheetIds: arrayUnion(...selectedKSToAdd.value),
+      updatedAt: serverTimestamp()
+    })
+    
+    // Reload knowledge sheets
+    await loadKnowledgeSheets()
+    
+    alert(`✅ เพิ่มใบความรู้ ${selectedKSToAdd.value.length} รายการเข้าห้องแล้ว`)
+    showAddKnowledgeSheetModal.value = false
+    selectedKSToAdd.value = []
+  } catch (error) {
+    console.error('Error adding knowledge sheets to room:', error)
+    alert('เกิดข้อผิดพลาดในการเพิ่มใบความรู้: ' + error.message)
+  } finally {
+    addingKS.value = false
+  }
+}
+
+// 🆕 Add Worksheet to Room functions
+async function openAddWorksheetModal() {
+  showAddWorksheetModal.value = true
+  selectedWSToAdd.value = []
+  await loadAvailableWorksheets()
+}
+
+async function loadAvailableWorksheets() {
+  loadingAvailableWS.value = true
+  try {
+    // Get all worksheets owned by this teacher
+    const q = query(
+      collection(db, 'worksheets'),
+      where('teacherId', '==', authStore.user?.uid)
+    )
+    const snapshot = await getDocs(q)
+    
+    // Filter out those already in this room
+    const currentWsIds = room.value?.worksheetIds || []
+    
+    // Get unique courseIds to fetch course names
+    const courseIds = new Set()
+    snapshot.docs.forEach(docSnap => {
+      const data = docSnap.data()
+      if (data.courseId) courseIds.add(data.courseId)
+      if (data.metadata?.courseId) courseIds.add(data.metadata.courseId)
+    })
+    
+    // Fetch course names
+    const courseMap = {}
+    for (const courseId of courseIds) {
+      try {
+        const courseDoc = await getDoc(doc(db, 'courses', courseId))
+        if (courseDoc.exists()) {
+          const courseData = courseDoc.data()
+          courseMap[courseId] = `${courseData.courseCode || ''} - ${courseData.courseName || courseData.name || ''}`
+        }
+      } catch (e) {
+        console.warn('Could not fetch course:', courseId)
+      }
+    }
+    
+    availableWorksheets.value = snapshot.docs
+      .map(docSnap => {
+        const data = docSnap.data()
+        const courseId = data.courseId || data.metadata?.courseId
+        return {
+          id: docSnap.id,
+          ...data,
+          courseId,
+          courseName: courseMap[courseId] || data.metadata?.courseName || data.courseName || ''
+        }
+      })
+      .filter(ws => !currentWsIds.includes(ws.id))
+      .sort((a, b) => {
+        // Sort by courseId match first (same course at top), then by creation date
+        const sameA = a.courseId === room.value?.courseId ? 0 : 1
+        const sameB = b.courseId === room.value?.courseId ? 0 : 1
+        if (sameA !== sameB) return sameA - sameB
+        
+        const dateA = a.createdAt?.toDate?.() || new Date(0)
+        const dateB = b.createdAt?.toDate?.() || new Date(0)
+        return dateB - dateA
+      })
+  } catch (error) {
+    console.error('Error loading available worksheets:', error)
+    availableWorksheets.value = []
+  } finally {
+    loadingAvailableWS.value = false
+  }
+}
+
+function toggleSelectWS(wsId) {
+  const index = selectedWSToAdd.value.indexOf(wsId)
+  if (index === -1) {
+    selectedWSToAdd.value.push(wsId)
+  } else {
+    selectedWSToAdd.value.splice(index, 1)
+  }
+}
+
+async function addSelectedWorksheetsToRoom() {
+  if (selectedWSToAdd.value.length === 0 || addingWS.value) return
+  
+  addingWS.value = true
+  try {
+    // Update room with new worksheet IDs
+    await updateDoc(doc(db, 'learningRooms', route.params.id), {
+      worksheetIds: arrayUnion(...selectedWSToAdd.value),
+      updatedAt: serverTimestamp()
+    })
+    
+    // Reload worksheets
+    await loadWorksheets()
+    
+    alert(`✅ เพิ่มใบงาน ${selectedWSToAdd.value.length} รายการเข้าห้องแล้ว`)
+    showAddWorksheetModal.value = false
+    selectedWSToAdd.value = []
+  } catch (error) {
+    console.error('Error adding worksheets to room:', error)
+    alert('เกิดข้อผิดพลาดในการเพิ่มใบงาน: ' + error.message)
+  } finally {
+    addingWS.value = false
   }
 }
 
@@ -874,6 +1279,7 @@ async function loadKnowledgeSheets() {
 
 async function loadSubmissions() {
   try {
+    // For students: load their own submissions
     const q = query(
       collection(db, 'worksheetSubmissions'),
       where('studentId', '==', authStore.user?.uid)
@@ -883,9 +1289,49 @@ async function loadSubmissions() {
       id: doc.id,
       ...doc.data()
     }))
+    
+    // For teachers: load all submissions for worksheets in this room
+    if (isTeacher.value && room.value?.worksheetIds?.length > 0) {
+      await loadAllRoomSubmissions()
+    }
   } catch (error) {
     console.error('Error loading submissions:', error)
   }
+}
+
+// 🆕 Load all submissions for worksheets in this room (for teacher stats)
+async function loadAllRoomSubmissions() {
+  try {
+    const allSubs = []
+    // Load submissions in batches (Firestore 'in' query supports max 30 items)
+    const worksheetIds = room.value?.worksheetIds || []
+    const batchSize = 30
+    
+    for (let i = 0; i < worksheetIds.length; i += batchSize) {
+      const batch = worksheetIds.slice(i, i + batchSize)
+      const q = query(
+        collection(db, 'worksheetSubmissions'),
+        where('worksheetId', 'in', batch),
+        where('status', '==', 'graded')
+      )
+      const snapshot = await getDocs(q)
+      snapshot.docs.forEach(doc => {
+        allSubs.push({ id: doc.id, ...doc.data() })
+      })
+    }
+    
+    allSubmissions.value = allSubs
+  } catch (error) {
+    console.error('Error loading all room submissions:', error)
+  }
+}
+
+// 🆕 Get unique submitter count for a worksheet
+function getUniqueSubmitterCount(worksheetId) {
+  if (!allSubmissions.value.length) return 0
+  const wsSubmissions = allSubmissions.value.filter(s => s.worksheetId === worksheetId)
+  const uniqueStudents = new Set(wsSubmissions.map(s => s.studentId))
+  return uniqueStudents.size
 }
 
 // 🆕 Sequence Tracking Functions
@@ -1677,6 +2123,16 @@ onUnmounted(() => {
   color: var(--primary);
 }
 
+.btn-warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -2014,6 +2470,203 @@ onUnmounted(() => {
   color: #9ca3af;
 }
 
+/* Add Knowledge Sheet Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.add-ks-modal {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.add-ks-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.add-ks-modal .modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.add-ks-modal .close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.add-ks-modal .close-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.add-ks-modal .modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.add-ks-modal .loading-state,
+.add-ks-modal .empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.add-ks-modal .loading-state .material-icons,
+.add-ks-modal .empty-state .material-icons {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.add-ks-modal .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.selection-hint {
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.ks-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ks-select-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.ks-select-item:hover {
+  background: var(--bg-primary);
+}
+
+.ks-select-item.selected {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.ks-checkbox .material-icons {
+  font-size: 1.5rem;
+  color: var(--text-muted);
+}
+
+.ks-select-item.selected .ks-checkbox .material-icons {
+  color: var(--primary);
+}
+
+.ks-info {
+  flex: 1;
+}
+
+.ks-info strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.ks-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ks-meta span:not(:first-child)::before {
+  content: '';
+}
+
+.add-ks-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Status mini badge in modal */
+.status-mini {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  margin-left: 0.5rem;
+}
+
+.status-mini.published {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.status-mini.draft {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+/* Course name display in modal */
+.ks-course {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--primary);
+  margin: 0.25rem 0;
+}
+
+.same-course-badge {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  margin-left: 0.5rem;
+}
+
+.ks-select-item.same-course {
+  border-left: 3px solid #10b981;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .journey-level-indicator {
@@ -2027,6 +2680,10 @@ onUnmounted(() => {
   
   .ws-locked-overlay .lock-icon {
     font-size: 2rem;
+  }
+
+  .add-ks-modal {
+    max-height: 90vh;
   }
 }
 </style>

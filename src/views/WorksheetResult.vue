@@ -81,6 +81,15 @@
             <p class="topic">{{ worksheet?.metadata?.topic }}</p>
             <p class="course-info">รายวิชา: {{ worksheet?.metadata?.courseName || '-' }} | ระดับชั้น: {{ worksheet?.metadata?.gradeLevel || '-' }}</p>
             
+            <!-- 🏷️ Assessment Mode Badge -->
+            <div class="assessment-mode-indicator" v-if="assessment?.assessmentMode">
+              <span class="mode-badge" :class="assessment.assessmentMode">
+                <span class="mode-icon">{{ getAssessmentModeIcon(assessment.assessmentMode) }}</span>
+                <span class="mode-name">{{ getAssessmentModeName(assessment.assessmentMode) }}</span>
+              </span>
+              <span class="mode-desc">{{ getAssessmentModeDesc(assessment.assessmentMode) }}</span>
+            </div>
+            
             <div class="score-breakdown">
               <div class="breakdown-item highlight">
                 <span class="label">คะแนนที่ได้</span>
@@ -105,6 +114,45 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- 🎨 Mode-Specific Assessment Report -->
+      <section class="mode-specific-report" v-if="assessment">
+        <h2 class="section-title">
+          {{ getAssessmentModeIcon(assessment.assessmentMode || 'single') }} 
+          รายงานตามโหมดการประเมิน: {{ getAssessmentModeName(assessment.assessmentMode || 'single') }}
+        </h2>
+        
+        <!-- Mode A: Single Agent Report (Default) -->
+        <ModeAReport 
+          v-if="!assessment.assessmentMode || assessment.assessmentMode === 'single'"
+          :assessment="assessment"
+          :summary="summary"
+        />
+        
+        <!-- Mode B: Batch Assessment Report -->
+        <ModeBReport 
+          v-if="assessment.assessmentMode === 'batch'"
+          :assessment="assessment"
+          :summary="summary"
+          :batchDetails="assessment.batchDetails || {}"
+        />
+        
+        <!-- Mode C: Per-Question Assessment Report -->
+        <ModeCReport 
+          v-if="assessment.assessmentMode === 'per-question'"
+          :assessment="assessment"
+          :summary="summary"
+          :perQuestionDetails="assessment.perQuestionDetails || {}"
+        />
+        
+        <!-- Mode D: Multi-Agent Worksheet Report -->
+        <ModeDReport 
+          v-if="assessment.assessmentMode === 'multi-agent-worksheet' || assessment.assessmentMode === 'multi-agent' || assessment.assessmentMode === 'multi-agent-per-question'"
+          :assessment="assessment"
+          :summary="summary"
+          :multiAgentResult="assessment.multiAgentResult || assessment.agentDetails || {}"
+        />
       </section>
 
       <!-- Learning Outcomes Section -->
@@ -154,9 +202,9 @@
           </div>
           
           <!-- LO Analysis -->
-          <div v-if="loAssessment.analysis" class="lo-analysis">
+          <div v-if="loAssessment?.analysis" class="lo-analysis">
             <h4><span class="material-icons">analytics</span> การวิเคราะห์</h4>
-            <p>{{ loAssessment.analysis }}</p>
+            <p>{{ loAssessment?.analysis }}</p>
           </div>
         </div>
       </section>
@@ -186,26 +234,28 @@
       </section>
 
       <!-- ARCE Scores -->
-      <section class="arce-section">
+      <section class="arce-section" v-if="assessment?.arceScores">
         <h2 class="section-title">🎯 คะแนน HOTS A.R.C.E.</h2>
         <div class="arce-cards">
-          <div v-for="(score, key) in assessment.arceScores" :key="key" 
-               class="arce-card" :class="key">
-            <div class="arce-icon">{{ getArceIcon(key) }}</div>
-            <div class="arce-info">
-              <h3>{{ getArceLabel(key) }}</h3>
-              <div class="arce-bar">
-                <div class="arce-fill" :style="{ width: (getArceRaw(score) / 5 * 100) + '%' }"></div>
+          <template v-for="key in arceOrder" :key="key">
+            <div v-if="assessment?.arceScores?.[key] !== undefined"
+                 class="arce-card" :class="key">
+              <div class="arce-icon">{{ getArceIcon(key) }}</div>
+              <div class="arce-info">
+                <h3>{{ getArceLabel(key) }}</h3>
+                <div class="arce-bar">
+                  <div class="arce-fill" :style="{ width: (getArceRaw(assessment.arceScores[key]) / 5 * 100) + '%' }"></div>
+                </div>
+                <span class="arce-score">{{ getArceRaw(assessment.arceScores[key]) }} / 5</span>
+                <p v-if="getArceFeedback(assessment.arceScores[key])" class="arce-feedback">{{ getArceFeedback(assessment.arceScores[key]) }}</p>
               </div>
-              <span class="arce-score">{{ getArceRaw(score) }} / 5</span>
-              <p v-if="getArceFeedback(score)" class="arce-feedback">{{ getArceFeedback(score) }}</p>
             </div>
-          </div>
+          </template>
         </div>
         
         <!-- Radar Chart -->
         <div class="radar-container" v-if="hasRadarData">
-          <RadarChart :data="radarData" />
+          <RadarChart :values="radarValues" />
         </div>
       </section>
 
@@ -276,21 +326,21 @@
             <div class="consensus-scores">
               <div class="consensus-item">
                 <span class="label">คะแนนรวม:</span>
-                <span class="value">{{ agentDetails.consensus.totalScore }}/20</span>
+                <span class="value">{{ agentDetails?.consensus?.totalScore || 0 }}/20</span>
               </div>
               <div class="consensus-item">
                 <span class="label">ความเชื่อมั่น:</span>
-                <span class="value">{{ getConfidencePercent(agentDetails.consensus.confidence) }}%</span>
+                <span class="value">{{ getConfidencePercent(agentDetails?.consensus?.confidence) }}%</span>
               </div>
               <div class="consensus-item">
                 <span class="label">ระดับ Consensus:</span>
-                <span class="value consensus-badge" :class="agentDetails.consensus.consensusLevel">
-                  {{ getConsensusLabel(agentDetails.consensus.consensusLevel) }}
+                <span class="value consensus-badge" :class="agentDetails?.consensus?.consensusLevel">
+                  {{ getConsensusLabel(agentDetails?.consensus?.consensusLevel) }}
                 </span>
               </div>
             </div>
-            <p class="consensus-feedback" v-if="agentDetails.consensus.feedback">
-              {{ agentDetails.consensus.feedback }}
+            <p class="consensus-feedback" v-if="agentDetails?.consensus?.feedback">
+              {{ agentDetails?.consensus?.feedback }}
             </p>
           </div>
         </div>
@@ -337,6 +387,200 @@
         </div>
       </section>
 
+      <!-- 📊 Statistics Section (Research-Grade) -->
+      <section class="statistics-section" v-if="assessment.statistics">
+        <h2 class="section-title">📊 สถิติการประเมิน (Research Grade)</h2>
+        <div class="statistics-content">
+          <!-- Overview Stats -->
+          <div class="stats-overview">
+            <div class="stat-item">
+              <span class="stat-value">{{ assessment.statistics.totalQuestions }}</span>
+              <span class="stat-label">ข้อทั้งหมด</span>
+            </div>
+            <div class="stat-item passed">
+              <span class="stat-value">{{ assessment.statistics.passedQuestions }}</span>
+              <span class="stat-label">ผ่านเกณฑ์</span>
+            </div>
+            <div class="stat-item failed">
+              <span class="stat-value">{{ assessment.statistics.failedQuestions }}</span>
+              <span class="stat-label">ไม่ผ่านเกณฑ์</span>
+            </div>
+            <div class="stat-item rate">
+              <span class="stat-value">{{ assessment.statistics.passRate?.toFixed(1) || 0 }}%</span>
+              <span class="stat-label">อัตราผ่าน</span>
+            </div>
+            <div class="stat-item avg">
+              <span class="stat-value">{{ assessment.statistics.avgScorePerQuestion?.toFixed(2) || 0 }}</span>
+              <span class="stat-label">คะแนนเฉลี่ย/ข้อ</span>
+            </div>
+          </div>
+
+          <!-- Score Range -->
+          <div class="score-range">
+            <div class="range-item highest">
+              <span class="range-icon">⬆️</span>
+              <span class="range-label">คะแนนสูงสุด:</span>
+              <span class="range-value">{{ assessment.statistics.highestScore?.score || 0 }}/{{ assessment.statistics.highestScore?.maxScore || 5 }}</span>
+              <span class="range-question">({{ assessment.statistics.highestScore?.questionId }})</span>
+            </div>
+            <div class="range-item lowest">
+              <span class="range-icon">⬇️</span>
+              <span class="range-label">คะแนนต่ำสุด:</span>
+              <span class="range-value">{{ assessment.statistics.lowestScore?.score || 0 }}/{{ assessment.statistics.lowestScore?.maxScore || 5 }}</span>
+              <span class="range-question">({{ assessment.statistics.lowestScore?.questionId }})</span>
+            </div>
+          </div>
+
+          <!-- Score Distribution -->
+          <div class="score-distribution" v-if="assessment.statistics.scoreDistribution">
+            <h4>📈 การกระจายคะแนน</h4>
+            <div class="distribution-bars">
+              <div class="dist-item excellent">
+                <span class="dist-label">ดีมาก (80-100%)</span>
+                <div class="dist-bar">
+                  <div class="dist-fill" :style="{ width: getDistributionPercent('excellent') + '%' }"></div>
+                </div>
+                <span class="dist-count">{{ assessment.statistics.scoreDistribution.excellent?.count || 0 }} ข้อ</span>
+              </div>
+              <div class="dist-item good">
+                <span class="dist-label">ดี (60-79%)</span>
+                <div class="dist-bar">
+                  <div class="dist-fill" :style="{ width: getDistributionPercent('good') + '%' }"></div>
+                </div>
+                <span class="dist-count">{{ assessment.statistics.scoreDistribution.good?.count || 0 }} ข้อ</span>
+              </div>
+              <div class="dist-item fair">
+                <span class="dist-label">พอใช้ (40-59%)</span>
+                <div class="dist-bar">
+                  <div class="dist-fill" :style="{ width: getDistributionPercent('fair') + '%' }"></div>
+                </div>
+                <span class="dist-count">{{ assessment.statistics.scoreDistribution.fair?.count || 0 }} ข้อ</span>
+              </div>
+              <div class="dist-item needs-improvement">
+                <span class="dist-label">ต้องปรับปรุง (0-39%)</span>
+                <div class="dist-bar">
+                  <div class="dist-fill" :style="{ width: getDistributionPercent('needImprovement') + '%' }"></div>
+                </div>
+                <span class="dist-count">{{ assessment.statistics.scoreDistribution.needImprovement?.count || 0 }} ข้อ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 🔬 ARCE Analysis Section -->
+      <section class="arce-analysis-section" v-if="assessment.arceAnalysis">
+        <h2 class="section-title">🔬 การวิเคราะห์เชิงลึก ARCE</h2>
+        <div class="arce-analysis-content">
+          <!-- Dimension Comparison -->
+          <div class="dimension-comparison">
+            <div class="dimension-item strongest">
+              <span class="dim-icon">💪</span>
+              <span class="dim-label">ทักษะที่แข็งแกร่งที่สุด:</span>
+              <span class="dim-value">{{ getArceLabelFull(assessment.arceAnalysis.strongestDimension?.name) }}</span>
+              <span class="dim-score">({{ assessment.arceAnalysis.strongestDimension?.score || 0 }}/5)</span>
+            </div>
+            <div class="dimension-item weakest">
+              <span class="dim-icon">📈</span>
+              <span class="dim-label">ทักษะที่ควรพัฒนา:</span>
+              <span class="dim-value">{{ getArceLabelFull(assessment.arceAnalysis.weakestDimension?.name) }}</span>
+              <span class="dim-score">({{ assessment.arceAnalysis.weakestDimension?.score || 0 }}/5)</span>
+            </div>
+          </div>
+          
+          <!-- Dimension Comparison Text -->
+          <div class="comparison-text" v-if="assessment.arceAnalysis.dimensionComparison">
+            <p>{{ assessment.arceAnalysis.dimensionComparison }}</p>
+          </div>
+          
+          <!-- Development Priority -->
+          <div class="development-priority" v-if="assessment.arceAnalysis.developmentPriority?.length">
+            <h4>🎯 ลำดับการพัฒนาที่แนะนำ:</h4>
+            <ol>
+              <li v-for="(priority, idx) in assessment.arceAnalysis.developmentPriority" :key="idx">
+                {{ priority }}
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- 🔬 Research Insights Section (Teacher Only) -->
+      <section class="research-insights-section" v-if="assessment.researchInsights && isTeacherView">
+        <h2 class="section-title">🔬 ข้อมูลเชิงวิจัย (Research Insights)</h2>
+        <div class="research-insights-content">
+          <!-- Learning Pattern -->
+          <div class="insight-block pattern" v-if="assessment.researchInsights.learningPattern">
+            <div class="insight-header">
+              <span class="insight-icon">🧠</span>
+              <h4>รูปแบบการเรียนรู้</h4>
+            </div>
+            <p>{{ assessment.researchInsights.learningPattern }}</p>
+          </div>
+          
+          <!-- Cognitive Strengths -->
+          <div class="insight-block cognitive" v-if="assessment.researchInsights.cognitiveStrengths?.length">
+            <div class="insight-header">
+              <span class="insight-icon">💡</span>
+              <h4>จุดแข็งด้านการรับรู้</h4>
+            </div>
+            <ul>
+              <li v-for="(strength, idx) in assessment.researchInsights.cognitiveStrengths" :key="idx">
+                {{ strength }}
+              </li>
+            </ul>
+          </div>
+          
+          <!-- Areas for Intervention -->
+          <div class="insight-block intervention" v-if="assessment.researchInsights.areasForIntervention?.length">
+            <div class="insight-header">
+              <span class="insight-icon">🎯</span>
+              <h4>ด้านที่ต้องการการช่วยเหลือ</h4>
+            </div>
+            <ul>
+              <li v-for="(area, idx) in assessment.researchInsights.areasForIntervention" :key="idx">
+                {{ area }}
+              </li>
+            </ul>
+          </div>
+          
+          <!-- Recommended Strategies -->
+          <div class="insight-block strategies" v-if="assessment.researchInsights.recommendedStrategies?.length">
+            <div class="insight-header">
+              <span class="insight-icon">📋</span>
+              <h4>กลยุทธ์การสอนที่แนะนำ</h4>
+            </div>
+            <ul>
+              <li v-for="(strategy, idx) in assessment.researchInsights.recommendedStrategies" :key="idx">
+                {{ strategy }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Next Steps (สิ่งที่ควรทำต่อไป) -->
+      <section class="next-steps-section" v-if="assessment.nextSteps?.length">
+        <h2 class="section-title">🚀 ขั้นตอนถัดไปในการพัฒนา</h2>
+        <div class="next-steps-list">
+          <div v-for="(step, idx) in assessment.nextSteps" :key="idx" class="next-step-item">
+            <div class="step-number">{{ idx + 1 }}</div>
+            <div class="step-content">
+              <p>{{ step }}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recommendation (ข้อเสนอแนะจาก AI) -->
+      <section class="recommendation-section" v-if="summary.recommendation">
+        <h2 class="section-title">📌 คำแนะนำหลัก</h2>
+        <div class="recommendation-card">
+          <span class="recommendation-icon">💡</span>
+          <p>{{ summary.recommendation }}</p>
+        </div>
+      </section>
+
       <!-- Suggestions -->
       <section class="suggestions-section" v-if="assessment.suggestions?.length">
         <h2 class="section-title">💡 ข้อเสนอแนะในการพัฒนา</h2>
@@ -345,6 +589,15 @@
             <span class="suggestion-number">{{ idx + 1 }}</span>
             <p>{{ suggestion }}</p>
           </div>
+        </div>
+      </section>
+
+      <!-- Teacher Notes (บันทึกสำหรับครู) - แสดงเฉพาะครู -->
+      <section class="teacher-notes-section" v-if="assessment.teacherNotes && isTeacherView">
+        <h2 class="section-title">📋 บันทึกสำหรับครู</h2>
+        <div class="teacher-notes-card">
+          <span class="material-icons">school</span>
+          <p>{{ assessment.teacherNotes }}</p>
         </div>
       </section>
 
@@ -371,66 +624,66 @@
           </div>
         </div>
         
-        <div class="questions-list">
-          <div v-for="(result, idx) in assessment.questionResults" :key="idx" 
-               class="question-result-card" :class="[getQuestionClass(result), { 'arce-situation-result': result.type === 'arce_situation' }]">
+        <div class="questions-list" v-if="assessment?.questionResults?.length">
+          <div v-for="(result, idx) in assessment?.questionResults" :key="idx" 
+               class="question-result-card" :class="[getQuestionClass(result), { 'arce-situation-result': result?.type === 'arce_situation' }]">
             <div class="question-header">
               <div class="question-number">ข้อ {{ idx + 1 }}</div>
-              <div class="question-type-badge" v-if="result.type === 'arce_situation'">🎯 ARCE วัดผล</div>
+              <div class="question-type-badge" v-if="result?.type === 'arce_situation'">🎯 ARCE วัดผล</div>
               <div class="question-score" :class="getScoreClass(result)">
-                {{ result.score || result.totalScore || 0 }} / {{ result.maxScore || 5 }} คะแนน
-                <span class="score-percent">({{ (((result.score || result.totalScore || 0) / result.maxScore) * 100).toFixed(0) }}%)</span>
+                {{ result?.score || result?.totalScore || 0 }} / {{ result?.maxScore || 5 }} คะแนน
+                <span class="score-percent">({{ ((((result?.score || result?.totalScore || 0)) / (result?.maxScore || 5)) * 100).toFixed(0) }}%)</span>
               </div>
             </div>
             
             <!-- ARCE Situation Special Display -->
-            <template v-if="result.type === 'arce_situation'">
+            <template v-if="result?.type === 'arce_situation'">
               <div class="arce-situation-content">
-                <div v-if="result.situation" class="situation-display">
+                <div v-if="result?.situation || result?.context" class="situation-display">
                   <label>📋 สถานการณ์:</label>
-                  <p>{{ result.situation }}</p>
+                  <p>{{ result?.situation || result?.context }}</p>
                 </div>
-                <div v-if="result.task" class="task-display">
-                  <label>🎯 ภารกิจ:</label>
-                  <p>{{ result.task }}</p>
+                <div class="question-display">
+                  <label>❓ คำถาม:</label>
+                  <p>{{ result?.prompt || result?.question || result?.task || '-' }}</p>
                 </div>
               </div>
               
               <!-- ARCE Breakdown for Situation Type -->
-              <div class="arce-breakdown-detailed" v-if="result.arceBreakdown">
+              <div class="arce-breakdown-detailed" v-if="result?.arceBreakdown">
                 <h4>📊 คะแนนแยกตามมิติ ARCE</h4>
                 <div class="arce-breakdown-grid">
                   <div class="arce-breakdown-item analysis">
                     <div class="arce-breakdown-header">
                       <span class="icon">🔍</span>
                       <span class="label">Analysis</span>
-                      <span class="score">{{ result.arceBreakdown.analysis?.score || 0 }}/5</span>
+                      <span class="score">{{ result?.arceBreakdown?.analysis?.score || 0 }}/5</span>
                     </div>
-                    <p class="arce-feedback">{{ result.arceBreakdown.analysis?.feedback || '-' }}</p>
+                    <p class="arce-feedback">{{ result?.arceBreakdown?.analysis?.feedback || '-' }}</p>
                   </div>
                   <div class="arce-breakdown-item reasoning">
                     <div class="arce-breakdown-header">
                       <span class="icon">🧠</span>
                       <span class="label">Reasoning</span>
-                      <span class="score">{{ result.arceBreakdown.reasoning?.score || 0 }}/5</span>
+                      <span class="score">{{ result?.arceBreakdown?.reasoning?.score || 0 }}/5</span>
                     </div>
-                    <p class="arce-feedback">{{ result.arceBreakdown.reasoning?.feedback || '-' }}</p>
+                    <p class="arce-feedback">{{ result?.arceBreakdown?.reasoning?.feedback || '-' }}</p>
                   </div>
                   <div class="arce-breakdown-item creativity">
                     <div class="arce-breakdown-header">
                       <span class="icon">💡</span>
                       <span class="label">Creativity</span>
-                      <span class="score">{{ result.arceBreakdown.creativity?.score || 0 }}/5</span>
+                      <span class="score">{{ result?.arceBreakdown?.creativity?.score || 0 }}/5</span>
                     </div>
-                    <p class="arce-feedback">{{ result.arceBreakdown.creativity?.feedback || '-' }}</p>
+                    <p class="arce-feedback">{{ result?.arceBreakdown?.creativity?.feedback || '-' }}</p>
                   </div>
                   <div class="arce-breakdown-item evidence">
                     <div class="arce-breakdown-header">
                       <span class="icon">📚</span>
                       <span class="label">Evidence</span>
-                      <span class="score">{{ result.arceBreakdown.evidence?.score || 0 }}/5</span>
+                      <span class="score">{{ result?.arceBreakdown?.evidence?.score || 0 }}/5</span>
                     </div>
-                    <p class="arce-feedback">{{ result.arceBreakdown.evidence?.feedback || '-' }}</p>
+                    <p class="arce-feedback">{{ result?.arceBreakdown?.evidence?.feedback || '-' }}</p>
                   </div>
                 </div>
               </div>
@@ -439,11 +692,20 @@
             <!-- Regular Question Display -->
             <template v-else>
               <div class="question-content">
-                <h4 class="question-prompt">{{ result.question }}</h4>
+                <!-- Situation if exists -->
+                <div v-if="result?.situation || result?.context" class="situation-display">
+                  <label>📋 สถานการณ์:</label>
+                  <p>{{ result?.situation || result?.context }}</p>
+                </div>
+                <!-- Question/Prompt -->
+                <div class="question-display">
+                  <label>❓ คำถาม:</label>
+                  <p class="question-prompt">{{ result?.prompt || result?.question || '-' }}</p>
+                </div>
                 <div class="question-meta">
-                  <span class="phase-tag">{{ getPhaseLabel(result.phase) }}</span>
-                  <span class="bloom-tag">{{ getBloomLabel(result.bloomLevel) }}</span>
-                  <span v-for="arce in (Array.isArray(result.arceFocus) ? result.arceFocus : [result.arceFocus])" 
+                  <span class="phase-tag">{{ getPhaseLabel(result?.phase) }}</span>
+                  <span class="bloom-tag">{{ getBloomLabel(result?.bloomLevel) }}</span>
+                  <span v-for="arce in (Array.isArray(result?.arceFocus) ? result?.arceFocus : [result?.arceFocus])" 
                         :key="arce" :class="['arce-tag', arce]">
                     {{ getArceIcon(arce) }} {{ getArceLabel(arce) }}
                   </span>
@@ -455,56 +717,64 @@
               <div class="answer-block student-answer">
                 <label>📝 คำตอบของนักเรียน:</label>
                 <div class="answer-content">
-                  <template v-if="typeof result.studentAnswer === 'object'">
+                  <template v-if="typeof result?.studentAnswer === 'object'">
                     <!-- Special display for ARCE structured answer -->
-                    <div v-if="result.studentAnswer?.type === 'arce_structured'" class="arce-structured-answer">
-                      <div v-if="result.studentAnswer.analysis" class="arce-answer-section">
+                    <div v-if="result?.studentAnswer?.type === 'arce_structured'" class="arce-structured-answer">
+                      <div v-if="result.studentAnswer?.analysis" class="arce-answer-section">
                         <strong>🔍 การวิเคราะห์:</strong>
-                        <p>{{ result.studentAnswer.analysis }}</p>
+                        <p>{{ result.studentAnswer?.analysis }}</p>
                       </div>
-                      <div v-if="result.studentAnswer.reasoning" class="arce-answer-section">
+                      <div v-if="result.studentAnswer?.reasoning" class="arce-answer-section">
                         <strong>🧠 การให้เหตุผล:</strong>
-                        <p>{{ result.studentAnswer.reasoning }}</p>
+                        <p>{{ result.studentAnswer?.reasoning }}</p>
                       </div>
-                      <div v-if="result.studentAnswer.creativity" class="arce-answer-section">
+                      <div v-if="result.studentAnswer?.creativity" class="arce-answer-section">
                         <strong>💡 ความคิดสร้างสรรค์:</strong>
-                        <p>{{ result.studentAnswer.creativity }}</p>
+                        <p>{{ result.studentAnswer?.creativity }}</p>
                       </div>
-                      <div v-if="result.studentAnswer.evidence" class="arce-answer-section">
+                      <div v-if="result.studentAnswer?.evidence" class="arce-answer-section">
                         <strong>📚 หลักฐาน:</strong>
-                        <p>{{ result.studentAnswer.evidence }}</p>
+                        <p>{{ result.studentAnswer?.evidence }}</p>
                       </div>
                     </div>
-                    <pre v-else>{{ JSON.stringify(result.studentAnswer, null, 2) }}</pre>
+                    <pre v-else>{{ JSON.stringify(result?.studentAnswer, null, 2) }}</pre>
                   </template>
                   <template v-else>
-                    {{ result.studentAnswer || '(ไม่ได้ตอบ)' }}
+                    {{ result?.studentAnswer || '(ไม่ได้ตอบ)' }}
                   </template>
                 </div>
-                <div class="char-count" v-if="typeof result.studentAnswer === 'string'">
-                  ความยาว: {{ result.studentAnswer?.length || 0 }} ตัวอักษร
+                <div class="char-count" v-if="typeof result?.studentAnswer === 'string'">
+                  ความยาว: {{ result?.studentAnswer?.length || 0 }} ตัวอักษร
                 </div>
               </div>
               
-              <div class="feedback-block" v-if="result.feedback">
+              <div class="feedback-block" v-if="result?.feedback">
                 <label>💬 ผลการประเมินและข้อเสนอแนะ:</label>
-                <div class="feedback-content">{{ result.feedback }}</div>
+                <div class="feedback-content">{{ result?.feedback }}</div>
               </div>
 
-              <div class="rubric-block" v-if="result.rubricLevel">
+              <!-- Per-question Suggestion -->
+              <div class="suggestion-block" v-if="result?.suggestion">
+                <label>💡 คำแนะนำเฉพาะข้อนี้:</label>
+                <div class="suggestion-content">{{ result?.suggestion }}</div>
+              </div>
+
+              <div class="rubric-block" v-if="result?.rubricLevel">
                 <label>📊 ระดับตาม Rubric:</label>
-                <div class="rubric-level" :class="'level-' + result.rubricLevel">
-                  ระดับ {{ result.rubricLevel }}: {{ result.rubricDescription || '' }}
+                <div class="rubric-level" :class="'level-' + result?.rubricLevel">
+                  ระดับ {{ result?.rubricLevel }}: {{ result?.rubricDescription || '' }}
                 </div>
               </div>
             </div>
 
-            <div class="arce-breakdown" v-if="result.arceScores && result.type !== 'arce_situation'">
+            <div class="arce-breakdown" v-if="result?.arceScores && result?.type !== 'arce_situation'">
               <label>คะแนน A.R.C.E. ของข้อนี้:</label>
               <div class="mini-arce-scores">
-                <span v-for="(score, key) in result.arceScores" :key="key" :class="['mini-score', key]">
-                  {{ getArceIcon(key) }} {{ typeof score === 'object' ? score.raw : score }}/5
-                </span>
+                <template v-for="key in arceOrder" :key="key">
+                  <span v-if="result?.arceScores?.[key] !== undefined" :class="['mini-score', key]">
+                    {{ getArceIcon(key) }} {{ typeof result.arceScores[key] === 'object' ? result.arceScores[key]?.raw : result.arceScores[key] }}/5
+                  </span>
+                </template>
               </div>
             </div>
           </div>
@@ -602,9 +872,18 @@ import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import RadarChart from '@/components/RadarChart.vue'
 
+// Mode-specific Report Components
+import ModeAReport from '@/components/worksheet/ModeAReport.vue'
+import ModeBReport from '@/components/worksheet/ModeBReport.vue'
+import ModeCReport from '@/components/worksheet/ModeCReport.vue'
+import ModeDReport from '@/components/worksheet/ModeDReport.vue'
+
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+// ARCE Order constant (A → R → C → E)
+const arceOrder = ['analysis', 'reasoning', 'creativity', 'evidence']
 
 // State
 const loading = ref(true)
@@ -653,10 +932,10 @@ const bloomLevels = computed(() => {
   const arceScores = assessment.value?.arceScores || {}
   
   // Calculate achieved levels based on ARCE scores
-  const avgAnalysis = getArceRaw(arceScores.analysis)
-  const avgReasoning = getArceRaw(arceScores.reasoning)
-  const avgCreativity = getArceRaw(arceScores.creativity)
-  const avgEvidence = getArceRaw(arceScores.evidence)
+  const avgAnalysis = getArceRaw(arceScores?.analysis)
+  const avgReasoning = getArceRaw(arceScores?.reasoning)
+  const avgCreativity = getArceRaw(arceScores?.creativity)
+  const avgEvidence = getArceRaw(arceScores?.evidence)
   
   return [
     { key: 'remember', icon: '📚', label: 'จำ (Remember)', description: 'ระลึก ทบทวน จดจำข้อมูล', achieved: true },
@@ -692,6 +971,11 @@ const cognitiveFeedback = computed(() => {
 const backRoute = computed(() => {
   if (submission.value?.roomId) return `/learning-room/${submission.value.roomId}`
   return '/student'
+})
+
+// Check if teacher is viewing this result
+const isTeacherView = computed(() => {
+  return authStore.userProfile?.role === 'teacher' || route.query.teacher === 'true'
 })
 
 const scoreClass = computed(() => {
@@ -791,7 +1075,18 @@ function isLOPassed(loCode) {
 }
 
 const hasRadarData = computed(() => {
-  return assessment.value?.arceScores && Object.keys(assessment.value.arceScores).length > 0
+  return assessment.value?.arceScores && Object.keys(assessment.value?.arceScores || {}).length > 0
+})
+
+const radarValues = computed(() => {
+  if (!assessment.value?.arceScores) return { analysis: 0, reasoning: 0, creativity: 0, evidence: 0 }
+  const scores = assessment.value.arceScores
+  return {
+    analysis: getArceRawValue(scores?.analysis) || 0,
+    reasoning: getArceRawValue(scores?.reasoning) || 0,
+    creativity: getArceRawValue(scores?.creativity) || 0,
+    evidence: getArceRawValue(scores?.evidence) || 0
+  }
 })
 
 const radarData = computed(() => {
@@ -802,10 +1097,10 @@ const radarData = computed(() => {
     datasets: [{
       label: 'คะแนน A.R.C.E.',
       data: [
-        getArceRawValue(scores.analysis),
-        getArceRawValue(scores.reasoning),
-        getArceRawValue(scores.creativity),
-        getArceRawValue(scores.evidence)
+        getArceRawValue(scores?.analysis) || 0,
+        getArceRawValue(scores?.reasoning) || 0,
+        getArceRawValue(scores?.creativity) || 0,
+        getArceRawValue(scores?.evidence) || 0
       ],
       backgroundColor: 'rgba(99, 102, 241, 0.2)',
       borderColor: '#6366f1',
@@ -935,6 +1230,74 @@ function formatDate(timestamp) {
   })
 }
 
+// 📊 Statistics helper functions
+function getDistributionPercent(category) {
+  const stats = assessment.value?.statistics
+  if (!stats?.scoreDistribution) return 0
+  const total = stats.totalQuestions || 1
+  const count = stats.scoreDistribution[category]?.count || 0
+  return Math.round((count / total) * 100)
+}
+
+function getArceLabelFull(key) {
+  const labels = {
+    analysis: 'การวิเคราะห์ (Analysis)',
+    reasoning: 'การให้เหตุผล (Reasoning)',
+    creativity: 'ความคิดสร้างสรรค์ (Creativity)',
+    evidence: 'การใช้หลักฐาน (Evidence)'
+  }
+  return labels[key] || key || '-'
+}
+
+// 🏷️ Assessment Mode Helper Functions
+function getAssessmentModeIcon(mode) {
+  const icons = {
+    'single': '⚡',
+    'batch': '📦',
+    'per-question': '🔍',
+    'multi-agent-worksheet': '🤖×6',
+    'multi-agent': '🤖×6',
+    'multi-agent-per-question': '🤖×6×N'
+  }
+  return icons[mode] || '⚡'
+}
+
+function getAssessmentModeName(mode) {
+  const names = {
+    'single': 'โหมด A: Single Call',
+    'batch': 'โหมด B: Batch Assessment',
+    'per-question': 'โหมด C: Per-Question',
+    'multi-agent-worksheet': 'Multi-Agent',
+    'multi-agent': 'Multi-Agent',
+    'multi-agent-per-question': 'Multi-Agent Per-Question'
+  }
+  return names[mode] || 'Single Call'
+}
+
+function getAssessmentModeShort(mode) {
+  const shorts = {
+    'single': 'A',
+    'batch': 'B',
+    'per-question': 'C',
+    'multi-agent-worksheet': 'MA',
+    'multi-agent': 'MA',
+    'multi-agent-per-question': 'MA×N'
+  }
+  return shorts[mode] || 'A'
+}
+
+function getAssessmentModeDesc(mode) {
+  const descs = {
+    'single': 'AI 1 ตัวประเมินทั้งใบงาน - เร็วและประหยัด',
+    'batch': 'แบ่งกลุ่มละ 5 ข้อ + Summary Agent - สมดุลความแม่นยำและต้นทุน',
+    'per-question': 'ประเมินแยกทีละข้อ + Summary Agent - แม่นยำสูง',
+    'multi-agent-worksheet': '6 AI Experts ประเมินทุกข้อ + Consensus - ระดับงานวิจัย',
+    'multi-agent': '6 AI Experts ประเมินทุกข้อ + Consensus - ระดับงานวิจัย',
+    'multi-agent-per-question': '6 AI Experts × แต่ละข้อ + Summary - ระดับงานวิจัยสูงสุด'
+  }
+  return descs[mode] || 'AI 1 ตัวประเมินทั้งใบงาน'
+}
+
 function downloadReport() {
   const info = studentInfo.value
   const reportData = {
@@ -954,7 +1317,10 @@ function downloadReport() {
     strengths: assessment.value?.strengths,
     weaknesses: assessment.value?.weaknesses,
     suggestions: assessment.value?.suggestions,
-    questionResults: assessment.value?.questionResults
+    questionResults: assessment.value?.questionResults,
+    statistics: assessment.value?.statistics,
+    arceAnalysis: assessment.value?.arceAnalysis,
+    researchInsights: assessment.value?.researchInsights
   }
   
   const BOM = '\uFEFF'
@@ -1075,6 +1441,19 @@ onMounted(() => {
   min-height: 100vh;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* 🎨 Mode-Specific Report Section */
+.mode-specific-report {
+  margin-bottom: 2rem;
+}
+
+.mode-specific-report .section-title {
+  font-size: 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 /* Navbar */
@@ -1862,6 +2241,106 @@ onMounted(() => {
   font-style: italic;
 }
 
+/* Next Steps Section */
+.next-steps-section {
+  margin-bottom: 2rem;
+}
+
+.next-steps-list {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+.next-step-item {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  align-items: flex-start;
+}
+
+.next-step-item:last-child {
+  margin-bottom: 0;
+}
+
+.step-number {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #10b981, #06b6d4);
+  color: white;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.step-content p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* Recommendation Section */
+.recommendation-section {
+  margin-bottom: 2rem;
+}
+
+.recommendation-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(245, 158, 11, 0.08) 100%);
+  border: 2px solid rgba(251, 191, 36, 0.3);
+  border-radius: 16px;
+  align-items: flex-start;
+}
+
+.recommendation-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.recommendation-card p {
+  margin: 0;
+  line-height: 1.8;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
+/* Teacher Notes Section */
+.teacher-notes-section {
+  margin-bottom: 2rem;
+}
+
+.teacher-notes-card {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.08) 100%);
+  border: 2px solid rgba(139, 92, 246, 0.3);
+  border-radius: 16px;
+  align-items: flex-start;
+}
+
+.teacher-notes-card .material-icons {
+  font-size: 2rem;
+  color: #8b5cf6;
+  flex-shrink: 0;
+}
+
+.teacher-notes-card p {
+  margin: 0;
+  line-height: 1.8;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
 /* Suggestions Section */
 .suggestions-section {
   margin-bottom: 2rem;
@@ -1992,8 +2471,27 @@ onMounted(() => {
   padding: 1.5rem;
 }
 
-.answer-block, .feedback-block {
+.answer-block, .feedback-block, .suggestion-block {
   margin-bottom: 1rem;
+}
+
+.suggestion-block {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(251, 191, 36, 0.05) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.suggestion-block label {
+  color: #f59e0b;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.suggestion-content {
+  color: var(--text-primary);
+  line-height: 1.6;
 }
 
 .answer-block:last-child, .feedback-block:last-child {
@@ -2253,6 +2751,30 @@ onMounted(() => {
   margin-bottom: 1rem;
   padding-bottom: 1rem;
   border-bottom: 1px dashed var(--border-color);
+}
+
+.situation-display label {
+  color: #3b82f6;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.question-display {
+  margin-bottom: 1rem;
+}
+
+.question-display label {
+  color: #10b981;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.question-display .question-prompt {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 1rem;
 }
 
 .task-display label {
@@ -2586,6 +3108,19 @@ onMounted(() => {
   border-color: rgba(99, 102, 241, 0.3);
 }
 
+.dark-mode .multi-agent-section .section-title {
+  color: #a5b4fc;
+}
+
+.dark-mode .multi-agent-badge {
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.dark-mode .badge-text {
+  color: #a5b4fc;
+}
+
 .dark-mode .agent-card,
 .dark-mode .adversarial-section,
 .dark-mode .consensus-section {
@@ -2593,12 +3128,61 @@ onMounted(() => {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+.dark-mode .agent-header h4 {
+  color: #f1f5f9;
+}
+
 .dark-mode .agent-score {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.dark-mode .score-value {
+  color: #a5b4fc;
+}
+
+.dark-mode .confidence-value,
+.dark-mode .agent-feedback {
+  color: #94a3b8;
+}
+
 .dark-mode .chain-of-thought {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.dark-mode .chain-of-thought summary {
+  color: #a5b4fc;
+}
+
+.dark-mode .chain-of-thought p {
+  color: #94a3b8;
+}
+
+.dark-mode .adversarial-section h4,
+.dark-mode .consensus-section h4 {
+  color: #f1f5f9;
+}
+
+.dark-mode .challenges-list li,
+.dark-mode .bias-list li {
+  color: #94a3b8;
+}
+
+.dark-mode .consensus-item .label {
+  color: #94a3b8;
+}
+
+.dark-mode .consensus-item .value {
+  color: #f1f5f9;
+}
+
+.dark-mode .consensus-feedback {
+  color: #94a3b8;
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .processing-meta {
+  color: #64748b;
+  border-top-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Responsive */
@@ -2640,5 +3224,494 @@ onMounted(() => {
     flex-direction: column;
     gap: 0.75rem;
   }
+}
+
+/* ============================================
+   📊 Statistics Section (Research Grade)
+   ============================================ */
+.statistics-section {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.statistics-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.stats-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 1rem;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 12px;
+  transition: transform 0.2s;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+}
+
+.stat-item.passed {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.stat-item.failed {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.stat-item.rate {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.stat-item.avg {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary, #1f2937);
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  margin-top: 0.25rem;
+}
+
+.score-range {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.range-item {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.range-item.highest {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.range-item.lowest {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.range-icon {
+  font-size: 1.25rem;
+}
+
+.range-label {
+  font-weight: 500;
+  color: var(--text-secondary, #6b7280);
+}
+
+.range-value {
+  font-weight: 700;
+  color: var(--text-primary, #1f2937);
+}
+
+.range-question {
+  font-size: 0.75rem;
+  color: var(--text-muted, #9ca3af);
+}
+
+.score-distribution h4 {
+  margin: 0 0 1rem 0;
+  font-size: 0.95rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.distribution-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dist-item {
+  display: grid;
+  grid-template-columns: 120px 1fr 60px;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dist-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.dist-bar {
+  height: 24px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dist-fill {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.5s ease;
+}
+
+.dist-item.excellent .dist-fill {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.dist-item.good .dist-fill {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.dist-item.fair .dist-fill {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.dist-item.needs-improvement .dist-fill {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.dist-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  text-align: right;
+}
+
+/* ============================================
+   🔬 ARCE Analysis Section
+   ============================================ */
+.arce-analysis-section {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.arce-analysis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.dimension-comparison {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.dimension-item {
+  flex: 1;
+  min-width: 250px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.dimension-item.strongest {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.dimension-item.weakest {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.dim-icon {
+  font-size: 1.5rem;
+}
+
+.dim-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.dim-value {
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.dim-score {
+  font-size: 0.75rem;
+  color: var(--text-muted, #9ca3af);
+}
+
+.comparison-text {
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  border-left: 3px solid #8b5cf6;
+}
+
+.comparison-text p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.6;
+}
+
+.development-priority h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.development-priority ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.development-priority li {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+/* ============================================
+   🔬 Research Insights Section
+   ============================================ */
+.research-insights-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(59, 130, 246, 0.05));
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.1);
+}
+
+.research-insights-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.insight-block {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.insight-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.insight-icon {
+  font-size: 1.25rem;
+}
+
+.insight-header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.insight-block p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.6;
+}
+
+.insight-block ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.insight-block li {
+  margin-bottom: 0.375rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.insight-block.pattern {
+  border-left: 3px solid #8b5cf6;
+}
+
+.insight-block.cognitive {
+  border-left: 3px solid #10b981;
+}
+
+.insight-block.intervention {
+  border-left: 3px solid #f59e0b;
+}
+
+.insight-block.strategies {
+  border-left: 3px solid #3b82f6;
+}
+
+/* Dark mode for Statistics and Research */
+.dark-mode .statistics-section,
+.dark-mode .arce-analysis-section {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .stat-item {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .dist-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .research-insights-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.1));
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.dark-mode .insight-block {
+  background: var(--bg-card, #1e293b);
+}
+
+/* Responsive for new sections */
+@media (max-width: 768px) {
+  .stats-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .dist-item {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .dimension-comparison {
+    flex-direction: column;
+  }
+  
+  .dimension-item {
+    min-width: auto;
+  }
+  
+  .research-insights-content {
+    grid-template-columns: 1fr;
+  }
+  
+  .score-range {
+    flex-direction: column;
+  }
+  
+  .range-item {
+    min-width: auto;
+  }
+}
+
+/* 🏷️ Assessment Mode Indicator Styles */
+.assessment-mode-indicator {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.mode-badge.single {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.mode-badge.batch {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #1e40af;
+  border: 1px solid #3b82f6;
+}
+
+.mode-badge.per-question {
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+.mode-badge.multi-agent-worksheet,
+.mode-badge.multi-agent {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #5b21b6;
+  border: 1px solid #8b5cf6;
+}
+
+.mode-icon {
+  font-size: 1.1rem;
+}
+
+.mode-name {
+  font-weight: 700;
+}
+
+.assessment-mode-indicator .mode-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #64748b);
+  font-style: italic;
+}
+
+/* Dark mode for Assessment Mode Indicator */
+.dark-mode .mode-badge.single {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.15));
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.dark-mode .mode-badge.batch {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(96, 165, 250, 0.15));
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.dark-mode .mode-badge.per-question {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.15));
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.dark-mode .mode-badge.multi-agent-worksheet,
+.dark-mode .mode-badge.multi-agent {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(167, 139, 250, 0.15));
+  color: #a78bfa;
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.dark-mode .assessment-mode-indicator .mode-desc {
+  color: var(--text-muted, #94a3b8);
 }
 </style>

@@ -265,6 +265,140 @@
             </p>
           </div>
 
+          <!-- 📝 โหมดการประเมิน Worksheet (แยกจาก Chat) -->
+          <div class="form-group assessment-mode-section worksheet-mode-section">
+            <label>โหมดการประเมินใบงาน (Worksheet)</label>
+            <p class="form-hint mb-2">🎯 เลือกโหมดที่เหมาะกับจำนวนข้อและงบประมาณของคุณ</p>
+            
+            <div class="worksheet-mode-grid">
+              <!-- Mode A: Single Call -->
+              <label class="worksheet-mode-option" :class="{ active: formData.worksheetAssessmentMode === 'single' }">
+                <input type="radio" v-model="formData.worksheetAssessmentMode" value="single" />
+                <div class="mode-card">
+                  <div class="mode-header">
+                    <span class="mode-badge mode-a">A</span>
+                    <span class="mode-icon">⚡</span>
+                  </div>
+                  <div class="mode-content">
+                    <h4>Single Call</h4>
+                    <p class="mode-desc">AI 1 ตัว ประเมินทั้งใบงาน</p>
+                    <div class="mode-specs">
+                      <span class="spec">💰 ฿1.50/1000 ใบงาน</span>
+                      <span class="spec">⏱️ 3-5 วินาที</span>
+                      <span class="spec accuracy">⭐⭐⭐⭐</span>
+                    </div>
+                  </div>
+                  <div class="mode-recommend">✅ แนะนำ 3-5 ข้อ</div>
+                </div>
+              </label>
+              
+              <!-- Mode B: Batch Assessment -->
+              <label class="worksheet-mode-option" :class="{ active: formData.worksheetAssessmentMode === 'batch' }">
+                <input type="radio" v-model="formData.worksheetAssessmentMode" value="batch" />
+                <div class="mode-card">
+                  <div class="mode-header">
+                    <span class="mode-badge mode-b">B</span>
+                    <span class="mode-icon">📦</span>
+                  </div>
+                  <div class="mode-content">
+                    <h4>Batch Assessment</h4>
+                    <p class="mode-desc">แบ่งกลุ่ม 5 ข้อ + Summary</p>
+                    <div class="mode-specs">
+                      <span class="spec">💰 ฿12/1000 ใบงาน</span>
+                      <span class="spec">⏱️ 8-12 วินาที</span>
+                      <span class="spec accuracy">⭐⭐⭐⭐</span>
+                    </div>
+                  </div>
+                  <div class="mode-recommend">✅ แนะนำ 6-15 ข้อ</div>
+                </div>
+              </label>
+              
+              <!-- Mode C: Per-Question -->
+              <label class="worksheet-mode-option" :class="{ active: formData.worksheetAssessmentMode === 'per-question' }">
+                <input type="radio" v-model="formData.worksheetAssessmentMode" value="per-question" />
+                <div class="mode-card">
+                  <div class="mode-header">
+                    <span class="mode-badge mode-c">C</span>
+                    <span class="mode-icon">🔍</span>
+                  </div>
+                  <div class="mode-content">
+                    <h4>Per-Question</h4>
+                    <p class="mode-desc">ประเมินแยกทีละข้อ + Summary</p>
+                    <div class="mode-specs">
+                      <span class="spec">💰 ฿25/1000 ใบงาน</span>
+                      <span class="spec">⏱️ 15-25 วินาที</span>
+                      <span class="spec accuracy">⭐⭐⭐⭐⭐</span>
+                    </div>
+                  </div>
+                  <div class="mode-recommend">🎯 แม่นยำสูง</div>
+                </div>
+              </label>
+              
+              <!-- Multi-Agent: 6 Agents × Each Question -->
+              <label class="worksheet-mode-option" :class="{ active: formData.worksheetAssessmentMode === 'multi-agent' }">
+                <input type="radio" v-model="formData.worksheetAssessmentMode" value="multi-agent" />
+                <div class="mode-card premium">
+                  <div class="mode-header">
+                    <span class="mode-badge mode-d">🔬</span>
+                    <span class="mode-icon">🤖×6×N</span>
+                  </div>
+                  <div class="mode-content">
+                    <h4>Multi-Agent</h4>
+                    <p class="mode-desc">6 AI ประเมินทุกข้อแยก + Summary</p>
+                    <div class="mode-specs">
+                      <span class="spec">💰 3 ข้อ = 19 calls</span>
+                      <span class="spec">⏱️ 30-90 วินาที</span>
+                      <span class="spec accuracy">⭐⭐⭐⭐⭐⭐</span>
+                    </div>
+                  </div>
+                  <div class="mode-recommend premium">🔬 ระดับงานวิจัย</div>
+                </div>
+              </label>
+            </div>
+            
+            <!-- คำอธิบายโหมดที่เลือก -->
+            <div class="selected-mode-info" v-if="formData.worksheetAssessmentMode">
+              <div v-if="formData.worksheetAssessmentMode === 'single'" class="mode-detail">
+                <h5>⚡ โหมด A: Single Call</h5>
+                <p>เหมาะสำหรับใบงาน 3-5 ข้อ AI สามารถวิเคราะห์ทุกข้อพร้อมกันได้อย่างละเอียด ประหยัดทั้งต้นทุนและเวลา</p>
+                <ul>
+                  <li>✅ ต้นทุนต่ำที่สุด (~฿52/เดือน สำหรับ 1,000 ใบงาน)</li>
+                  <li>✅ เร็วที่สุด (3-5 วินาที)</li>
+                  <li>⚠️ อาจขาดความละเอียดเมื่อมีหลายข้อ</li>
+                </ul>
+              </div>
+              <div v-else-if="formData.worksheetAssessmentMode === 'batch'" class="mode-detail">
+                <h5>📦 โหมด B: Batch Assessment</h5>
+                <p>แบ่งข้อคำถามเป็นกลุ่มละ 5 ข้อ ประเมินแต่ละกลุ่มแยกกัน แล้วรวมผลด้วย Summary Agent</p>
+                <ul>
+                  <li>✅ สมดุลระหว่างความแม่นยำและต้นทุน</li>
+                  <li>✅ เหมาะสำหรับ 6-15 ข้อ</li>
+                  <li>✅ ใช้เวลาปานกลาง (8-12 วินาที)</li>
+                </ul>
+              </div>
+              <div v-else-if="formData.worksheetAssessmentMode === 'per-question'" class="mode-detail">
+                <h5>🔍 โหมด C: Per-Question Assessment</h5>
+                <p>ประเมินแยกทีละข้อเพื่อความละเอียดสูงสุด แล้วรวมผลด้วย Summary Agent</p>
+                <ul>
+                  <li>✅ ความแม่นยำสูง ทุกข้อได้รับการวิเคราะห์เต็มที่</li>
+                  <li>✅ เหมาะสำหรับใบงานสำคัญ/สอบปลายภาค</li>
+                  <li>⚠️ ต้นทุนสูงกว่า 2 เท่า</li>
+                </ul>
+              </div>
+              <div v-else-if="formData.worksheetAssessmentMode === 'multi-agent'" class="mode-detail premium">
+                <h5>🤖×6×N โหมด Multi-Agent Per-Question</h5>
+                <p>ใช้ AI 6 ตัวประเมินแต่ละข้อแยกกัน พร้อม Adversarial Agent ตรวจสอบอคติ และ Summary Agent รวมผล</p>
+                <ul>
+                  <li>✅ ความแม่นยำระดับงานวิจัยสูงสุด</li>
+                  <li>✅ ลด Bias และเพิ่มความน่าเชื่อถือ</li>
+                  <li>✅ รายงานผล Agent ทั้ง 6 ตัวพร้อม Chain of Thought ทุกข้อ</li>
+                  <li>📊 3 ข้อ = 19 API calls, 5 ข้อ = 31 calls, 15 ข้อ = 91 calls</li>
+                  <li>⚠️ ต้นทุนสูงมาก (เหมาะสำหรับการวิจัย/สอบสำคัญ)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
           <!-- รหัสวิชา -->
           <div class="form-group">
             <label>รหัสวิชา <span class="required">*</span></label>
@@ -661,7 +795,8 @@ const formData = ref({
   courseType: 'basic', // 'basic' = รายวิชาพื้นฐาน, 'elective' = รายวิชาเพิ่มเติม
   keyCompetencies: [], // สมรรถนะสำคัญของผู้เรียน
   desiredCharacteristics: [], // คุณลักษณะอันพึงประสงค์
-  assessmentMode: 'single' // 'single' = Single Agent, 'multi-agent' = Multi-Agent (6 AI)
+  assessmentMode: 'single', // 'single' = Single Agent, 'multi-agent' = Multi-Agent (6 AI) สำหรับ Chat
+  worksheetAssessmentMode: 'single' // 'single' | 'batch' | 'per-question' | 'multi-agent-worksheet' สำหรับ Worksheet
 })
 
 // Computed: มาตรฐานที่สามารถเลือกได้ตามกลุ่มสาระ
@@ -771,7 +906,8 @@ function openCreateModal() {
     courseType: 'basic',
     keyCompetencies: [],
     desiredCharacteristics: [],
-    assessmentMode: 'single'
+    assessmentMode: 'single',
+    worksheetAssessmentMode: 'single'
   }
   // Reset preset selection
   presetEducationLevel.value = ''
@@ -852,7 +988,8 @@ function editCourse(course) {
     courseType: course.courseType || 'basic',
     keyCompetencies: course.keyCompetencies || [],
     desiredCharacteristics: course.desiredCharacteristics || [],
-    assessmentMode: course.assessmentMode || 'single'
+    assessmentMode: course.assessmentMode || 'single',
+    worksheetAssessmentMode: course.worksheetAssessmentMode || 'single'
   }
   showModal.value = true
 }
@@ -2133,6 +2270,208 @@ function closeModal() {
   
   .indicators-selection {
     max-height: 300px;
+  }
+  
+  .worksheet-mode-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================
+   📝 Worksheet Assessment Mode Selector
+   ============================================ */
+.worksheet-mode-section {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(59, 130, 246, 0.05));
+  border-radius: 16px;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.worksheet-mode-section > label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.worksheet-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.worksheet-mode-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.worksheet-mode-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mode-card {
+  background: var(--card-bg);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem;
+  transition: all 0.3s ease;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.worksheet-mode-option:hover .mode-card {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.worksheet-mode-option.active .mode-card {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.08);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+.mode-card.premium {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(139, 92, 246, 0.05));
+}
+
+.worksheet-mode-option.active .mode-card.premium {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.mode-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  color: white;
+}
+
+.mode-badge.mode-a { background: linear-gradient(135deg, #10b981, #34d399); }
+.mode-badge.mode-b { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+.mode-badge.mode-c { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+.mode-badge.mode-d { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+
+.mode-icon {
+  font-size: 1.25rem;
+}
+
+.mode-content {
+  flex: 1;
+}
+
+.mode-content h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mode-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.3;
+}
+
+.mode-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.spec {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.spec.accuracy {
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+
+.mode-recommend {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #10b981;
+  text-align: center;
+}
+
+.mode-recommend.premium {
+  color: #f59e0b;
+}
+
+/* Selected Mode Detail */
+.selected-mode-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.mode-detail h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.mode-detail p {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.mode-detail ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.mode-detail li {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.mode-detail.premium {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(139, 92, 246, 0.05));
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Dark mode */
+.dark-mode .worksheet-mode-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.08));
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.dark-mode .mode-card {
+  background: var(--bg-secondary);
+}
+
+@media (max-width: 1024px) {
+  .worksheet-mode-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>

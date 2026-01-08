@@ -236,6 +236,7 @@
                   <th class="col-lo">LO</th>
                   <th class="col-arce">A.R.C.E.</th>
                   <th class="col-time">เวลา</th>
+                  <th class="col-mode">โหมด AI</th>
                   <th class="col-date">ส่งเมื่อ</th>
                   <th class="col-actions">จัดการ</th>
                 </tr>
@@ -272,12 +273,20 @@
                   </td>
                   <td>
                     <div class="mini-arce">
-                      <span v-for="(score, key) in sub.assessment?.arceScores" :key="key" :class="['mini-arce-item', key]" :title="getArceLabel(key)">
-                        {{ getArceIcon(key) }}{{ typeof score === 'object' ? score.raw : score }}
-                      </span>
+                      <template v-for="key in arceOrder" :key="key">
+                        <span v-if="sub.assessment?.arceScores?.[key] !== undefined" :class="['mini-arce-item', key]" :title="getArceLabel(key)">
+                          {{ getArceIcon(key) }}{{ typeof sub.assessment.arceScores[key] === 'object' ? sub.assessment.arceScores[key].raw : sub.assessment.arceScores[key] }}
+                        </span>
+                      </template>
                     </div>
                   </td>
                   <td class="time-spent">{{ formatTimeSpent(sub.timeSpent) }}</td>
+                  <td class="assessment-mode-cell">
+                    <span class="mode-badge-mini" :class="sub.assessment?.assessmentMode || 'single'">
+                      {{ getAssessmentModeIcon(sub.assessment?.assessmentMode) }}
+                      {{ getAssessmentModeShort(sub.assessment?.assessmentMode) }}
+                    </span>
+                  </td>
                   <td>{{ formatDate(sub.submittedAt) }}</td>
                   <td>
                     <div class="action-buttons">
@@ -338,6 +347,11 @@
         <div class="modal-header">
           <h2>📋 รายงานผลการประเมินรายบุคคล</h2>
           <div class="modal-actions">
+            <!-- 🔄 Reassess Button -->
+            <button class="btn btn-sm btn-primary" @click="openReassessModal(selectedSubmission)" :disabled="reassessing">
+              <span class="material-icons">refresh</span>
+              {{ reassessing ? 'กำลังประเมิน...' : 'ประเมินซ้ำ' }}
+            </button>
             <button class="btn btn-sm btn-outline" @click="exportStudentReport(selectedSubmission)">
               <span class="material-icons">download</span>
               ส่งออก
@@ -351,7 +365,8 @@
           <!-- Student Info Card -->
           <div class="student-info-card">
             <div class="student-avatar">
-              <span class="material-icons">person</span>
+              <img v-if="selectedSubmission.studentData?.photoURL" :src="selectedSubmission.studentData.photoURL" alt="Avatar" class="avatar-img" />
+              <span v-else class="material-icons">person</span>
             </div>
             <div class="student-details">
               <h3>{{ selectedSubmission.studentName || selectedSubmission.studentData?.displayName || 'นักเรียน' }}</h3>
@@ -381,7 +396,81 @@
               <span class="pa-badge" :class="'pa' + (selectedSubmission.assessment?.summary?.paLevel || 1)">
                 {{ selectedSubmission.assessment?.summary?.paLevelText || 'PA 1' }}
               </span>
+              <!-- 🏷️ Assessment Mode Badge -->
+              <div class="assessment-mode-badge-modal" v-if="selectedSubmission.assessment?.assessmentMode">
+                <span class="mode-badge-lg" :class="selectedSubmission.assessment.assessmentMode">
+                  {{ getAssessmentModeIcon(selectedSubmission.assessment.assessmentMode) }}
+                  {{ getAssessmentModeName(selectedSubmission.assessment.assessmentMode) }}
+                </span>
+              </div>
             </div>
+          </div>
+
+          <!-- 📊 Assessment Mode Info Card - แสดงเฉพาะเมื่อมี metadata เพิ่มเติม ไม่ซ้ำกับ badge -->
+          <div class="assessment-mode-info-card" v-if="selectedSubmission.assessment?.batchDetails || selectedSubmission.assessment?.perQuestionDetails || selectedSubmission.assessment?.multiAgentMetadata">
+            <div class="mode-header">
+              <span class="mode-icon-lg">{{ getAssessmentModeIcon(selectedSubmission.assessment.assessmentMode) }}</span>
+              <div class="mode-details">
+                <h4>{{ getAssessmentModeName(selectedSubmission.assessment.assessmentMode) }}</h4>
+                <p>{{ getAssessmentModeDesc(selectedSubmission.assessment.assessmentMode) }}</p>
+              </div>
+            </div>
+            <div class="mode-meta">
+              <!-- Batch Mode Details -->
+              <div v-if="selectedSubmission.assessment.batchDetails" class="meta-item">
+                <span class="meta-label">📦 Batches:</span>
+                <span class="meta-value">{{ selectedSubmission.assessment.batchDetails.batchCount }} กลุ่ม ({{ selectedSubmission.assessment.batchDetails.questionsPerBatch }} ข้อ/กลุ่ม)</span>
+              </div>
+              <!-- Per-Question Mode Details -->
+              <div v-if="selectedSubmission.assessment.perQuestionDetails" class="meta-item">
+                <span class="meta-label">🔍 Questions:</span>
+                <span class="meta-value">{{ selectedSubmission.assessment.perQuestionDetails.questionCount }} ข้อ (ประเมินแยกทีละข้อ)</span>
+              </div>
+              <!-- Multi-Agent Mode Details -->
+              <div v-if="selectedSubmission.assessment.multiAgentMetadata" class="meta-item">
+                <span class="meta-label">🤖 Agents:</span>
+                <span class="meta-value">{{ selectedSubmission.assessment.multiAgentMetadata.agentCount || 6 }} ตัว | ⏱️ {{ selectedSubmission.assessment.multiAgentMetadata.processingTimeMs || 0 }}ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🎨 Mode-Specific Assessment Report (Teacher View) -->
+          <div class="mode-specific-report-container" v-if="selectedSubmission.assessment">
+            <h4 class="mode-report-title">
+              {{ getAssessmentModeIcon(selectedSubmission.assessment.assessmentMode || 'single') }} 
+              รายงานตามโหมดการประเมิน: {{ getAssessmentModeName(selectedSubmission.assessment.assessmentMode || 'single') }}
+            </h4>
+            
+            <!-- Mode A: Single Agent Report (Default) -->
+            <ModeAReport 
+              v-if="!selectedSubmission.assessment.assessmentMode || selectedSubmission.assessment.assessmentMode === 'single'"
+              :assessment="selectedSubmission.assessment"
+              :summary="selectedSubmission.assessment?.summary || {}"
+            />
+            
+            <!-- Mode B: Batch Assessment Report -->
+            <ModeBReport 
+              v-if="selectedSubmission.assessment.assessmentMode === 'batch'"
+              :assessment="selectedSubmission.assessment"
+              :summary="selectedSubmission.assessment?.summary || {}"
+              :batchDetails="selectedSubmission.assessment?.batchDetails || {}"
+            />
+            
+            <!-- Mode C: Per-Question Assessment Report -->
+            <ModeCReport 
+              v-if="selectedSubmission.assessment.assessmentMode === 'per-question'"
+              :assessment="selectedSubmission.assessment"
+              :summary="selectedSubmission.assessment?.summary || {}"
+              :perQuestionDetails="selectedSubmission.assessment?.perQuestionDetails || {}"
+            />
+            
+            <!-- Mode D: Multi-Agent Worksheet Report -->
+            <ModeDReport 
+              v-if="selectedSubmission.assessment.assessmentMode === 'multi-agent-worksheet' || selectedSubmission.assessment.assessmentMode === 'multi-agent' || selectedSubmission.assessment.assessmentMode === 'multi-agent-per-question'"
+              :assessment="selectedSubmission.assessment"
+              :summary="selectedSubmission.assessment?.summary || {}"
+              :multiAgentResult="selectedSubmission.assessment?.multiAgentResult || selectedSubmission.assessment?.agentDetails || {}"
+            />
           </div>
 
           <!-- Submission Stats -->
@@ -412,39 +501,98 @@
           <div class="submission-arce">
             <h4>🎯 คะแนน A.R.C.E. (ทักษะการคิดขั้นสูง)</h4>
             <div class="arce-scores-detailed">
-              <div v-for="(score, key) in selectedSubmission.assessment?.arceScores" :key="key" class="arce-score-card" :class="key">
-                <div class="arce-card-header">
-                  <span class="arce-icon">{{ getArceIcon(key) }}</span>
-                  <span class="arce-label">{{ getArceFullLabel(key) }}</span>
-                </div>
-                <div class="arce-card-score">
-                  <div class="arce-bar-bg">
-                    <div class="arce-bar-fill" :style="{ width: (getArceRaw(score) / 5 * 100) + '%' }"></div>
+              <template v-for="key in arceOrder" :key="key">
+                <div v-if="selectedSubmission.assessment?.arceScores?.[key] !== undefined" class="arce-score-card" :class="key">
+                  <div class="arce-card-header">
+                    <span class="arce-icon">{{ getArceIcon(key) }}</span>
+                    <span class="arce-label">{{ getArceFullLabel(key) }}</span>
                   </div>
-                  <span class="arce-value">{{ getArceRaw(score) }}/5</span>
+                  <div class="arce-card-score">
+                    <div class="arce-bar-bg">
+                      <div class="arce-bar-fill" :style="{ width: (getArceRaw(selectedSubmission.assessment.arceScores[key]) / 5 * 100) + '%' }"></div>
+                    </div>
+                    <span class="arce-value">{{ getArceRaw(selectedSubmission.assessment.arceScores[key]) }}/5</span>
+                  </div>
+                  <p v-if="typeof selectedSubmission.assessment.arceScores[key] === 'object' && selectedSubmission.assessment.arceScores[key].feedback" class="arce-feedback">{{ selectedSubmission.assessment.arceScores[key].feedback }}</p>
+                  <p v-else class="arce-feedback arce-feedback-placeholder">{{ getArceDescription(key, getArceRaw(selectedSubmission.assessment.arceScores[key])) }}</p>
                 </div>
-                <p v-if="typeof score === 'object' && score.feedback" class="arce-feedback">{{ score.feedback }}</p>
-                <p v-else class="arce-feedback arce-feedback-placeholder">{{ getArceDescription(key, getArceRaw(score)) }}</p>
-              </div>
+              </template>
             </div>
           </div>
 
           <!-- Cognitive Level Analysis -->
+          <!-- Cognitive/ARCE Analysis - Using ARCE scores instead of Bloom levels -->
           <div class="cognitive-analysis">
-            <h4>🧠 การวิเคราะห์ระดับการคิด</h4>
+            <h4>🧠 การวิเคราะห์ทักษะการคิดขั้นสูง (A.R.C.E.)</h4>
             <div class="cognitive-radar">
-              <div v-for="level in 6" :key="level" class="cognitive-level-item">
+              <!-- Analysis -->
+              <div class="cognitive-level-item">
                 <div class="cognitive-level-header">
-                  <span class="cognitive-icon">{{ getBloomIcon(level) }}</span>
-                  <span class="cognitive-name">{{ getBloomLabel(level) }}</span>
+                  <span class="cognitive-icon">🔍</span>
+                  <span class="cognitive-name">Analysis (การวิเคราะห์)</span>
                 </div>
                 <div class="cognitive-bar-container">
-                  <div class="cognitive-bar" :style="{ width: getCognitiveLevelScore(selectedSubmission, level) + '%' }" :class="'bloom-' + level"></div>
+                  <div class="cognitive-bar bloom-4" :style="{ width: getArcePercentage(selectedSubmission, 'analysis') + '%' }"></div>
                 </div>
-                <span class="cognitive-score">{{ getCognitiveLevelScore(selectedSubmission, level) }}%</span>
+                <span class="cognitive-score">{{ getArcePercentage(selectedSubmission, 'analysis') }}%</span>
+              </div>
+              <!-- Reasoning -->
+              <div class="cognitive-level-item">
+                <div class="cognitive-level-header">
+                  <span class="cognitive-icon">🧠</span>
+                  <span class="cognitive-name">Reasoning (การให้เหตุผล)</span>
+                </div>
+                <div class="cognitive-bar-container">
+                  <div class="cognitive-bar bloom-5" :style="{ width: getArcePercentage(selectedSubmission, 'reasoning') + '%' }"></div>
+                </div>
+                <span class="cognitive-score">{{ getArcePercentage(selectedSubmission, 'reasoning') }}%</span>
+              </div>
+              <!-- Creativity -->
+              <div class="cognitive-level-item">
+                <div class="cognitive-level-header">
+                  <span class="cognitive-icon">💡</span>
+                  <span class="cognitive-name">Creativity (ความคิดสร้างสรรค์)</span>
+                </div>
+                <div class="cognitive-bar-container">
+                  <div class="cognitive-bar bloom-6" :style="{ width: getArcePercentage(selectedSubmission, 'creativity') + '%' }"></div>
+                </div>
+                <span class="cognitive-score">{{ getArcePercentage(selectedSubmission, 'creativity') }}%</span>
+              </div>
+              <!-- Evidence -->
+              <div class="cognitive-level-item">
+                <div class="cognitive-level-header">
+                  <span class="cognitive-icon">📚</span>
+                  <span class="cognitive-name">Evidence (การใช้หลักฐาน)</span>
+                </div>
+                <div class="cognitive-bar-container">
+                  <div class="cognitive-bar bloom-3" :style="{ width: getArcePercentage(selectedSubmission, 'evidence') + '%' }"></div>
+                </div>
+                <span class="cognitive-score">{{ getArcePercentage(selectedSubmission, 'evidence') }}%</span>
               </div>
             </div>
             <p class="cognitive-insight">{{ getCognitiveInsight(selectedSubmission) }}</p>
+          </div>
+
+          <!-- 🧠 Bloom's Taxonomy Checklist (เหมือนหน้านักเรียน) -->
+          <div class="bloom-taxonomy-section">
+            <h4>🧠 การวิเคราะห์ระดับปัญญา (Bloom's Taxonomy)</h4>
+            <div class="bloom-levels-checklist">
+              <div v-for="level in getBloomLevelsForSubmission(selectedSubmission)" :key="level.key" 
+                   class="bloom-level-item" :class="{ active: level.achieved }">
+                <div class="bloom-level-icon">{{ level.icon }}</div>
+                <div class="bloom-level-info">
+                  <h5>{{ level.label }}</h5>
+                  <p>{{ level.description }}</p>
+                </div>
+                <div class="bloom-level-status">
+                  <span class="material-icons">{{ level.achieved ? 'check_circle' : 'radio_button_unchecked' }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="bloom-summary">
+              <p><strong>ระดับการคิดที่แสดงออก:</strong> {{ getBloomCognitiveLevel(selectedSubmission) }}</p>
+              <p class="bloom-cognitive-feedback">{{ getBloomCognitiveFeedback(selectedSubmission) }}</p>
+            </div>
           </div>
 
           <div class="submission-feedback">
@@ -470,18 +618,58 @@
                 <div class="answer-q-info">
                   <span class="q-number">ข้อ {{ idx + 1 }}</span>
                   <span class="q-bloom-badge" :class="'bloom-' + (result.bloomLevel || 1)">{{ getBloomLabel(result.bloomLevel || 1) }}</span>
+                  <!-- Show question type badge for ARCE questions -->
+                  <span v-if="result.type === 'arce_situation'" class="arce-type-badge">🎯 ARCE Situation</span>
                 </div>
                 <div class="answer-score-info">
-                  <span class="q-score" :class="result.passed ? 'pass' : 'fail'">{{ result.score || 0 }}/{{ result.maxScore || 5 }}</span>
+                  <!-- Handle both regular score and ARCE totalScore -->
+                  <span class="q-score" :class="result.passed ? 'pass' : 'fail'">
+                    {{ getQuestionScore(result) }}/{{ result.maxScore || 5 }}
+                  </span>
                   <span class="q-status">{{ result.passed ? '✅ ผ่าน' : '❌ ไม่ผ่าน' }}</span>
                 </div>
               </div>
-              <p class="q-text">{{ result.question }}</p>
+              
+              <!-- Show situation, prompt/question for all question types -->
+              <div class="question-context">
+                <!-- Situation (for ARCE questions) -->
+                <div v-if="result.situation || result.context" class="situation-block">
+                  <label>📌 สถานการณ์:</label>
+                  <p>{{ result.situation || result.context }}</p>
+                </div>
+                <!-- Question/Prompt (always show) -->
+                <div class="prompt-block">
+                  <label>❓ คำถาม:</label>
+                  <p>{{ result.prompt || result.question || result.task || '-' }}</p>
+                </div>
+              </div>
+              
               <div class="answer-content">
                 <div class="student-answer-block">
                   <label>📖 คำตอบของนักเรียน:</label>
                   <p>{{ result.studentAnswer || '-' }}</p>
                 </div>
+                
+                <!-- ARCE Breakdown for arce_situation questions -->
+                <div v-if="result.arceBreakdown" class="arce-breakdown-section">
+                  <label>📊 คะแนน A.R.C.E. รายด้าน:</label>
+                  <div class="arce-breakdown-grid">
+                    <template v-for="dimKey in arceOrder" :key="dimKey">
+                      <div v-if="result.arceBreakdown[dimKey]" class="arce-dim-card" :class="dimKey">
+                        <div class="dim-header">
+                          <span class="dim-icon">{{ getArceIcon(dimKey) }}</span>
+                          <span class="dim-name">{{ getArceLabel(dimKey) }}</span>
+                          <span class="dim-score" :class="result.arceBreakdown[dimKey].score >= 3 ? 'pass' : 'fail'">{{ result.arceBreakdown[dimKey].score || 0 }}/5</span>
+                        </div>
+                        <p class="dim-feedback" v-if="result.arceBreakdown[dimKey].feedback">{{ result.arceBreakdown[dimKey].feedback }}</p>
+                        <p class="dim-match" v-if="result.arceBreakdown[dimKey].matchLevel">
+                          <small>📈 {{ result.arceBreakdown[dimKey].matchLevel }}</small>
+                        </p>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                
                 <div class="ai-feedback-block" v-if="result.feedback">
                   <label>🤖 ความเห็น AI:</label>
                   <p>{{ result.feedback }}</p>
@@ -499,6 +687,344 @@
             <h4>📌 ข้อสรุปและข้อเสนอแนะ</h4>
             <p class="overall-text">{{ selectedSubmission.assessment?.overallFeedback || selectedSubmission.assessment?.recommendation || 'ยังไม่มีข้อเสนอแนะเพิ่มเติม' }}</p>
           </div>
+
+          <!-- 📊 Statistics Section (Research Grade) -->
+          <div class="statistics-section" v-if="selectedSubmission.assessment?.statistics">
+            <h4>📊 สถิติการประเมิน (Research Grade)</h4>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-value">{{ selectedSubmission.assessment.statistics.totalQuestions || 0 }}</span>
+                <span class="stat-label">ข้อทั้งหมด</span>
+              </div>
+              <div class="stat-item passed">
+                <span class="stat-value">{{ selectedSubmission.assessment.statistics.passedQuestions || 0 }}</span>
+                <span class="stat-label">ผ่านเกณฑ์</span>
+              </div>
+              <div class="stat-item failed">
+                <span class="stat-value">{{ selectedSubmission.assessment.statistics.failedQuestions || 0 }}</span>
+                <span class="stat-label">ไม่ผ่าน</span>
+              </div>
+              <div class="stat-item rate">
+                <span class="stat-value">{{ selectedSubmission.assessment.statistics.passRate?.toFixed(1) || 0 }}%</span>
+                <span class="stat-label">อัตราผ่าน</span>
+              </div>
+            </div>
+            
+            <!-- Score Distribution -->
+            <div class="score-distribution" v-if="selectedSubmission.assessment.statistics.scoreDistribution">
+              <h5>📈 การกระจายคะแนน</h5>
+              <div class="dist-bars">
+                <div class="dist-bar-item">
+                  <span class="dist-label">ดีมาก (80-100%)</span>
+                  <div class="dist-bar">
+                    <div class="dist-fill excellent" :style="{ width: getDistPercent(selectedSubmission, 'excellent') + '%' }"></div>
+                  </div>
+                  <span class="dist-count">{{ selectedSubmission.assessment.statistics.scoreDistribution.excellent?.count || 0 }}</span>
+                </div>
+                <div class="dist-bar-item">
+                  <span class="dist-label">ดี (60-79%)</span>
+                  <div class="dist-bar">
+                    <div class="dist-fill good" :style="{ width: getDistPercent(selectedSubmission, 'good') + '%' }"></div>
+                  </div>
+                  <span class="dist-count">{{ selectedSubmission.assessment.statistics.scoreDistribution.good?.count || 0 }}</span>
+                </div>
+                <div class="dist-bar-item">
+                  <span class="dist-label">พอใช้ (40-59%)</span>
+                  <div class="dist-bar">
+                    <div class="dist-fill fair" :style="{ width: getDistPercent(selectedSubmission, 'fair') + '%' }"></div>
+                  </div>
+                  <span class="dist-count">{{ selectedSubmission.assessment.statistics.scoreDistribution.fair?.count || 0 }}</span>
+                </div>
+                <div class="dist-bar-item">
+                  <span class="dist-label">ต้องปรับปรุง (0-39%)</span>
+                  <div class="dist-bar">
+                    <div class="dist-fill needs-improvement" :style="{ width: getDistPercent(selectedSubmission, 'needImprovement') + '%' }"></div>
+                  </div>
+                  <span class="dist-count">{{ selectedSubmission.assessment.statistics.scoreDistribution.needImprovement?.count || 0 }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🔬 ARCE Analysis Section -->
+          <div class="arce-analysis-section" v-if="selectedSubmission.assessment?.arceAnalysis">
+            <h4>🔬 การวิเคราะห์เชิงลึก ARCE</h4>
+            <div class="arce-analysis-content">
+              <div class="dimension-comparison">
+                <div class="dim-item strongest">
+                  <span class="dim-icon">💪</span>
+                  <span>ทักษะที่แข็งแกร่งที่สุด: <strong>{{ getArceLabelFull(selectedSubmission.assessment.arceAnalysis.strongestDimension?.name) }}</strong> ({{ selectedSubmission.assessment.arceAnalysis.strongestDimension?.score || 0 }}/5)</span>
+                </div>
+                <div class="dim-item weakest">
+                  <span class="dim-icon">📈</span>
+                  <span>ทักษะที่ควรพัฒนา: <strong>{{ getArceLabelFull(selectedSubmission.assessment.arceAnalysis.weakestDimension?.name) }}</strong> ({{ selectedSubmission.assessment.arceAnalysis.weakestDimension?.score || 0 }}/5)</span>
+                </div>
+              </div>
+              <p class="comparison-text" v-if="selectedSubmission.assessment.arceAnalysis.dimensionComparison">{{ selectedSubmission.assessment.arceAnalysis.dimensionComparison }}</p>
+              <div class="dev-priority" v-if="selectedSubmission.assessment.arceAnalysis.developmentPriority?.length">
+                <strong>🎯 ลำดับการพัฒนา:</strong>
+                <ol>
+                  <li v-for="(p, idx) in selectedSubmission.assessment.arceAnalysis.developmentPriority" :key="idx">{{ p }}</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🔬 Research Insights Section -->
+          <div class="research-insights-section" v-if="selectedSubmission.assessment?.researchInsights">
+            <h4>🔬 ข้อมูลเชิงวิจัย (Research Insights)</h4>
+            <div class="research-grid">
+              <div class="research-block" v-if="selectedSubmission.assessment.researchInsights.learningPattern">
+                <strong>🧠 รูปแบบการเรียนรู้:</strong>
+                <p>{{ selectedSubmission.assessment.researchInsights.learningPattern }}</p>
+              </div>
+              <div class="research-block" v-if="selectedSubmission.assessment.researchInsights.cognitiveStrengths?.length">
+                <strong>💡 จุดแข็งด้านการรับรู้:</strong>
+                <ul>
+                  <li v-for="(s, idx) in selectedSubmission.assessment.researchInsights.cognitiveStrengths" :key="idx">{{ s }}</li>
+                </ul>
+              </div>
+              <div class="research-block" v-if="selectedSubmission.assessment.researchInsights.areasForIntervention?.length">
+                <strong>🎯 ด้านที่ต้องการช่วยเหลือ:</strong>
+                <ul>
+                  <li v-for="(a, idx) in selectedSubmission.assessment.researchInsights.areasForIntervention" :key="idx">{{ a }}</li>
+                </ul>
+              </div>
+              <div class="research-block" v-if="selectedSubmission.assessment.researchInsights.recommendedStrategies?.length">
+                <strong>📋 กลยุทธ์การสอนที่แนะนำ:</strong>
+                <ul>
+                  <li v-for="(st, idx) in selectedSubmission.assessment.researchInsights.recommendedStrategies" :key="idx">{{ st }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Next Steps (ขั้นตอนถัดไปสำหรับนักเรียน) -->
+          <div class="next-steps-section" v-if="selectedSubmission.assessment?.nextSteps?.length">
+            <h4>🚀 ขั้นตอนถัดไปในการพัฒนา</h4>
+            <div class="next-steps-list">
+              <div v-for="(step, idx) in selectedSubmission.assessment.nextSteps" :key="idx" class="next-step-item">
+                <span class="step-num">{{ idx + 1 }}</span>
+                <p>{{ step }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🤖×6 Multi-Agent Details Section (Mode D) -->
+          <div class="multi-agent-section" v-if="selectedSubmission.assessment?.assessmentMode === 'multi-agent-worksheet' || selectedSubmission.assessment?.assessmentMode === 'multi-agent' || selectedSubmission.assessment?.assessmentMode === 'multi-agent-per-question' || selectedSubmission.assessment?.agentDetails">
+            <h4>
+              <span class="multi-agent-icon">🤖×6</span>
+              รายงาน Multi-Agent Assessment
+            </h4>
+            
+            <!-- Assessment Mode Badge -->
+            <div class="assessment-mode-badge">
+              <span class="badge-icon">🔬</span>
+              <span class="badge-text">ประเมินด้วยระบบ Multi-Agent (6 AI Experts)</span>
+              <span class="confidence-badge" v-if="selectedSubmission.assessment?.multiAgentMetadata?.consensusLevel">
+                {{ getConsensusLabel(selectedSubmission.assessment.multiAgentMetadata.consensusLevel) }}
+              </span>
+            </div>
+            
+            <!-- 4 Specialist Agents -->
+            <div class="agents-grid" v-if="selectedSubmission.assessment?.agentDetails">
+              <!-- Analysis Agent -->
+              <div class="agent-card analysis" v-if="selectedSubmission.assessment.agentDetails.analysis">
+                <div class="agent-header">
+                  <span class="agent-icon">🔍</span>
+                  <h5>Agent #1: Analysis Expert</h5>
+                </div>
+                <div class="agent-score">
+                  <span class="score-value">{{ selectedSubmission.assessment.agentDetails.analysis.score || 0 }}/5</span>
+                  <span class="confidence">ความเชื่อมั่น: {{ Math.round((selectedSubmission.assessment.agentDetails.analysis.confidence || 0) * 100) }}%</span>
+                </div>
+                <p class="agent-feedback">{{ selectedSubmission.assessment.agentDetails.analysis.microFeedback || '-' }}</p>
+                <details v-if="selectedSubmission.assessment.agentDetails.analysis.chainOfThought" class="chain-of-thought">
+                  <summary>🧠 กระบวนการคิด</summary>
+                  <pre class="cot-content">{{ formatChainOfThought(selectedSubmission.assessment.agentDetails.analysis.chainOfThought) }}</pre>
+                </details>
+              </div>
+              
+              <!-- Reasoning Agent -->
+              <div class="agent-card reasoning" v-if="selectedSubmission.assessment.agentDetails.reasoning">
+                <div class="agent-header">
+                  <span class="agent-icon">🧠</span>
+                  <h5>Agent #2: Reasoning Expert</h5>
+                </div>
+                <div class="agent-score">
+                  <span class="score-value">{{ selectedSubmission.assessment.agentDetails.reasoning.score || 0 }}/5</span>
+                  <span class="confidence">ความเชื่อมั่น: {{ Math.round((selectedSubmission.assessment.agentDetails.reasoning.confidence || 0) * 100) }}%</span>
+                </div>
+                <p class="agent-feedback">{{ selectedSubmission.assessment.agentDetails.reasoning.microFeedback || '-' }}</p>
+                <details v-if="selectedSubmission.assessment.agentDetails.reasoning.chainOfThought" class="chain-of-thought">
+                  <summary>🧠 กระบวนการคิด</summary>
+                  <pre class="cot-content">{{ formatChainOfThought(selectedSubmission.assessment.agentDetails.reasoning.chainOfThought) }}</pre>
+                </details>
+              </div>
+              
+              <!-- Creativity Agent -->
+              <div class="agent-card creativity" v-if="selectedSubmission.assessment.agentDetails.creativity">
+                <div class="agent-header">
+                  <span class="agent-icon">💡</span>
+                  <h5>Agent #3: Creativity Expert</h5>
+                </div>
+                <div class="agent-score">
+                  <span class="score-value">{{ selectedSubmission.assessment.agentDetails.creativity.score || 0 }}/5</span>
+                  <span class="confidence">ความเชื่อมั่น: {{ Math.round((selectedSubmission.assessment.agentDetails.creativity.confidence || 0) * 100) }}%</span>
+                </div>
+                <p class="agent-feedback">{{ selectedSubmission.assessment.agentDetails.creativity.microFeedback || '-' }}</p>
+                <details v-if="selectedSubmission.assessment.agentDetails.creativity.chainOfThought" class="chain-of-thought">
+                  <summary>🧠 กระบวนการคิด</summary>
+                  <pre class="cot-content">{{ formatChainOfThought(selectedSubmission.assessment.agentDetails.creativity.chainOfThought) }}</pre>
+                </details>
+              </div>
+              
+              <!-- Evidence Agent -->
+              <div class="agent-card evidence" v-if="selectedSubmission.assessment.agentDetails.evidence">
+                <div class="agent-header">
+                  <span class="agent-icon">📚</span>
+                  <h5>Agent #4: Evidence Expert</h5>
+                </div>
+                <div class="agent-score">
+                  <span class="score-value">{{ selectedSubmission.assessment.agentDetails.evidence.score || 0 }}/5</span>
+                  <span class="confidence">ความเชื่อมั่น: {{ Math.round((selectedSubmission.assessment.agentDetails.evidence.confidence || 0) * 100) }}%</span>
+                </div>
+                <p class="agent-feedback">{{ selectedSubmission.assessment.agentDetails.evidence.microFeedback || '-' }}</p>
+                <details v-if="selectedSubmission.assessment.agentDetails.evidence.chainOfThought" class="chain-of-thought">
+                  <summary>🧠 กระบวนการคิด</summary>
+                  <pre class="cot-content">{{ formatChainOfThought(selectedSubmission.assessment.agentDetails.evidence.chainOfThought) }}</pre>
+                </details>
+              </div>
+            </div>
+            
+            <!-- Adversarial Agent (#5) -->
+            <div class="adversarial-section" v-if="selectedSubmission.assessment?.agentDetails?.adversarial">
+              <h5><span class="agent-icon">⚖️</span> Agent #5: Adversarial Refiner</h5>
+              <div class="adversarial-content">
+                <div v-if="selectedSubmission.assessment.agentDetails.adversarial.challenges?.length" class="challenges-list">
+                  <strong>🔍 ข้อท้าทาย:</strong>
+                  <ul>
+                    <li v-for="(challenge, idx) in selectedSubmission.assessment.agentDetails.adversarial.challenges" :key="idx">{{ challenge }}</li>
+                  </ul>
+                </div>
+                <div v-if="selectedSubmission.assessment.agentDetails.adversarial.biasDetected?.length" class="bias-list">
+                  <strong>⚠️ อคติที่ตรวจพบ:</strong>
+                  <ul>
+                    <li v-for="(bias, idx) in selectedSubmission.assessment.agentDetails.adversarial.biasDetected" :key="idx">{{ bias }}</li>
+                  </ul>
+                </div>
+                <div v-if="selectedSubmission.assessment.agentDetails.adversarial.consistencyScore" class="consistency-score">
+                  <strong>📊 Consistency Score:</strong> {{ Math.round(selectedSubmission.assessment.agentDetails.adversarial.consistencyScore * 100) }}%
+                </div>
+                <div v-if="!selectedSubmission.assessment.agentDetails.adversarial.challenges?.length && !selectedSubmission.assessment.agentDetails.adversarial.biasDetected?.length" class="no-issues">
+                  ✅ ไม่พบปัญหาในการประเมิน
+                </div>
+              </div>
+            </div>
+            
+            <!-- Consensus Agent (#6) -->
+            <div class="consensus-section" v-if="selectedSubmission.assessment?.agentDetails?.consensus">
+              <h5><span class="agent-icon">🎯</span> Agent #6: Consensus Aggregator</h5>
+              <div class="consensus-content">
+                <div class="consensus-scores">
+                  <div class="consensus-item">
+                    <span class="label">คะแนนรวม:</span>
+                    <span class="value">{{ selectedSubmission.assessment.agentDetails.consensus.totalScore || 0 }}/20</span>
+                  </div>
+                  <div class="consensus-item">
+                    <span class="label">ความเชื่อมั่น:</span>
+                    <span class="value">{{ Math.round((selectedSubmission.assessment.agentDetails.consensus.confidence || 0) * 100) }}%</span>
+                  </div>
+                  <div class="consensus-item">
+                    <span class="label">ระดับ Consensus:</span>
+                    <span class="value consensus-level" :class="selectedSubmission.assessment.agentDetails.consensus.consensusLevel">
+                      {{ getConsensusLabel(selectedSubmission.assessment.agentDetails.consensus.consensusLevel) }}
+                    </span>
+                  </div>
+                </div>
+                <p class="consensus-feedback" v-if="selectedSubmission.assessment.agentDetails.consensus.feedback">
+                  {{ selectedSubmission.assessment.agentDetails.consensus.feedback }}
+                </p>
+              </div>
+            </div>
+            
+            <!-- Processing Metadata -->
+            <div class="processing-meta" v-if="selectedSubmission.assessment?.multiAgentMetadata">
+              <small>
+                ⏱️ เวลาประมวลผล: {{ selectedSubmission.assessment.multiAgentMetadata.processingTimeMs || 0 }}ms | 
+                🤖 จำนวน Agent: {{ selectedSubmission.assessment.multiAgentMetadata.agentCount || 6 }}
+              </small>
+            </div>
+          </div>
+
+          <!-- Teacher Notes (บันทึกสำหรับครู) -->
+          <div class="teacher-notes-section" v-if="selectedSubmission.assessment?.teacherNotes">
+            <h4>📋 บันทึกสำหรับครู</h4>
+            <div class="teacher-notes-card">
+              <span class="material-icons">school</span>
+              <p>{{ selectedSubmission.assessment.teacherNotes }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔄 Reassess Modal -->
+    <div v-if="showReassessModal" class="modal-overlay" @click.self="showReassessModal = false">
+      <div class="modal-content modal-md">
+        <div class="modal-header">
+          <h2>🔄 ประเมินซ้ำ</h2>
+          <button class="btn-close" @click="showReassessModal = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="reassess-info">
+            <p><strong>นักเรียน:</strong> {{ reassessTarget?.studentName || reassessTarget?.studentData?.displayName || '-' }}</p>
+            <p><strong>โหมดปัจจุบัน:</strong> {{ getAssessmentModeName(reassessTarget?.assessment?.assessmentMode) || 'Mode A (Single)' }}</p>
+          </div>
+          
+          <div class="reassess-mode-selection">
+            <h4>เลือกโหมดประเมินใหม่:</h4>
+            <div class="mode-options">
+              <label class="mode-option" :class="{ active: selectedReassessMode === 'single' }">
+                <input type="radio" v-model="selectedReassessMode" value="single" />
+                <span class="mode-icon">📄</span>
+                <span class="mode-name">Mode A: Single</span>
+                <span class="mode-desc">ประเมินรวมทั้งใบงาน 1 ครั้ง (เร็ว)</span>
+              </label>
+              <label class="mode-option" :class="{ active: selectedReassessMode === 'batch' }">
+                <input type="radio" v-model="selectedReassessMode" value="batch" />
+                <span class="mode-icon">📦</span>
+                <span class="mode-name">Mode B: Batch</span>
+                <span class="mode-desc">แบ่งกลุ่ม 5 ข้อ แล้วรวมผล</span>
+              </label>
+              <label class="mode-option" :class="{ active: selectedReassessMode === 'per-question' }">
+                <input type="radio" v-model="selectedReassessMode" value="per-question" />
+                <span class="mode-icon">🔍</span>
+                <span class="mode-name">Mode C: Per-Question</span>
+                <span class="mode-desc">ประเมินทีละข้อ (ละเอียด)</span>
+              </label>
+              <label class="mode-option premium" :class="{ active: selectedReassessMode === 'multi-agent' }">
+                <input type="radio" v-model="selectedReassessMode" value="multi-agent" />
+                <span class="mode-icon">🤖×6×N</span>
+                <span class="mode-name">Multi-Agent ⭐</span>
+                <span class="mode-desc">ใช้ 6 AI × แต่ละข้อ (แม่นยำที่สุด)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="reassess-warning" v-if="reassessTarget?.assessment">
+            <span class="material-icons">warning</span>
+            <span>ผลประเมินเดิมจะถูกแทนที่ด้วยผลประเมินใหม่</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showReassessModal = false">ยกเลิก</button>
+          <button class="btn btn-primary" @click="submitReassess" :disabled="reassessing || !selectedReassessMode">
+            <span v-if="reassessing" class="spinner-sm"></span>
+            {{ reassessing ? 'กำลังประเมินซ้ำ...' : 'ยืนยันประเมินซ้ำ' }}
+          </button>
         </div>
       </div>
     </div>
@@ -510,10 +1036,16 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
-import { db } from '@/firebase/config'
+import { db, auth } from '@/firebase/config'
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { useAuthStore } from '@/stores/auth'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+
+// Mode-specific Report Components
+import ModeAReport from '@/components/worksheet/ModeAReport.vue'
+import ModeBReport from '@/components/worksheet/ModeBReport.vue'
+import ModeCReport from '@/components/worksheet/ModeCReport.vue'
+import ModeDReport from '@/components/worksheet/ModeDReport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -527,6 +1059,9 @@ const worksheets = ref([])
 const submissions = ref([])
 const stats = ref({})
 
+// ARCE Order constant (A → R → C → E)
+const arceOrder = ['analysis', 'reasoning', 'creativity', 'evidence']
+
 // Filters
 const searchStudent = ref('')
 const filterPa = ref('')
@@ -536,6 +1071,12 @@ const sortBy = ref('submittedAt')
 // Modal
 const showSubmissionModal = ref(false)
 const selectedSubmission = ref(null)
+
+// 🔄 Reassess Modal
+const showReassessModal = ref(false)
+const reassessTarget = ref(null)
+const selectedReassessMode = ref('multi-agent')
+const reassessing = ref(false)
 
 // Computed - Learning Outcomes count for this worksheet
 const worksheetLOCount = computed(() => {
@@ -614,6 +1155,165 @@ function getArceIcon(arce) {
 function getArceLabel(arce) {
   const labels = { analysis: 'วิเคราะห์', reasoning: 'เหตุผล', creativity: 'สร้างสรรค์', evidence: 'หลักฐาน' }
   return labels[arce] || arce
+}
+
+// Helper to get question score (handles both regular and ARCE questions)
+function getQuestionScore(result) {
+  // For ARCE situation questions, use totalScore
+  if (result.type === 'arce_situation' && result.totalScore !== undefined) {
+    return result.totalScore
+  }
+  // For regular questions, use score
+  return result.score || 0
+}
+
+// 📊 Statistics helper functions
+function getDistPercent(submission, category) {
+  const stats = submission.assessment?.statistics
+  if (!stats?.scoreDistribution) return 0
+  const total = stats.totalQuestions || 1
+  const count = stats.scoreDistribution[category]?.count || 0
+  return Math.round((count / total) * 100)
+}
+
+function getArceLabelFull(key) {
+  const labels = {
+    analysis: 'การวิเคราะห์ (Analysis)',
+    reasoning: 'การให้เหตุผล (Reasoning)',
+    creativity: 'ความคิดสร้างสรรค์ (Creativity)',
+    evidence: 'การใช้หลักฐาน (Evidence)'
+  }
+  return labels[key] || key || '-'
+}
+
+// Multi-Agent helper
+function getConsensusLabel(level) {
+  const labels = {
+    high: '🟢 ความเห็นตรงกันสูง',
+    moderate: '🟡 ความเห็นตรงกันปานกลาง',
+    low: '🔴 ความเห็นแตกต่าง'
+  }
+  return labels[level] || level || '-'
+}
+
+// 🏷️ Assessment Mode Helper Functions
+function getAssessmentModeIcon(mode) {
+  const icons = {
+    'single': '⚡',
+    'batch': '📦',
+    'per-question': '🔍',
+    'multi-agent-worksheet': '🤖×6',
+    'multi-agent': '🤖×6',
+    'multi-agent-per-question': '🤖×6×N'
+  }
+  return icons[mode] || '⚡'
+}
+
+function getAssessmentModeName(mode) {
+  const names = {
+    'single': 'โหมด A: Single Call',
+    'batch': 'โหมด B: Batch Assessment',
+    'per-question': 'โหมด C: Per-Question',
+    'multi-agent-worksheet': 'Multi-Agent',
+    'multi-agent': 'Multi-Agent',
+    'multi-agent-per-question': 'Multi-Agent Per-Question'
+  }
+  return names[mode] || 'Single Call'
+}
+
+function getAssessmentModeShort(mode) {
+  const shorts = {
+    'single': 'A',
+    'batch': 'B',
+    'per-question': 'C',
+    'multi-agent-worksheet': 'MA',
+    'multi-agent': 'MA',
+    'multi-agent-per-question': 'MA×N'
+  }
+  return shorts[mode] || 'A'
+}
+
+function getAssessmentModeDesc(mode) {
+  const descs = {
+    'single': 'AI 1 ตัวประเมินทั้งใบงาน - เร็วและประหยัด',
+    'batch': 'แบ่งกลุ่มละ 5 ข้อ + Summary Agent - สมดุลความแม่นยำและต้นทุน',
+    'per-question': 'ประเมินแยกทีละข้อ + Summary Agent - แม่นยำสูง',
+    'multi-agent-worksheet': '6 AI Experts ประเมินทุกข้อ + Consensus - ระดับงานวิจัย',
+    'multi-agent': '6 AI Experts ประเมินทุกข้อ + Consensus - ระดับงานวิจัย',
+    'multi-agent-per-question': '6 AI Experts × แต่ละข้อ + Summary - ระดับงานวิจัยสูงสุด'
+  }
+  return descs[mode] || 'AI 1 ตัวประเมินทั้งใบงาน'
+}
+
+// 🔄 Reassess Functions
+function openReassessModal(submission) {
+  reassessTarget.value = submission
+  selectedReassessMode.value = 'multi-agent' // Default to multi-agent
+  showReassessModal.value = true
+}
+
+async function submitReassess() {
+  if (!reassessTarget.value || !selectedReassessMode.value) return
+  
+  reassessing.value = true
+  
+  try {
+    const currentUser = auth.currentUser
+    if (!currentUser) {
+      alert('กรุณาเข้าสู่ระบบใหม่')
+      return
+    }
+    const token = await currentUser.getIdToken()
+
+    // Get original answers from submission
+    const originalAnswers = reassessTarget.value.answers || {}
+    const wsId = reassessTarget.value.worksheetId || worksheetId.value
+    const subId = reassessTarget.value.id
+
+    console.log('🔄 Reassessing submission:', subId, 'with mode:', selectedReassessMode.value)
+
+    // Call the reassess API
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-hots-ai-d028b.cloudfunctions.net'
+    const response = await fetch(`${functionsUrl}/reassessWorksheetSubmission`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        worksheetId: wsId,
+        submissionId: subId,
+        answers: originalAnswers,
+        assessmentMode: selectedReassessMode.value,
+        reason: 'Teacher requested reassessment'
+      })
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to reassess')
+    }
+
+    // Update local submission data
+    const idx = submissions.value.findIndex(s => s.id === subId)
+    if (idx !== -1 && result.assessment) {
+      submissions.value[idx].assessment = result.assessment
+      // Also update selected submission if it's the same
+      if (selectedSubmission.value?.id === subId) {
+        selectedSubmission.value.assessment = result.assessment
+      }
+    }
+
+    showReassessModal.value = false
+    alert(`✅ ประเมินซ้ำสำเร็จ!\n\nโหมด: ${getAssessmentModeName(selectedReassessMode.value)}\nคะแนน: ${result.assessment?.summary?.percentage || 0}%`)
+    
+  } catch (error) {
+    console.error('Reassess error:', error)
+    alert(`❌ ไม่สามารถประเมินซ้ำได้: ${error.message}`)
+  } finally {
+    reassessing.value = false
+  }
 }
 
 // LO Helper functions
@@ -721,11 +1421,83 @@ function countPassedQuestions(sub) {
   return sub.assessment.questionResults.filter(q => q.passed).length
 }
 
+// 🔧 Format chainOfThought - handle both string and object formats
+function formatChainOfThought(cot) {
+  if (!cot) return ''
+  if (typeof cot === 'string') return cot
+  if (typeof cot === 'object') {
+    // chainOfThought can be object with step1_identification, step2_cognitive_check, etc.
+    const parts = []
+    if (cot.step1_identification) parts.push(`📝 ${cot.step1_identification}`)
+    if (cot.step2_cognitive_check) {
+      const checks = Array.isArray(cot.step2_cognitive_check) 
+        ? cot.step2_cognitive_check.join(', ') 
+        : cot.step2_cognitive_check
+      parts.push(`🔍 ${checks}`)
+    }
+    if (cot.step3_anchor_match) parts.push(`🎯 ${cot.step3_anchor_match}`)
+    if (cot.step4_reasoning) parts.push(`💡 ${cot.step4_reasoning}`)
+    return parts.join('\n') || JSON.stringify(cot, null, 2)
+  }
+  return String(cot)
+}
+
+// Get ARCE dimension score as percentage (0-100)
+function getArcePercentage(sub, dimension) {
+  if (!sub.assessment?.arceScores) return 0
+  const score = sub.assessment.arceScores[dimension]
+  const raw = typeof score === 'object' ? (score.raw || 0) : (score || 0)
+  return Math.round((raw / 5) * 100)
+}
+
+// 🧠 Bloom's Taxonomy helpers for individual submission (เหมือน WorksheetResult.vue)
+function getBloomLevelsForSubmission(sub) {
+  const arce = sub.assessment?.arceScores || {}
+  const avgAnalysis = getArceRaw(arce.analysis)
+  const avgReasoning = getArceRaw(arce.reasoning)
+  const avgCreativity = getArceRaw(arce.creativity)
+  const avgEvidence = getArceRaw(arce.evidence)
+  
+  return [
+    { key: 'remember', icon: '📚', label: 'จำ (Remember)', description: 'ระลึก ทบทวน จดจำข้อมูล', achieved: true },
+    { key: 'understand', icon: '💡', label: 'เข้าใจ (Understand)', description: 'อธิบาย ตีความ สรุปความ', achieved: avgReasoning >= 2 },
+    { key: 'apply', icon: '🔧', label: 'ประยุกต์ (Apply)', description: 'นำไปใช้ ปฏิบัติ แก้ปัญหา', achieved: avgEvidence >= 2 },
+    { key: 'analyze', icon: '🔍', label: 'วิเคราะห์ (Analyze)', description: 'แยกแยะ จำแนก เปรียบเทียบ', achieved: avgAnalysis >= 3 },
+    { key: 'evaluate', icon: '⚖️', label: 'ประเมิน (Evaluate)', description: 'ตัดสิน วิจารณ์ ให้เหตุผล', achieved: avgReasoning >= 3 && avgAnalysis >= 3 },
+    { key: 'create', icon: '🎨', label: 'สร้างสรรค์ (Create)', description: 'ออกแบบ สร้าง คิดค้นใหม่', achieved: avgCreativity >= 3 }
+  ]
+}
+
+function getBloomCognitiveLevel(sub) {
+  const levels = getBloomLevelsForSubmission(sub)
+  const achieved = levels.filter(l => l.achieved)
+  if (achieved.length >= 6) return 'สร้างสรรค์ (Create) - ระดับสูงสุด'
+  if (achieved.length >= 5) return 'ประเมิน (Evaluate) - ระดับสูง'
+  if (achieved.length >= 4) return 'วิเคราะห์ (Analyze) - ระดับกลาง-สูง'
+  if (achieved.length >= 3) return 'ประยุกต์ (Apply) - ระดับกลาง'
+  if (achieved.length >= 2) return 'เข้าใจ (Understand) - ระดับพื้นฐาน'
+  return 'จำ (Remember) - ระดับเริ่มต้น'
+}
+
+function getBloomCognitiveFeedback(sub) {
+  const levels = getBloomLevelsForSubmission(sub)
+  const achieved = levels.filter(l => l.achieved).length
+  if (achieved >= 5) return 'ยอดเยี่ยม! นักเรียนแสดงทักษะการคิดขั้นสูงได้อย่างดี สามารถวิเคราะห์ ประเมิน และสร้างสรรค์ได้'
+  if (achieved >= 4) return 'ดีมาก! นักเรียนแสดงความสามารถในการวิเคราะห์ได้ดี ควรฝึกฝนการประเมินและสร้างสรรค์เพิ่มเติม'
+  if (achieved >= 3) return 'ดี! นักเรียนสามารถนำความรู้ไปประยุกต์ใช้ได้ ควรพัฒนาทักษะการวิเคราะห์เพิ่มเติม'
+  if (achieved >= 2) return 'พอใช้ นักเรียนเข้าใจเนื้อหาได้ดี ควรฝึกฝนการนำไปประยุกต์ใช้มากขึ้น'
+  return 'ควรทบทวนเนื้อหาและฝึกฝนทักษะการคิดวิเคราะห์เพิ่มเติม'
+}
+
 function getCognitiveLevelScore(sub, level) {
   if (!sub.assessment?.questionResults) return 0
   const questions = sub.assessment.questionResults.filter(q => q.bloomLevel === level)
   if (questions.length === 0) return 0
-  const avgScore = questions.reduce((sum, q) => sum + (q.score || 0), 0) / questions.length
+  // Handle both regular score and ARCE totalScore
+  const avgScore = questions.reduce((sum, q) => {
+    const score = q.type === 'arce_situation' ? ((q.totalScore || 0) / 4) : (q.score || 0)
+    return sum + score
+  }, 0) / questions.length
   return Math.round((avgScore / 5) * 100)
 }
 
@@ -865,15 +1637,27 @@ function exportStudentReport(sub) {
   
   // Question Details
   csvContent += `รายละเอียดคำตอบ\n`
-  csvContent += `ข้อ,ระดับ Bloom,คะแนน,สถานะ,คำถาม,คำตอบ,ความเห็น AI\n`
+  csvContent += `ข้อ,ประเภท,ระดับ Bloom,คะแนน,สถานะ,คำถาม/ภารกิจ,คำตอบ,ความเห็น AI\n`
   assessment.questionResults?.forEach((qr, idx) => {
+    // Use getQuestionScore to handle both regular and ARCE questions
+    const score = qr.type === 'arce_situation' ? (qr.totalScore || 0) : (qr.score || 0)
+    const questionText = qr.type === 'arce_situation' ? (qr.task || qr.situation || '') : (qr.question || '')
+    
     csvContent += `${idx + 1},`
+    csvContent += `${qr.type === 'arce_situation' ? 'ARCE Situation' : 'ปกติ'},`
     csvContent += `${getBloomLabel(qr.bloomLevel || 1)},`
-    csvContent += `${qr.score || 0}/${qr.maxScore || 5},`
+    csvContent += `${score}/${qr.maxScore || 5},`
     csvContent += `${qr.passed ? 'ผ่าน' : 'ไม่ผ่าน'},`
-    csvContent += `"${(qr.question || '').replace(/"/g, '""')}",`
+    csvContent += `"${(questionText).replace(/"/g, '""')}",`
     csvContent += `"${(qr.studentAnswer || '').replace(/"/g, '""')}",`
     csvContent += `"${(qr.feedback || '').replace(/"/g, '""')}"\n`
+    
+    // Add ARCE breakdown for ARCE questions
+    if (qr.arceBreakdown) {
+      Object.entries(qr.arceBreakdown).forEach(([dim, data]) => {
+        csvContent += `,ARCE-${getArceLabel(dim)},,${data.score || 0}/5,,,"${(data.feedback || '').replace(/"/g, '""')}",\n`
+      })
+    }
   })
   
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
@@ -949,22 +1733,27 @@ function calculateStats() {
     assessment.questionResults?.forEach((qr, idx) => {
       if (!questionStats.has(idx)) {
         questionStats.set(idx, {
-          question: qr.question,
+          question: qr.type === 'arce_situation' ? (qr.task || qr.situation || '') : qr.question,
           bloomLevel: qr.bloomLevel || 1,
+          type: qr.type,
           scores: [],
           passed: 0,
           total: 0
         })
       }
       const qs = questionStats.get(idx)
-      qs.scores.push(qr.score || 0)
+      // Use totalScore for ARCE questions, score for regular questions
+      const questionScore = qr.type === 'arce_situation' ? (qr.totalScore || 0) : (qr.score || 0)
+      // Normalize to 0-5 scale for comparison (ARCE questions are out of 20)
+      const normalizedScore = qr.type === 'arce_situation' ? (questionScore / 4) : questionScore
+      qs.scores.push(normalizedScore)
       if (qr.passed) qs.passed++
       qs.total++
 
       // Bloom level analysis
       const bl = qr.bloomLevel || 1
       if (bloomStats[bl]) {
-        bloomStats[bl].scores.push(qr.score || 0)
+        bloomStats[bl].scores.push(normalizedScore)
         bloomStats[bl].count++
       }
     })
@@ -1212,6 +2001,22 @@ onMounted(() => {
   min-height: 100vh;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* 🎨 Mode-Specific Report Container (Teacher Modal) */
+.mode-specific-report-container {
+  margin: 1.5rem 0;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.5rem;
+}
+
+.mode-report-title {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 /* Navbar */
@@ -2219,6 +3024,14 @@ tr.at-risk:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.student-avatar .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 .student-avatar .material-icons {
@@ -2455,6 +3268,101 @@ tr.at-risk:hover {
   margin: 0;
 }
 
+/* 🧠 Bloom's Taxonomy Checklist Section */
+.bloom-taxonomy-section {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.bloom-taxonomy-section h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.bloom-levels-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bloom-level-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+.bloom-level-item.active {
+  opacity: 1;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(52, 211, 153, 0.05));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.bloom-level-icon {
+  font-size: 1.5rem;
+  min-width: 36px;
+  text-align: center;
+}
+
+.bloom-level-info {
+  flex: 1;
+}
+
+.bloom-level-info h5 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bloom-level-info p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.bloom-level-status {
+  display: flex;
+  align-items: center;
+}
+
+.bloom-level-status .material-icons {
+  font-size: 1.5rem;
+  color: var(--text-muted);
+}
+
+.bloom-level-item.active .bloom-level-status .material-icons {
+  color: #10b981;
+}
+
+.bloom-summary {
+  background: var(--bg-primary);
+  padding: 1rem;
+  border-radius: 10px;
+  margin-top: 1rem;
+  border-left: 3px solid var(--primary);
+}
+
+.bloom-summary p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.bloom-summary p:first-child {
+  margin-bottom: 0.5rem;
+}
+
+.bloom-cognitive-feedback {
+  color: var(--text-secondary);
+}
+
 /* Answer Cards */
 .answer-card {
   background: var(--bg-primary);
@@ -2542,12 +3450,175 @@ tr.at-risk:hover {
   background: rgba(245, 158, 11, 0.05);
 }
 
+/* ARCE Type Badge */
+.arce-type-badge {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(139, 92, 246, 0.15));
+  color: #a855f7;
+  font-weight: 600;
+}
+
+/* ARCE Question Context */
+.arce-question-context {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+/* Question Context Styles */
+.question-context {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.question-context .situation-block,
+.question-context .prompt-block {
+  margin-bottom: 0.5rem;
+}
+
+.question-context .situation-block:last-child,
+.question-context .prompt-block:last-child {
+  margin-bottom: 0;
+}
+
+.question-context .situation-block label {
+  font-size: 0.7rem;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.question-context .prompt-block label {
+  font-size: 0.7rem;
+  color: #10b981;
+  font-weight: 600;
+}
+
+.question-context p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.arce-question-context .situation-block,
+.arce-question-context .task-block {
+  margin-bottom: 0.5rem;
+}
+
+.arce-question-context .situation-block:last-child,
+.arce-question-context .task-block:last-child {
+  margin-bottom: 0;
+}
+
+.arce-question-context label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.arce-question-context p {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.875rem;
+}
+
+/* ARCE Breakdown Section */
+.arce-breakdown-section {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.arce-breakdown-section > label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.arce-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .arce-breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arce-dim-card {
+  background: var(--bg-primary);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--border-color);
+}
+
+.arce-dim-card.analysis { border-left-color: #3b82f6; }
+.arce-dim-card.reasoning { border-left-color: #10b981; }
+.arce-dim-card.creativity { border-left-color: #f59e0b; }
+.arce-dim-card.evidence { border-left-color: #8b5cf6; }
+
+.dim-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.dim-icon {
+  font-size: 1rem;
+}
+
+.dim-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.dim-score {
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.dim-score.pass {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.dim-feedback {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem 0;
+  line-height: 1.4;
+}
+
+.dim-match {
+  margin: 0;
+}
+
+.dim-match small {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
 /* Overall Recommendation */
 .overall-recommendation {
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
   border-radius: 12px;
   padding: 1.25rem;
   border-left: 4px solid #667eea;
+  margin-bottom: 1rem;
 }
 
 .overall-recommendation h4 {
@@ -2555,6 +3626,87 @@ tr.at-risk:hover {
 }
 
 .overall-text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Next Steps Section (Teacher Reports) */
+.next-steps-section {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 182, 212, 0.08));
+  border-radius: 12px;
+  padding: 1.25rem;
+  border-left: 4px solid #10b981;
+  margin-bottom: 1rem;
+}
+
+.next-steps-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #10b981;
+}
+
+.next-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.next-step-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #10b981, #06b6d4);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.next-step-item p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Teacher Notes Section */
+.teacher-notes-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(124, 58, 237, 0.08));
+  border-radius: 12px;
+  padding: 1.25rem;
+  border-left: 4px solid #8b5cf6;
+  margin-bottom: 1rem;
+}
+
+.teacher-notes-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #8b5cf6;
+}
+
+.teacher-notes-card {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.teacher-notes-card .material-icons {
+  color: #8b5cf6;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.teacher-notes-card p {
   margin: 0;
   font-size: 0.875rem;
   line-height: 1.6;
@@ -2700,5 +3852,819 @@ tr.at-risk:hover {
   .submissions-table table {
     min-width: 900px;
   }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .dimension-comparison {
+    flex-direction: column;
+  }
+  
+  .research-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   📊 Statistics Section (Modal)
+   ============================================ */
+.statistics-section {
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.statistics-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary, #1f2937);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.statistics-section .stat-item {
+  text-align: center;
+  padding: 0.75rem;
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 8px;
+}
+
+.statistics-section .stat-item.passed {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.statistics-section .stat-item.failed {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.statistics-section .stat-item.rate {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.statistics-section .stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary, #1f2937);
+}
+
+.statistics-section .stat-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.score-distribution h5 {
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.dist-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dist-bar-item {
+  display: grid;
+  grid-template-columns: 100px 1fr 40px;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.dist-label {
+  color: var(--text-secondary, #6b7280);
+}
+
+.dist-bar {
+  height: 16px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dist-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.5s ease;
+}
+
+.dist-fill.excellent { background: linear-gradient(90deg, #10b981, #34d399); }
+.dist-fill.good { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.dist-fill.fair { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.dist-fill.needs-improvement { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+.dist-count {
+  font-weight: 600;
+  text-align: right;
+  color: var(--text-primary, #1f2937);
+}
+
+/* ============================================
+   🔬 ARCE Analysis Section (Modal)
+   ============================================ */
+.arce-analysis-section {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.arce-analysis-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary, #1f2937);
+}
+
+.arce-analysis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dimension-comparison {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dim-item {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.dim-item.strongest {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.dim-item.weakest {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.dim-icon {
+  font-size: 1.25rem;
+}
+
+.comparison-text {
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  border-left: 3px solid #8b5cf6;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.5;
+}
+
+.dev-priority ol {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+}
+
+.dev-priority li {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 0.25rem;
+}
+
+/* ============================================
+   🔬 Research Insights Section (Modal)
+   ============================================ */
+.research-insights-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(59, 130, 246, 0.05));
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.research-insights-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary, #1f2937);
+}
+
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.research-block {
+  background: var(--bg-secondary, #ffffff);
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.research-block strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.research-block p {
+  margin: 0;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.5;
+}
+
+.research-block ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.research-block li {
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 0.25rem;
+}
+
+/* Dark mode for modal sections */
+.dark-mode .statistics-section,
+.dark-mode .arce-analysis-section {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .statistics-section .stat-item,
+.dark-mode .research-block {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .research-insights-section {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.1));
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+/* ============================================
+   🤖×6 Multi-Agent Section (Modal Full View)
+   ============================================ */
+.multi-agent-section {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.multi-agent-section > h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.multi-agent-icon {
+  font-size: 1.25rem;
+}
+
+.assessment-mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(99, 102, 241, 0.15);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.badge-icon {
+  font-size: 1.25rem;
+}
+
+.badge-text {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary, #1f2937);
+}
+
+.confidence-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.agent-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.agent-card.analysis { border-left: 3px solid #3b82f6; }
+.agent-card.reasoning { border-left: 3px solid #8b5cf6; }
+.agent-card.creativity { border-left: 3px solid #f59e0b; }
+.agent-card.evidence { border-left: 3px solid #10b981; }
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.agent-header .agent-icon {
+  font-size: 1.1rem;
+}
+
+.agent-header h5 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.agent-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.agent-score .score-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #6366f1;
+}
+
+.agent-score .confidence {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.agent-feedback {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.chain-of-thought {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.chain-of-thought summary {
+  cursor: pointer;
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.chain-of-thought p,
+.chain-of-thought pre.cot-content {
+  margin: 0.5rem 0 0 0;
+  color: var(--text-secondary, #6b7280);
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.adversarial-section,
+.consensus-section {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.adversarial-section h5,
+.consensus-section h5 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  color: var(--text-primary, #1f2937);
+}
+
+.adversarial-content,
+.consensus-content {
+  font-size: 0.85rem;
+}
+
+.challenges-list ul,
+.bias-list ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.challenges-list li,
+.bias-list li {
+  margin-bottom: 0.25rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.no-issues {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.consistency-score {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 6px;
+}
+
+.consensus-scores {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.consensus-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.consensus-item .label {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.consensus-item .value {
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+}
+
+.consensus-level {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.consensus-level.high { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.consensus-level.moderate { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.consensus-level.low { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.consensus-feedback {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.5;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+.processing-meta {
+  text-align: center;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  color: var(--text-muted, #9ca3af);
+}
+
+/* Dark mode for Multi-Agent */
+.dark-mode .multi-agent-section {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.dark-mode .agent-card,
+.dark-mode .adversarial-section,
+.dark-mode .consensus-section {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .agent-score,
+.dark-mode .chain-of-thought {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 768px) {
+  .agents-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .consensus-scores {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+
+/* 🏷️ Assessment Mode Badge Styles */
+.mode-badge-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mode-badge-mini.single {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.mode-badge-mini.batch {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #1e40af;
+  border: 1px solid #3b82f6;
+}
+
+.mode-badge-mini.per-question {
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+.mode-badge-mini.multi-agent-worksheet,
+.mode-badge-mini.multi-agent,
+.mode-badge-mini.multi-agent-per-question {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #5b21b6;
+  border: 1px solid #8b5cf6;
+}
+
+/* Assessment Mode Info Card */
+.assessment-mode-info-card {
+  background: var(--bg-secondary, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.mode-badge-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.mode-badge-lg.single {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.mode-badge-lg.batch {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #1e40af;
+  border: 1px solid #3b82f6;
+}
+
+.mode-badge-lg.per-question {
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+.mode-badge-lg.multi-agent-worksheet,
+.mode-badge-lg.multi-agent,
+.mode-badge-lg.multi-agent-per-question {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #5b21b6;
+  border: 1px solid #8b5cf6;
+}
+
+.mode-icon {
+  font-size: 1.15rem;
+}
+
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.mode-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.mode-desc {
+  font-weight: 400;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* Mode Meta Grid */
+.mode-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+.meta-item {
+  text-align: center;
+}
+
+.meta-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.meta-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+}
+
+/* Dark mode for Assessment Mode styles */
+.dark-mode .mode-badge-mini.single,
+.dark-mode .mode-badge-lg.single {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.15));
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.dark-mode .mode-badge-mini.batch,
+.dark-mode .mode-badge-lg.batch {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(96, 165, 250, 0.15));
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.dark-mode .mode-badge-mini.per-question,
+.dark-mode .mode-badge-lg.per-question {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.15));
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.dark-mode .mode-badge-mini.multi-agent-worksheet,
+.dark-mode .mode-badge-mini.multi-agent,
+.dark-mode .mode-badge-mini.multi-agent-per-question,
+.dark-mode .mode-badge-lg.multi-agent-worksheet,
+.dark-mode .mode-badge-lg.multi-agent,
+.dark-mode .mode-badge-lg.multi-agent-per-question {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(167, 139, 250, 0.15));
+  color: #a78bfa;
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.dark-mode .assessment-mode-info-card {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .meta-value {
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* 🔄 Reassess Modal Styles */
+.modal-md {
+  max-width: 600px;
+}
+
+.reassess-info {
+  background: var(--bg-secondary);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.reassess-info p {
+  margin: 0.5rem 0;
+  color: var(--text-secondary);
+}
+
+.reassess-mode-selection h4 {
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-option:hover {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.mode-option.active {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.mode-option.premium {
+  border-color: #f59e0b;
+}
+
+.mode-option.premium.active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.mode-option input[type="radio"] {
+  display: none;
+}
+
+.mode-option .mode-icon {
+  font-size: 1.5rem;
+}
+
+.mode-option .mode-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 180px;
+}
+
+.mode-option .mode-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.reassess-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 8px;
+  color: #f59e0b;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.spinner-sm {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

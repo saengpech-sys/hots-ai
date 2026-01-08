@@ -429,13 +429,18 @@ function getQuestionTypeLabel(type) {
 }
 
 function formatDate(timestamp) {
-  if (!timestamp) return '-'
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  return date.toLocaleDateString('th-TH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  if (!timestamp) return '(รอบันทึกวันที่)'
+  try {
+    const date = timestamp?.toDate?.() || (timestamp?.seconds ? new Date(timestamp.seconds * 1000) : new Date(timestamp))
+    if (isNaN(date.getTime())) return '(รอบันทึกวันที่)'
+    return date.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  } catch (e) {
+    return '(รอบันทึกวันที่)'
+  }
 }
 
 function getPlanTopic(plan) {

@@ -109,13 +109,21 @@ exports.generateKnowledgeSheet = functions
         const lessonPlanId = req.body.lessonPlanId
         if (lessonPlanId) {
           const db = getDb()
-          const existingKS = await db.collection('knowledgeSheets')
+          
+          // Check both metadata.lessonPlanId and root-level lessonPlanId
+          const existingKS1 = await db.collection('knowledgeSheets')
             .where('metadata.lessonPlanId', '==', lessonPlanId)
             .limit(1)
             .get()
           
-          if (!existingKS.empty) {
-            const existingDoc = existingKS.docs[0]
+          const existingKS2 = await db.collection('knowledgeSheets')
+            .where('lessonPlanId', '==', lessonPlanId)
+            .limit(1)
+            .get()
+          
+          const existingDoc = !existingKS1.empty ? existingKS1.docs[0] : (!existingKS2.empty ? existingKS2.docs[0] : null)
+          
+          if (existingDoc) {
             return res.status(409).send({
               error: 'Knowledge sheet already exists for this lesson plan',
               existingKnowledgeSheetId: existingDoc.id,

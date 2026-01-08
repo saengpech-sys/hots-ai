@@ -294,6 +294,13 @@ const routes = [
     component: () => import('@/views/UnitKnowledgeSheetView.vue'),
     meta: { requiresAuth: true }
   },
+  // Data Management
+  {
+    path: '/data-cleanup',
+    name: 'DataCleanup',
+    component: () => import('@/views/DataCleanup.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
   // Admin Tools
   {
     path: '/admin-lo-manager',
